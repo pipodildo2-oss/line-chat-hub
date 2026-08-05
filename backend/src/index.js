@@ -1,0 +1,49 @@
+require('dotenv').config();
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+
+const authRoutes = require('./routes/auth');
+const channelRoutes = require('./routes/channels');
+const conversationRoutes = require('./routes/conversations');
+const messageRoutes = require('./routes/messages');
+const webhookRoutes = require('./routes/webhooks');
+const analyticsRoutes = require('./routes/analytics');
+const agentRoutes = require('./routes/agents');
+const { setIo } = require('./services/socket.service');
+
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
+
+setIo(io);
+
+app.use(cors());
+// Raw body for LINE signature verification (must come before express.json)
+app.use('/api/webhooks/line', express.raw({ type: 'application/json' }));
+app.use(express.json());
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/channels', channelRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/agents', agentRoutes);
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// Socket.io
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+  socket.on('join', (conversationId) => socket.join(conversationId));
+  socket.on('leave', (conversationId) => socket.leave(conversationId));
+  socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
+});
+
+const PORT = process.env.PORT || 3001;
+httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));

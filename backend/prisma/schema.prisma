@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  password      String
+  role          String         @default("agent") // admin | agent
+  createdAt     DateTime       @default(now())
+  conversations Conversation[]
+}
+
+model LineChannel {
+  id            String         @id @default(cuid())
+  name          String
+  channelId     String         @unique
+  channelSecret String
+  accessToken   String
+  pictureUrl    String?
+  createdAt     DateTime       @default(now())
+  conversations Conversation[]
+}
+
+model Conversation {
+  id          String      @id @default(cuid())
+  lineUserId  String
+  displayName String?
+  pictureUrl  String?
+  channelId   String
+  channel     LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agentId     String?
+  agent       Agent?      @relation(fields: [agentId], references: [id])
+  status      String      @default("open") // open | pending | closed
+  messages    Message[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  lastMessageAt DateTime?
+
+  @@unique([lineUserId, channelId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String       // user | agent | bot
+  senderName     String?
+  type           String       @default("text") // text | image | sticker | audio | video | location
+  content        String
+  metadata       String?      // JSON string for images, stickers etc
+  read           Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+}
