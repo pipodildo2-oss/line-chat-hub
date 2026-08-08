@@ -8,9 +8,9 @@ function getClient(accessToken) {
   return new line.messagingApi.MessagingApiClient({ channelAccessToken: accessToken });
 }
 
-async function handleLineWebhook(channel, events) {
-  for (const event of events) {
-    if (event.type !== 'message') continue;
+// Processes a single LINE event (used by the queue worker, one job = one event).
+async function processLineEvent(channel, event) {
+    if (event.type !== 'message') return;
 
     const lineUserId = event.source.userId;
     let displayName = lineUserId;
@@ -79,7 +79,6 @@ async function handleLineWebhook(channel, events) {
     // Emit real-time events
     emitToConversation(conversation.id, 'new_message', { message, conversation });
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });
-  }
 }
 
 async function sendMessage(channel, lineUserId, text) {
@@ -87,4 +86,4 @@ async function sendMessage(channel, lineUserId, text) {
   await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
 }
 
-module.exports = { handleLineWebhook, sendMessage };
+module.exports = { processLineEvent, sendMessage };

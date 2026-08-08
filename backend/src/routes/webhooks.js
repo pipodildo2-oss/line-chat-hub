@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const line = require('@line/bot-sdk');
 const { PrismaClient } = require('@prisma/client');
-const { handleLineWebhook } = require('../services/line.service');
+const { enqueueLineEvent } = require('../services/queue.service');
 
 const prisma = new PrismaClient();
 
@@ -28,7 +28,12 @@ router.post('/line/:channelId', async (req, res) => {
     }
 
     const parsed = JSON.parse(bodyStr);
-    await handleLineWebhook(channel, parsed.events || []);
+    // Push each event into the queue instead of processing it here — this keeps
+    // the webhook handler fast and lets a burst of messages get smoothed out
+    // by the queue worker rather than hitting the database all at once.
+    for (const event of parsed.events || []) {
+      await enqueueLineEvent(channel.id, event);
+    }
   } catch (err) {
     console.error('Webhook error:', err.message);
   }
