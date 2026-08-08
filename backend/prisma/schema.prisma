@@ -60,6 +60,7 @@ model ConversationTag {
   createdAt      DateTime     @default(now())
 
   @@unique([conversationId, tagId])
+  @@index([tagId])
 }
 
 model Conversation {
@@ -81,6 +82,10 @@ model Conversation {
   lastMessageAt DateTime?
 
   @@unique([lineUserId, channelId])
+  @@index([channelId])
+  @@index([agentId])
+  @@index([status])
+  @@index([lastMessageAt])
 }
 
 model Message {
@@ -94,4 +99,6 @@ model Message {
   metadata       String?      // JSON string for images, stickers etc
   read           Boolean      @default(false)
   createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }
