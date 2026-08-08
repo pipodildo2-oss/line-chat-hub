@@ -1,0 +1,8 @@
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["cd ../frontend && npm ci && npm run build && cp -r dist ../backend/dist"]
+
+[start]
+cmd = "npm start"

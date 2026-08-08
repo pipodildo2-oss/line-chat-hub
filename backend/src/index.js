@@ -37,6 +37,15 @@ app.use('/api/agents', agentRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Serve frontend static files (production)
+const path = require('path');
+const fs = require('fs');
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
+
 // Socket.io
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -46,4 +55,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
