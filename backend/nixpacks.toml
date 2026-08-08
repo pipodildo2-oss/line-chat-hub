@@ -4,7 +4,7 @@ providers = ["node"]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npx prisma generate", "cd ../frontend && npm ci && npm run build && cp -r dist ../backend/dist"]
+cmds = ["npx prisma generate"]
 
 [start]
 cmd = "npm start"
