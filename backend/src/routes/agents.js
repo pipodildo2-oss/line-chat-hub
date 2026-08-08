@@ -8,9 +8,12 @@ const prisma = new PrismaClient();
 // GET /api/agents
 router.get('/', auth, async (req, res) => {
   const agents = await prisma.agent.findMany({
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: {
+      id: true, name: true, email: true, role: true, createdAt: true,
+      channels: { select: { channelId: true } },
+    },
   });
-  res.json(agents);
+  res.json(agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined })));
 });
 
 // POST /api/agents
@@ -35,6 +38,24 @@ router.delete('/:id', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   await prisma.agent.delete({ where: { id: req.params.id } });
   res.json({ success: true });
+});
+
+// PUT /api/agents/:id/channels — set which LINE OA channels this agent can see.
+// Empty array = no restriction (agent sees all channels).
+router.put('/:id/channels', auth, async (req, res) => {
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    const { channelIds = [] } = req.body;
+    await prisma.$transaction([
+      prisma.agentChannel.deleteMany({ where: { agentId: req.params.id } }),
+      ...channelIds.map(channelId =>
+        prisma.agentChannel.create({ data: { agentId: req.params.id, channelId } })
+      ),
+    ]);
+    res.json({ success: true, channelIds });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

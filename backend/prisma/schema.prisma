@@ -15,6 +15,7 @@ model Agent {
   role          String         @default("agent") // admin | agent
   createdAt     DateTime       @default(now())
   conversations Conversation[]
+  channels      AgentChannel[]
 }
 
 model LineChannel {
@@ -26,6 +27,39 @@ model LineChannel {
   pictureUrl    String?
   createdAt     DateTime       @default(now())
   conversations Conversation[]
+  agents        AgentChannel[]
+}
+
+// Restricts which LINE OA channels an agent is allowed to see.
+// If an agent has zero rows here, they see all channels (no restriction).
+model AgentChannel {
+  id        String      @id @default(cuid())
+  agentId   String
+  agent     Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  channelId String
+  channel   LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([agentId, channelId])
+}
+
+model Tag {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  color     String            @default("#6366f1")
+  createdAt DateTime          @default(now())
+  conversations ConversationTag[]
+}
+
+model ConversationTag {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tagId          String
+  tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, tagId])
 }
 
 model Conversation {
@@ -38,7 +72,10 @@ model Conversation {
   agentId     String?
   agent       Agent?      @relation(fields: [agentId], references: [id])
   status      String      @default("open") // open | pending | closed
+  lifecycleStage String   @default("new") // new | contacted | qualified | negotiation | won | lost
+  notes       String?
   messages    Message[]
+  tags        ConversationTag[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   lastMessageAt DateTime?

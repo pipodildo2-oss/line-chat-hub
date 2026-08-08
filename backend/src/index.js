@@ -11,6 +11,7 @@ const messageRoutes = require('./routes/messages');
 const webhookRoutes = require('./routes/webhooks');
 const analyticsRoutes = require('./routes/analytics');
 const agentRoutes = require('./routes/agents');
+const tagRoutes = require('./routes/tags');
 const { setIo } = require('./services/socket.service');
 
 const app = express();
@@ -34,27 +35,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/agents', agentRoutes);
+app.use('/api/tags', tagRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-// TEMPORARY: create/reset admin user via HTTP
-app.post('/api/setup-admin', async (req, res) => {
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    const bcrypt = require('bcryptjs');
-    const prisma = new PrismaClient();
-    const password = await bcrypt.hash('admin1234', 10);
-    const agent = await prisma.agent.upsert({
-      where: { email: 'admin@example.com' },
-      update: { password },
-      create: { name: 'Admin', email: 'admin@example.com', password, role: 'admin' },
-    });
-    await prisma.$disconnect();
-    res.json({ success: true, email: agent.email, message: 'Admin user created/reset. Login: admin@example.com / admin1234' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Serve frontend static files (production)
 const path = require('path');

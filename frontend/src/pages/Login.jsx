@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { MessageCircle, Lock, Mail, ArrowRight } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
@@ -27,50 +28,74 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-sm border p-8 w-full max-w-sm">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">
-            L
-          </div>
-          <div>
-            <h1 className="font-bold text-gray-900 text-lg leading-tight">LINE Chat Hub</h1>
-            <p className="text-gray-500 text-xs">Multi-channel inbox</p>
-          </div>
-        </div>
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden bg-[#05060a]">
+      {/* Ambient gradient glow — pure CSS, no JS animation loop */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 -left-40 w-[32rem] h-[32rem] rounded-full bg-indigo-600/25 blur-[120px]" />
+        <div className="absolute -bottom-40 -right-32 w-[32rem] h-[32rem] rounded-full bg-emerald-500/20 blur-[120px]" />
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage: 'linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
+          }}
+        />
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="admin@example.com"
-              required
-            />
+      <div className="relative w-full max-w-sm mx-4">
+        <div className="backdrop-blur-xl bg-white/[0.04] border border-white/10 rounded-2xl shadow-2xl shadow-black/40 p-8">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <MessageCircle size={22} className="text-white" strokeWidth={2.2} />
+            </div>
+            <div>
+              <h1 className="font-semibold text-white text-lg leading-tight tracking-tight">LINE Chat Hub</h1>
+              <p className="text-white/40 text-xs">Multi-channel inbox</p>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="••••••••"
-              required
-            />
-          </div>
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-green-500 text-white rounded-lg py-2 font-medium hover:bg-green-600 disabled:opacity-50 transition-colors"
-          >
-            {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
-          </button>
-        </form>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-1.5">Email</label>
+              <div className="relative">
+                <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40 transition-colors"
+                  placeholder="admin@example.com"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-white/50 mb-1.5">Password</label>
+              <div className="relative">
+                <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40 transition-colors"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+            {error && <p className="text-rose-400 text-xs">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative mt-1 bg-gradient-to-r from-emerald-500 to-indigo-500 text-white rounded-lg py-2.5 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-500/20"
+            >
+              {loading ? 'กำลังเข้าสู่ระบบ...' : (
+                <>เข้าสู่ระบบ <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" /></>
+              )}
+            </button>
+          </form>
+        </div>
+        <p className="text-center text-white/20 text-xs mt-5">LINE Chat Hub — Unified messaging workspace</p>
       </div>
     </div>
   );

@@ -6,7 +6,13 @@ const prisma = new PrismaClient();
 
 // GET /api/channels
 router.get('/', auth, async (req, res) => {
+  let where = {};
+  if (req.agent.role !== 'admin') {
+    const rows = await prisma.agentChannel.findMany({ where: { agentId: req.agent.id }, select: { channelId: true } });
+    if (rows.length > 0) where = { id: { in: rows.map(r => r.channelId) } };
+  }
   const channels = await prisma.lineChannel.findMany({
+    where,
     orderBy: { createdAt: 'asc' },
     include: { _count: { select: { conversations: true } } },
   });

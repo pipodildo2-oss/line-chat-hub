@@ -5,15 +5,32 @@ const { emitToAll } = require('../services/socket.service');
 
 const prisma = new PrismaClient();
 
+const CONV_INCLUDE = {
+  channel: { select: { id: true, name: true } },
+  agent: { select: { id: true, name: true } },
+  tags: { include: { tag: true } },
+};
+
+// Returns the list of channelIds this agent is restricted to, or null if unrestricted (admin or no restriction set).
+async function getVisibleChannelIds(agent) {
+  if (agent.role === 'admin') return null;
+  const rows = await prisma.agentChannel.findMany({ where: { agentId: agent.id }, select: { channelId: true } });
+  if (rows.length === 0) return null;
+  return rows.map(r => r.channelId);
+}
+
 // GET /api/conversations
 router.get('/', auth, async (req, res) => {
-  const { status, channelId, agentId, search, page = 1, limit = 30 } = req.query;
+  const { status, channelId, agentId, search, tagId, lifecycleStage, page = 1, limit = 30 } = req.query;
 
   const where = {};
   if (status) where.status = status;
+  if (lifecycleStage) where.lifecycleStage = lifecycleStage;
   if (channelId) where.channelId = channelId;
   if (agentId === 'me') where.agentId = req.agent.id;
+  else if (agentId === 'unassigned') where.agentId = null;
   else if (agentId) where.agentId = agentId;
+  if (tagId) where.tags = { some: { tagId } };
   if (search) {
     where.OR = [
       { displayName: { contains: search, mode: 'insensitive' } },
@@ -21,13 +38,20 @@ router.get('/', auth, async (req, res) => {
     ];
   }
 
+  const visibleChannelIds = await getVisibleChannelIds(req.agent);
+  if (visibleChannelIds) {
+    where.channelId = channelId ? channelId : { in: visibleChannelIds };
+    if (channelId && !visibleChannelIds.includes(channelId)) {
+      return res.json({ conversations: [], total: 0, page: Number(page), limit: Number(limit) });
+    }
+  }
+
   const [total, conversations] = await Promise.all([
     prisma.conversation.count({ where }),
     prisma.conversation.findMany({
       where,
       include: {
-        channel: { select: { id: true, name: true } },
-        agent: { select: { id: true, name: true } },
+        ...CONV_INCLUDE,
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -48,10 +72,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
-    include: {
-      channel: true,
-      agent: { select: { id: true, name: true } },
-    },
+    include: { channel: true, agent: { select: { id: true, name: true } }, tags: { include: { tag: true } } },
   });
   if (!conversation) return res.status(404).json({ error: 'Not found' });
   res.json(conversation);
@@ -60,18 +81,18 @@ router.get('/:id', auth, async (req, res) => {
 // PATCH /api/conversations/:id
 router.patch('/:id', auth, async (req, res) => {
   try {
-    const { status, agentId } = req.body;
+    const { status, agentId, displayName, notes, lifecycleStage } = req.body;
     const data = {};
     if (status) data.status = status;
     if (agentId !== undefined) data.agentId = agentId || null;
+    if (displayName !== undefined) data.displayName = displayName;
+    if (notes !== undefined) data.notes = notes;
+    if (lifecycleStage) data.lifecycleStage = lifecycleStage;
 
     const conversation = await prisma.conversation.update({
       where: { id: req.params.id },
       data,
-      include: {
-        channel: { select: { id: true, name: true } },
-        agent: { select: { id: true, name: true } },
-      },
+      include: CONV_INCLUDE,
     });
     emitToAll('conversation_updated', conversation);
     res.json(conversation);
