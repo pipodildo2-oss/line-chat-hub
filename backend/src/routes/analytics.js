@@ -28,10 +28,12 @@ router.get('/summary', auth, async (req, res) => {
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
     }),
-    // Messages per day for the last N days (SQLite compatible)
+    // Messages per day for the last N days (PostgreSQL)
     prisma.$queryRawUnsafe(
-      `SELECT date(createdAt) as date, COUNT(*) as count FROM Message WHERE createdAt >= ? GROUP BY date(createdAt) ORDER BY date ASC`,
-      since.toISOString()
+      `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') as date, COUNT(*)::int as count
+       FROM "Message" WHERE "createdAt" >= $1
+       GROUP BY date_trunc('day', "createdAt") ORDER BY date_trunc('day', "createdAt") ASC`,
+      since
     ),
   ]);
 
