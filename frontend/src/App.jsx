@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import Login from './pages/Login';
 import Inbox from './pages/Inbox';
 import Dashboard from './pages/Dashboard';
@@ -14,6 +15,7 @@ function PrivateRoute({ children }) {
 
 export default function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <SocketProvider>
         <BrowserRouter>
@@ -36,5 +38,6 @@ export default function App() {
         </BrowserRouter>
       </SocketProvider>
     </AuthProvider>
+    </ThemeProvider>
   );
 }

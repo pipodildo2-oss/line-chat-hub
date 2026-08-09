@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { MessageSquare, Users, CheckCircle, Clock } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 function StatCard({ icon: Icon, label, value, color }) {
   return (
-    <div className="bg-white rounded-xl p-5 border flex items-center gap-4">
+    <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-gray-200 dark:border-slate-800 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
         <Icon size={22} className="text-white" />
       </div>
       <div>
-        <p className="text-gray-500 text-sm">{label}</p>
-        <p className="text-2xl font-bold text-gray-900">{value ?? '—'}</p>
+        <p className="text-gray-500 dark:text-slate-400 text-sm">{label}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{value ?? '—'}</p>
       </div>
     </div>
   );
@@ -20,12 +21,16 @@ function StatCard({ icon: Icon, label, value, color }) {
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(7);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const gridColor = isDark ? '#1e293b' : '#f0f0f0';
+  const tickColor = isDark ? '#94a3b8' : '#6b7280';
 
   useEffect(() => {
     axios.get('/api/analytics/summary', { params: { days } }).then(r => setData(r.data));
   }, [days]);
 
-  if (!data) return <div className="flex-1 flex items-center justify-center text-gray-400">กำลังโหลด...</div>;
+  if (!data) return <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 h-full">กำลังโหลด...</div>;
 
   const activityData = data.recentActivity.map(row => ({
     date: new Date(row.date).toLocaleDateString('th', { month: 'short', day: 'numeric' }),
@@ -35,9 +40,9 @@ export default function Dashboard() {
   return (
     <div className="p-6 overflow-y-auto h-full">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">Dashboard</h1>
         <select
-          className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
           value={days}
           onChange={e => setDays(Number(e.target.value))}
         >
@@ -50,44 +55,47 @@ export default function Dashboard() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon={MessageSquare} label="การสนทนาทั้งหมด" value={data.totalConversations} color="bg-indigo-500" />
-        <StatCard icon={Clock} label="กำลังเปิด" value={data.openConversations} color="bg-green-500" />
-        <StatCard icon={CheckCircle} label="ปิดแล้ว" value={data.closedConversations} color="bg-gray-400" />
-        <StatCard icon={Users} label={`การสนทนาใหม่ (${days}วัน)`} value={data.newConversations} color="bg-yellow-500" />
+        <StatCard icon={Clock} label="กำลังเปิด" value={data.openConversations} color="bg-emerald-500" />
+        <StatCard icon={CheckCircle} label="ปิดแล้ว" value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" />
+        <StatCard icon={Users} label={`การสนทนาใหม่ (${days}วัน)`} value={data.newConversations} color="bg-amber-500" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Activity chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl border p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">ข้อความต่อวัน</h2>
+        <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
+          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">ข้อความต่อวัน</h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={activityData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar dataKey="messages" fill="#22c55e" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="date" tick={{ fontSize: 12, fill: tickColor }} />
+              <YAxis tick={{ fontSize: 12, fill: tickColor }} />
+              <Tooltip
+                contentStyle={isDark ? { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' } : undefined}
+                labelStyle={isDark ? { color: '#e2e8f0' } : undefined}
+              />
+              <Bar dataKey="messages" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* By channel */}
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">การสนทนาตาม OA</h2>
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
+          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">การสนทนาตาม OA</h2>
           <div className="space-y-3">
             {data.conversationsByChannel.length === 0 && (
-              <p className="text-gray-400 text-sm">ยังไม่มีข้อมูล</p>
+              <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
             )}
             {data.conversationsByChannel.map(ch => {
               const max = Math.max(...data.conversationsByChannel.map(c => c.count), 1);
               return (
                 <div key={ch.channelId}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-700 truncate">{ch.channelName}</span>
-                    <span className="font-medium text-gray-900">{ch.count}</span>
+                    <span className="text-gray-700 dark:text-slate-300 truncate">{ch.channelName}</span>
+                    <span className="font-medium text-gray-900 dark:text-slate-100">{ch.count}</span>
                   </div>
-                  <div className="bg-gray-100 rounded-full h-1.5">
+                  <div className="bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
                     <div
-                      className="bg-green-500 h-1.5 rounded-full"
+                      className="bg-emerald-500 h-1.5 rounded-full"
                       style={{ width: `${(ch.count / max) * 100}%` }}
                     />
                   </div>
