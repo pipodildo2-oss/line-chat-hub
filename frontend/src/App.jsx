@@ -32,7 +32,8 @@ export default function App() {
               <Route index element={<Navigate to="/inbox" replace />} />
               <Route path="inbox" element={<Inbox />} />
               <Route path="dashboard" element={<Dashboard />} />
-              <Route path="settings" element={<Settings />} />
+              <Route path="settings" element={<Navigate to="/settings/channels" replace />} />
+              <Route path="settings/:tab" element={<Settings />} />
             </Route>
           </Routes>
         </BrowserRouter>
