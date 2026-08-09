@@ -24,6 +24,7 @@ model LineChannel {
   channelId     String         @unique
   channelSecret String
   accessToken   String
+  lineId        String?        // the public @handle customers use to add the OA as a friend
   pictureUrl    String?
   createdAt     DateTime       @default(now())
   conversations Conversation[]

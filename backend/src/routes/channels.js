@@ -22,12 +22,12 @@ router.get('/', auth, async (req, res) => {
 // POST /api/channels
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, channelId, channelSecret, accessToken } = req.body;
+    const { name, channelId, channelSecret, accessToken, lineId } = req.body;
     if (!name || !channelId || !channelSecret || !accessToken) {
       return res.status(400).json({ error: 'All fields required' });
     }
     const channel = await prisma.lineChannel.create({
-      data: { name, channelId, channelSecret, accessToken },
+      data: { name, channelId, channelSecret, accessToken, lineId: lineId || null },
     });
     res.status(201).json(channel);
   } catch (err) {
@@ -39,10 +39,10 @@ router.post('/', auth, async (req, res) => {
 // PUT /api/channels/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { name, channelSecret, accessToken } = req.body;
+    const { name, channelSecret, accessToken, lineId } = req.body;
     const channel = await prisma.lineChannel.update({
       where: { id: req.params.id },
-      data: { name, channelSecret, accessToken },
+      data: { name, channelSecret, accessToken, lineId },
     });
     res.json(channel);
   } catch {

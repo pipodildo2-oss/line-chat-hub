@@ -7,57 +7,92 @@ import { TAG_COLOR_PRESETS } from '../lib/constants';
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
-  function copy() {
+  function copy(e) {
+    e.stopPropagation();
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <button onClick={copy} className="text-slate-500 hover:text-slate-300">
-      {copied ? <Check size={14} className="text-aurora-teal" /> : <Copy size={14} />}
+    <button onClick={copy} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
+      {copied ? <Check size={13} className="text-aurora-teal" /> : <Copy size={13} />}
     </button>
   );
 }
 
-function ChannelTile({ channel, selected, onSelect, onDelete }) {
-  return (
-    <button
-      onClick={onSelect}
-      className={`relative aspect-square rounded-xl border p-3 flex flex-col items-center justify-center gap-2 text-center transition-colors ${
-        selected ? 'border-aurora-teal bg-gradient-to-br from-aurora-teal/10 to-aurora-purple/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'
-      }`}
-    >
-      <span
-        onClick={(e) => { e.stopPropagation(); onDelete(channel.id); }}
-        className="absolute top-1.5 right-1.5 text-slate-600 hover:text-rose-400 p-1"
-      >
-        <Trash2 size={13} />
-      </span>
-      <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-        {channel.name?.[0]?.toUpperCase() || '?'}
-      </div>
-      <p className="text-sm font-medium text-slate-100 truncate w-full">{channel.name}</p>
-      <p className="text-[10px] text-slate-500 truncate w-full">{channel.channelId}</p>
-    </button>
-  );
-}
-
-function ChannelDetail({ channel }) {
+function ChannelTile({ channel, onRequestDelete }) {
   const webhookUrl = `${window.location.origin}/api/webhooks/line/${channel.id}`;
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-      <h3 className="font-medium text-slate-100 mb-2">{channel.name}</h3>
-      <div className="bg-slate-800 rounded-lg p-2 flex items-center gap-2">
-        <code className="text-xs text-slate-300 flex-1 truncate">{webhookUrl}</code>
+    <div className="relative rounded-xl border border-slate-800 bg-slate-900 p-3 pt-8 flex flex-col gap-2">
+      <button
+        onClick={() => onRequestDelete(channel)}
+        title="ลบช่องทางนี้"
+        className="absolute top-2 left-2 text-slate-600 hover:text-rose-400 p-1"
+      >
+        <Trash2 size={13} />
+      </button>
+      <span
+        title={'อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'}
+        className="absolute top-2 right-2 text-amber-500 p-1 cursor-help"
+      >
+        <AlertTriangle size={14} />
+      </span>
+
+      <div className="flex flex-col items-center text-center">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 mb-1.5">
+          {channel.name?.[0]?.toUpperCase() || '?'}
+        </div>
+        <p className="text-sm font-medium text-slate-100 truncate w-full">{channel.name}</p>
+        <p className="text-[11px] text-slate-500 truncate w-full">{channel.lineId || 'ยังไม่ระบุ LINE ID'}</p>
+      </div>
+
+      <div className="bg-slate-800 rounded-lg px-2 py-1.5 flex items-center gap-1.5 mt-1">
+        <code className="text-[10px] text-slate-400 flex-1 truncate">{webhookUrl}</code>
         <CopyButton text={webhookUrl} />
       </div>
-      <p className="text-xs text-slate-500 mt-1.5">ตั้ง Webhook URL นี้ใน LINE Developers Console</p>
-      <div className="flex items-start gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2 mt-2">
-        <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-amber-400">
-          อย่าลืมเปิด <strong>"Use webhook redelivery"</strong> ในหน้า Messaging API ของ LINE Developers Console ด้วย —
-          ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร ไม่สามารถกู้คืนได้
+    </div>
+  );
+}
+
+function DeleteChannelModal({ channel, onCancel, onConfirm }) {
+  const [text, setText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  if (!channel) return null;
+  const convCount = channel._count?.conversations || 0;
+  const matches = text.trim() === channel.name;
+
+  async function handleConfirm() {
+    setDeleting(true);
+    try { await onConfirm(channel.id); } finally { setDeleting(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onCancel}>
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-slate-100 mb-1.5">ลบ "{channel.name}" ถาวร?</h3>
+        <p className="text-sm text-slate-400 mb-3">
+          {convCount > 0
+            ? `การสนทนาทั้งหมด ${convCount} รายการและข้อความในนั้นจะถูกลบถาวรไปด้วย กู้คืนไม่ได้`
+            : 'การกระทำนี้กู้คืนไม่ได้'}
         </p>
+        <p className="text-xs text-slate-400 mb-1.5">พิมพ์ <span className="font-semibold text-slate-200">{channel.name}</span> เพื่อยืนยันการลบ</p>
+        <input
+          autoFocus
+          className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 mb-3"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={channel.name}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleConfirm}
+            disabled={!matches || deleting}
+            className="bg-rose-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ลบถาวร
+          </button>
+          <button onClick={onCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+        </div>
       </div>
     </div>
   );
@@ -123,17 +158,17 @@ export default function Settings() {
   const [channels, setChannels] = useState([]);
   const [agents, setAgents] = useState([]);
   const [tags, setTags] = useState([]);
-  const [selectedChannelId, setSelectedChannelId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [channelForm, setChannelForm] = useState({ name: '', channelId: '', channelSecret: '', accessToken: '' });
+  const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    axios.get('/api/channels').then(r => { setChannels(r.data); if (r.data.length) setSelectedChannelId(r.data[0].id); });
+    axios.get('/api/channels').then(r => setChannels(r.data));
     axios.get('/api/agents').then(r => setAgents(r.data));
     axios.get('/api/tags').then(r => setTags(r.data));
   }, []);
@@ -144,27 +179,17 @@ export default function Settings() {
     try {
       const { data } = await axios.post('/api/channels', channelForm);
       setChannels(prev => [...prev, data]);
-      setSelectedChannelId(data.id);
-      setChannelForm({ name: '', channelId: '', channelSecret: '', accessToken: '' });
+      setChannelForm({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
       setShowAddChannel(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
     } finally { setSaving(false); }
   }
 
-  async function deleteChannel(id) {
-    const ch = channels.find(c => c.id === id);
-    const convCount = ch?._count?.conversations || 0;
-    const warning = convCount > 0
-      ? `ลบ "${ch.name}" ถาวร?\n\nการสนทนาทั้งหมด ${convCount} รายการและข้อความในนั้นจะถูกลบถาวรไปด้วย กู้คืนไม่ได้`
-      : `ลบ "${ch?.name || 'ช่องทางนี้'}" ถาวร? การกระทำนี้กู้คืนไม่ได้`;
-    if (!confirm(warning)) return;
+  async function confirmDeleteChannel(id) {
     await axios.delete(`/api/channels/${id}`);
-    setChannels(prev => {
-      const next = prev.filter(c => c.id !== id);
-      if (selectedChannelId === id) setSelectedChannelId(next[0]?.id || null);
-      return next;
-    });
+    setChannels(prev => prev.filter(c => c.id !== id));
+    setDeleteTarget(null);
   }
 
   async function addAgent(e) {
@@ -213,7 +238,6 @@ export default function Settings() {
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
   const active = CATEGORIES[tab] || CATEGORIES.channels;
-  const selectedChannel = channels.find(c => c.id === selectedChannelId);
 
   return (
     <div className="h-full overflow-y-auto p-6 max-w-3xl">
@@ -227,19 +251,13 @@ export default function Settings() {
       {/* Channels */}
       {tab === 'channels' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {channels.map(ch => (
-              <ChannelTile
-                key={ch.id}
-                channel={ch}
-                selected={selectedChannelId === ch.id}
-                onSelect={() => setSelectedChannelId(ch.id)}
-                onDelete={deleteChannel}
-              />
+              <ChannelTile key={ch.id} channel={ch} onRequestDelete={setDeleteTarget} />
             ))}
             <button
               onClick={() => setShowAddChannel(true)}
-              className="aspect-square rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1 transition-colors"
+              className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1 transition-colors min-h-[152px]"
             >
               <Plus size={20} />
               <span className="text-xs">เพิ่ม LINE OA</span>
@@ -250,6 +268,7 @@ export default function Settings() {
             <form onSubmit={addChannel} className={`${cardCls} space-y-3`}>
               <h3 className="font-medium text-slate-100">เพิ่ม LINE OA</h3>
               <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
+              <input className={inputCls} placeholder="LINE ID (เช่น @abc1234) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
               <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
               <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
               <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
@@ -259,8 +278,6 @@ export default function Settings() {
               </div>
             </form>
           )}
-
-          {selectedChannel && !showAddChannel && <ChannelDetail channel={selectedChannel} />}
         </div>
       )}
 
@@ -346,6 +363,8 @@ export default function Settings() {
           </form>
         </div>
       )}
+
+      <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />
     </div>
   );
 }
