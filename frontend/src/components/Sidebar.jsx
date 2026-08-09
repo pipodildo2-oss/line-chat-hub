@@ -29,7 +29,7 @@ export default function Sidebar() {
     <aside className="w-56 bg-white dark:bg-slate-900 border-r border-gray-100 dark:border-slate-800 flex flex-col flex-shrink-0">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-gray-100 dark:border-slate-800">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 to-indigo-500 flex items-center justify-center shadow-sm flex-shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center shadow-sm flex-shrink-0">
           <MessageCircle size={17} className="text-white" strokeWidth={2.2} />
         </div>
         <div className="min-w-0">
@@ -53,7 +53,7 @@ export default function Sidebar() {
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors
                     ${isActive
-                      ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
+                      ? 'bg-aurora-teal/10 text-aurora-teal dark:bg-aurora-tealDeep/10 dark:text-aurora-teal'
                       : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800'}`
                   }
                 >
@@ -70,14 +70,14 @@ export default function Sidebar() {
       <div className="border-t border-gray-100 dark:border-slate-800 p-3 space-y-2">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
               {agent?.name?.[0]?.toUpperCase() || 'A'}
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium text-gray-800 dark:text-slate-200 truncate">{agent?.name}</p>
               <div className="flex items-center gap-1">
                 {connected ? (
-                  <Wifi size={9} className="text-emerald-500" />
+                  <Wifi size={9} className="text-aurora-green" />
                 ) : (
                   <WifiOff size={9} className="text-rose-500" />
                 )}

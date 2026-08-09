@@ -54,8 +54,8 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={MessageSquare} label="การสนทนาทั้งหมด" value={data.totalConversations} color="bg-indigo-500" />
-        <StatCard icon={Clock} label="กำลังเปิด" value={data.openConversations} color="bg-emerald-500" />
+        <StatCard icon={MessageSquare} label="การสนทนาทั้งหมด" value={data.totalConversations} color="bg-aurora-tealDeep" />
+        <StatCard icon={Clock} label="กำลังเปิด" value={data.openConversations} color="bg-aurora-purple" />
         <StatCard icon={CheckCircle} label="ปิดแล้ว" value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" />
         <StatCard icon={Users} label={`การสนทนาใหม่ (${days}วัน)`} value={data.newConversations} color="bg-amber-500" />
       </div>
@@ -73,7 +73,7 @@ export default function Dashboard() {
                 contentStyle={isDark ? { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' } : undefined}
                 labelStyle={isDark ? { color: '#e2e8f0' } : undefined}
               />
-              <Bar dataKey="messages" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="messages" fill="#18D6C8" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -95,7 +95,7 @@ export default function Dashboard() {
                   </div>
                   <div className="bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
                     <div
-                      className="bg-emerald-500 h-1.5 rounded-full"
+                      className="bg-aurora-teal h-1.5 rounded-full"
                       style={{ width: `${(ch.count / max) * 100}%` }}
                     />
                   </div>

@@ -10,7 +10,7 @@ import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
 function Avatar({ name, pictureUrl, size = 10 }) {
   if (pictureUrl) return <img src={pictureUrl} className={`w-${size} h-${size} rounded-full object-cover flex-shrink-0`} />;
   return (
-    <div className={`w-${size} h-${size} rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white font-medium text-sm flex-shrink-0`}>
+    <div className={`w-${size} h-${size} rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium text-sm flex-shrink-0`}>
       {name?.[0]?.toUpperCase() || '?'}
     </div>
   );
@@ -39,7 +39,7 @@ function ConversationItem({ conv, selected, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors flex gap-3 ${selected ? 'bg-indigo-50/70 dark:bg-indigo-500/10 border-l-2 border-l-indigo-500' : ''}`}
+      className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors flex gap-3 ${selected ? 'bg-aurora-teal/10 dark:bg-aurora-tealDeep/10 border-l-2 border-l-aurora-tealDeep' : ''}`}
     >
       <Avatar name={conv.displayName} pictureUrl={conv.pictureUrl} />
       <div className="flex-1 min-w-0">
@@ -54,7 +54,7 @@ function ConversationItem({ conv, selected, onClick }) {
             {lastMsg?.sender === 'agent' ? '✓ ' : ''}{lastMsg?.content || ''}
           </span>
           {unread > 0 && (
-            <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+            <span className="bg-aurora-green text-aurora-midnight font-semibold text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
               {unread}
             </span>
           )}
@@ -62,7 +62,7 @@ function ConversationItem({ conv, selected, onClick }) {
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{conv.channel?.name}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${stage.color}`}>{stage.label}</span>
-          {conv.agent && <span className="text-[10px] text-indigo-600 dark:text-indigo-400">→ {conv.agent.name}</span>}
+          {conv.agent && <span className="text-[10px] text-aurora-teal dark:text-aurora-teal">→ {conv.agent.name}</span>}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
       </div>
@@ -74,9 +74,9 @@ function MessageBubble({ msg }) {
   const isUser = msg.sender === 'user';
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
-      <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-tr-sm'}`}>
+      <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-purple text-white rounded-tr-sm'}`}>
         <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-        <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-emerald-100'}`}>
+        <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70'}`}>
           {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
           {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
         </p>
@@ -95,7 +95,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
             <button
               key={s || 'all'}
               onClick={() => setFilter(f => ({ ...f, status: s }))}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-indigo-500 text-white border-indigo-500' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               {s === '' ? 'ทั้งหมด' : s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
             </button>
@@ -107,7 +107,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
         <div className="flex gap-1 flex-wrap">
           <button
             onClick={() => setFilter(f => ({ ...f, lifecycleStage: '' }))}
-            className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === '' ? 'bg-indigo-500 text-white border-indigo-500' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === '' ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
           >
             ทั้งหมด
           </button>
@@ -154,7 +154,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setFilter(f => ({ ...f, tagId: '' }))}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.tagId === '' ? 'bg-indigo-500 text-white border-indigo-500' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.tagId === '' ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               ทั้งหมด
             </button>
@@ -203,7 +203,7 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
         <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 flex items-center gap-1"><Pencil size={11}/> ชื่อลูกค้า</label>
         <div className="flex gap-1.5">
           <input
-            className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep"
             value={name}
             onChange={e => setName(e.target.value)}
             onBlur={() => name !== conv.displayName && onUpdate({ displayName: name })}
@@ -226,7 +226,7 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       <div className="p-4 border-b border-gray-100 dark:border-slate-800">
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs font-medium text-gray-500 dark:text-slate-400 flex items-center gap-1"><TagIcon size={11}/> แท็ก</label>
-          <button onClick={() => setShowTagPicker(v => !v)} className="text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300"><Plus size={14} /></button>
+          <button onClick={() => setShowTagPicker(v => !v)} className="text-aurora-tealDeep hover:text-aurora-teal dark:hover:text-aurora-teal"><Plus size={14} /></button>
         </div>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {(conv.tags || []).length === 0 && <p className="text-xs text-gray-300 dark:text-slate-600">ยังไม่มีแท็ก</p>}
@@ -268,7 +268,7 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       <div className="p-4 flex-1">
         <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">โน้ต</label>
         <textarea
-          className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+          className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
           rows={6}
           placeholder="บันทึกรายละเอียดเกี่ยวกับลูกค้า..."
           value={notes}
@@ -421,7 +421,7 @@ export default function Inbox() {
             <div className="relative flex-1">
               <Search size={14} className="absolute left-2 top-2.5 text-gray-400 dark:text-slate-500" />
               <input
-                className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-gray-400 dark:placeholder:text-slate-500"
+                className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="ค้นหา..."
                 value={filter.search}
                 onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
@@ -429,7 +429,7 @@ export default function Inbox() {
             </div>
             <button
               onClick={() => setShowFilters(v => !v)}
-              className={`relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${showFilters || activeFilterCount ? 'bg-indigo-500 border-indigo-500 text-white' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${showFilters || activeFilterCount ? 'bg-aurora-tealDeep border-aurora-tealDeep text-white' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               <SlidersHorizontal size={15} />
               {activeFilterCount > 0 && !showFilters && (
@@ -442,7 +442,7 @@ export default function Inbox() {
               <button
                 key={s}
                 onClick={() => setFilter(f => ({ ...f, status: f.status === s ? '' : s }))}
-                className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-emerald-500 text-white border-emerald-500' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
               >
                 {s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
               </button>
@@ -500,7 +500,7 @@ export default function Inbox() {
               </select>
               <button
                 onClick={() => setShowDetail(v => !v)}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showDetail ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showDetail ? 'bg-aurora-teal/15 dark:bg-aurora-tealDeep/20 text-aurora-teal dark:text-aurora-teal' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
                 title="รายละเอียดลูกค้า"
               >
                 <Info size={16} />
@@ -508,17 +508,17 @@ export default function Inbox() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-950">
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-midnight">
               {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
               <div ref={bottomRef} />
             </div>
 
             {/* AI suggestion */}
             {suggestion && (
-              <div className="bg-indigo-50 dark:bg-indigo-500/10 border-t border-indigo-100 dark:border-indigo-500/20 px-4 py-2 flex items-center gap-2">
-                <Sparkles size={14} className="text-indigo-500 flex-shrink-0" />
-                <span className="text-sm text-indigo-700 dark:text-indigo-300 flex-1">{suggestion}</span>
-                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600">ใช้</button>
+              <div className="bg-aurora-teal/10 dark:bg-aurora-tealDeep/10 border-t border-aurora-teal/15 dark:border-aurora-tealDeep/20 px-4 py-2 flex items-center gap-2">
+                <Sparkles size={14} className="text-aurora-tealDeep flex-shrink-0" />
+                <span className="text-sm text-aurora-teal dark:text-aurora-teal flex-1">{suggestion}</span>
+                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-aurora-tealDeep text-white px-2 py-1 rounded hover:bg-aurora-teal">ใช้</button>
                 <button onClick={() => setSuggestion('')}><X size={14} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300" /></button>
               </div>
             )}
@@ -528,12 +528,12 @@ export default function Inbox() {
               <button
                 onClick={getSuggestion}
                 title="AI suggest reply"
-                className="text-gray-400 dark:text-slate-500 hover:text-indigo-500 transition-colors flex-shrink-0"
+                className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
               >
                 <Sparkles size={20} />
               </button>
               <input
-                className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-gray-400 dark:placeholder:text-slate-500"
+                className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="พิมพ์ข้อความ..."
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -542,7 +542,7 @@ export default function Inbox() {
               <button
                 onClick={() => handleSend()}
                 disabled={!input.trim() || sending}
-                className="bg-emerald-500 text-white rounded-xl px-4 py-2 hover:bg-emerald-600 disabled:opacity-40 transition-colors flex-shrink-0"
+                className="bg-aurora-tealDeep text-white rounded-xl px-4 py-2 hover:bg-aurora-teal disabled:opacity-40 transition-colors flex-shrink-0"
               >
                 <Send size={18} />
               </button>
@@ -562,7 +562,7 @@ export default function Inbox() {
           )}
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-600 bg-gray-50 dark:bg-slate-950">
+        <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-600 bg-gray-50 dark:bg-aurora-midnight">
           <div className="text-center">
             <div className="text-5xl mb-3">💬</div>
             <p>เลือกการสนทนาเพื่อเริ่มต้น</p>

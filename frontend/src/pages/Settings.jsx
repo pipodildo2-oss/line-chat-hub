@@ -13,7 +13,7 @@ function CopyButton({ text }) {
   }
   return (
     <button onClick={copy} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
-      {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+      {copied ? <Check size={14} className="text-aurora-tealDeep" /> : <Copy size={14} />}
     </button>
   );
 }
@@ -80,13 +80,13 @@ function AgentChannelAccess({ agentItem, channels, onSave }) {
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {channels.map(ch => (
               <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer text-gray-700 dark:text-slate-200">
-                <input type="checkbox" checked={selectedIds.includes(ch.id)} onChange={() => toggle(ch.id)} className="accent-indigo-500" />
+                <input type="checkbox" checked={selectedIds.includes(ch.id)} onChange={() => toggle(ch.id)} className="accent-aurora-tealDeep" />
                 {ch.name}
               </label>
             ))}
           </div>
           <div className="flex gap-2 mt-2">
-            <button onClick={save} disabled={saving} className="text-xs bg-indigo-500 text-white rounded-lg px-3 py-1.5 hover:bg-indigo-600 disabled:opacity-50">บันทึก</button>
+            <button onClick={save} disabled={saving} className="text-xs bg-aurora-tealDeep text-white rounded-lg px-3 py-1.5 hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
             <button onClick={() => setOpen(false)} className="text-xs text-gray-500 dark:text-slate-400 px-3 py-1.5">ยกเลิก</button>
           </div>
         </div>
@@ -188,7 +188,7 @@ export default function Settings() {
     setTags(prev => prev.filter(t => t.id !== id));
   }
 
-  const inputCls = 'w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const inputCls = 'w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500';
   const cardCls = 'bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4';
   const active = CATEGORIES.find(c => c.key === tab);
 
@@ -204,13 +204,13 @@ export default function Settings() {
               onClick={() => { setTab(c.key); setError(''); setShowAddChannel(false); setShowAddAgent(false); }}
               className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                 tab === c.key
-                  ? 'bg-indigo-50 dark:bg-indigo-500/10'
+                  ? 'bg-aurora-teal/10 dark:bg-aurora-tealDeep/10'
                   : 'hover:bg-gray-50 dark:hover:bg-slate-800'
               }`}
             >
-              <c.icon size={17} className={`mt-0.5 flex-shrink-0 ${tab === c.key ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-500'}`} />
+              <c.icon size={17} className={`mt-0.5 flex-shrink-0 ${tab === c.key ? 'text-aurora-teal dark:text-aurora-teal' : 'text-gray-400 dark:text-slate-500'}`} />
               <div className="min-w-0">
-                <p className={`text-sm font-medium ${tab === c.key ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-slate-300'}`}>{c.label}</p>
+                <p className={`text-sm font-medium ${tab === c.key ? 'text-aurora-teal dark:text-aurora-teal' : 'text-gray-700 dark:text-slate-300'}`}>{c.label}</p>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 leading-snug">{c.desc}</p>
               </div>
             </button>
@@ -240,12 +240,12 @@ export default function Settings() {
                 <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
                 <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
                 <div className="flex gap-2">
-                  <button type="submit" disabled={saving} className="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600 disabled:opacity-50">บันทึก</button>
+                  <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
                 </div>
               </form>
             ) : (
-              <button onClick={() => setShowAddChannel(true)} className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
+              <button onClick={() => setShowAddChannel(true)} className="flex items-center gap-2 text-sm text-aurora-teal dark:text-aurora-teal hover:text-aurora-teal dark:hover:text-aurora-teal font-medium">
                 <Plus size={18} /> เพิ่ม LINE OA
               </button>
             )}
@@ -257,7 +257,7 @@ export default function Settings() {
           <div className="space-y-3">
             {agents.map(a => (
               <div key={a.id} className={`${cardCls} flex items-center gap-3`}>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white font-medium flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium flex-shrink-0">
                   {a.name[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -286,12 +286,12 @@ export default function Settings() {
                   <option value="admin">Admin</option>
                 </select>
                 <div className="flex gap-2">
-                  <button type="submit" disabled={saving} className="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600 disabled:opacity-50">บันทึก</button>
+                  <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-gray-500 dark:text-slate-400 px-4 py-2">ยกเลิก</button>
                 </div>
               </form>
             ) : (
-              <button onClick={() => setShowAddAgent(true)} className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
+              <button onClick={() => setShowAddAgent(true)} className="flex items-center gap-2 text-sm text-aurora-teal dark:text-aurora-teal hover:text-aurora-teal dark:hover:text-aurora-teal font-medium">
                 <Plus size={18} /> เพิ่ม Agent
               </button>
             ))}
@@ -330,7 +330,7 @@ export default function Settings() {
                   ))}
                 </div>
               </div>
-              <button type="submit" disabled={saving} className="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600 disabled:opacity-50">เพิ่มแท็ก</button>
+              <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">เพิ่มแท็ก</button>
             </form>
           </div>
         )}

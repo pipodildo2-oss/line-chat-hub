@@ -17,4 +17,4 @@ export const STATUS_COLORS = {
   closed: 'bg-gray-100 text-gray-600',
 };
 
-export const TAG_COLOR_PRESETS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#8b5cf6', '#64748b'];
+export const TAG_COLOR_PRESETS = ['#18D6C8', '#7CFF6B', '#3d276f', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444', '#64748b'];
