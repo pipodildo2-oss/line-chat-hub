@@ -1,27 +1,17 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 
-const ThemeContext = createContext(null);
-
-function getInitialTheme() {
-  const saved = localStorage.getItem('theme');
-  if (saved === 'light' || saved === 'dark') return saved;
-  return 'light';
-}
+// The app has a single visual theme now — the Aurora dark palette.
+// This context stays in place (rather than deleting it) only so components
+// that used `useTheme()` for chart colors etc. keep working unchanged.
+const ThemeContext = createContext({ theme: 'dark' });
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(getInitialTheme);
-
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  function toggleTheme() {
-    setTheme(t => (t === 'dark' ? 'light' : 'dark'));
-  }
+    document.documentElement.classList.add('dark');
+  }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme: 'dark' }}>
       {children}
     </ThemeContext.Provider>
   );
