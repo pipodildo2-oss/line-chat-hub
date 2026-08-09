@@ -12,9 +12,26 @@ function getClient(accessToken) {
 async function processLineEvent(channel, event) {
     if (event.type !== 'message') return;
 
+    // LINE's webhook delivery is "at least once" — it can redeliver the same event
+    // (e.g. after a network blip). Skip if we've already recorded this exact message.
+    const lineMessageId = event.message?.id || null;
+    if (lineMessageId) {
+      const existing = await prisma.message.findUnique({ where: { lineMessageId } });
+      if (existing) {
+        console.log('Duplicate LINE message skipped:', lineMessageId);
+        return;
+      }
+    }
+
     const lineUserId = event.source.userId;
     let displayName = lineUserId;
     let pictureUrl = null;
+
+    // Use the time LINE says the customer actually sent the message, not the time
+    // we happen to process it. This matters when a message arrives late (e.g. via
+    // LINE's webhook redelivery after downtime) — without this, a message sent an
+    // hour ago could jump in front of newer ones once it's finally processed.
+    const sentAt = event.timestamp ? new Date(event.timestamp) : new Date();
 
     // Fetch user profile
     try {
@@ -26,17 +43,31 @@ async function processLineEvent(channel, event) {
       console.warn('Could not fetch profile:', e.message);
     }
 
+    // Only bump lastMessageAt if this message is actually newer than what we have —
+    // a late-arriving old message (from redelivery) shouldn't make a conversation
+    // jump to the top of the inbox as if it just happened.
+    const existingConv = await prisma.conversation.findUnique({
+      where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
+      select: { lastMessageAt: true },
+    });
+    const bumpLastMessageAt = !existingConv?.lastMessageAt || sentAt > existingConv.lastMessageAt;
+
     // Upsert conversation
     const conversation = await prisma.conversation.upsert({
       where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
-      update: { displayName, pictureUrl, status: 'open', lastMessageAt: new Date() },
+      update: {
+        displayName,
+        pictureUrl,
+        status: 'open',
+        ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
+      },
       create: {
         lineUserId,
         displayName,
         pictureUrl,
         channelId: channel.id,
         status: 'open',
-        lastMessageAt: new Date(),
+        lastMessageAt: sentAt,
       },
       include: { channel: true, agent: true },
     });
@@ -65,16 +96,29 @@ async function processLineEvent(channel, event) {
       content = `[${type}]`;
     }
 
-    const message = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        sender: 'user',
-        senderName: displayName,
-        type,
-        content,
-        metadata: metadata ? JSON.stringify(metadata) : null,
-      },
-    });
+    let message;
+    try {
+      message = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: 'user',
+          senderName: displayName,
+          type,
+          content,
+          metadata: metadata ? JSON.stringify(metadata) : null,
+          lineMessageId,
+          createdAt: sentAt,
+        },
+      });
+    } catch (err) {
+      // Race-condition safety net: two workers processed a redelivered event
+      // at nearly the same time and both passed the earlier check.
+      if (err.code === 'P2002') {
+        console.log('Duplicate LINE message skipped (race):', lineMessageId);
+        return;
+      }
+      throw err;
+    }
 
     // Emit real-time events
     emitToConversation(conversation.id, 'new_message', { message, conversation });

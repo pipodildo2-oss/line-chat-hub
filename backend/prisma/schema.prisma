@@ -98,6 +98,7 @@ model Message {
   content        String
   metadata       String?      // JSON string for images, stickers etc
   read           Boolean      @default(false)
+  lineMessageId  String?      @unique // LINE's own message id — used to reject duplicate webhook redeliveries
   createdAt      DateTime     @default(now())
 
   @@index([conversationId, createdAt])

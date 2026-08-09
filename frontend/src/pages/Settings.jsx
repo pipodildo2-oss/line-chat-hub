@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
 
@@ -36,6 +36,13 @@ function ChannelCard({ channel, onDelete }) {
         <CopyButton text={webhookUrl} />
       </div>
       <p className="text-xs text-gray-400 mt-1.5">ตั้ง Webhook URL นี้ใน LINE Developers Console</p>
+      <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 mt-2">
+        <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-amber-700">
+          อย่าลืมเปิด <strong>"Use webhook redelivery"</strong> ในหน้า Messaging API ของ LINE Developers Console ด้วย —
+          ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร ไม่สามารถกู้คืนได้
+        </p>
+      </div>
     </div>
   );
 }
@@ -122,7 +129,12 @@ export default function Settings() {
   }
 
   async function deleteChannel(id) {
-    if (!confirm('ลบช่องทางนี้?')) return;
+    const ch = channels.find(c => c.id === id);
+    const convCount = ch?._count?.conversations || 0;
+    const warning = convCount > 0
+      ? `ลบ "${ch.name}" ถาวร?\n\nการสนทนาทั้งหมด ${convCount} รายการและข้อความในนั้นจะถูกลบถาวรไปด้วย กู้คืนไม่ได้`
+      : `ลบ "${ch?.name || 'ช่องทางนี้'}" ถาวร? การกระทำนี้กู้คืนไม่ได้`;
+    if (!confirm(warning)) return;
     await axios.delete(`/api/channels/${id}`);
     setChannels(prev => prev.filter(c => c.id !== id));
   }
@@ -142,7 +154,7 @@ export default function Settings() {
 
   async function deleteAgent(id) {
     if (id === agent?.id) return alert('ไม่สามารถลบตัวเองได้');
-    if (!confirm('ลบ agent นี้?')) return;
+    if (!confirm('ลบ agent นี้? แชทที่เคย assign ให้ agent นี้จะยังอยู่ครบ แค่กลายเป็นยังไม่ได้ assign')) return;
     await axios.delete(`/api/agents/${id}`);
     setAgents(prev => prev.filter(a => a.id !== id));
   }
@@ -165,7 +177,7 @@ export default function Settings() {
   }
 
   async function deleteTag(id) {
-    if (!confirm('ลบแท็กนี้?')) return;
+    if (!confirm('ลบแท็กนี้? แท็กจะถูกลบออกจากทุกการสนทนาที่ติดไว้ (การสนทนาและข้อความไม่ถูกลบ)')) return;
     await axios.delete(`/api/tags/${id}`);
     setTags(prev => prev.filter(t => t.id !== id));
   }

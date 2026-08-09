@@ -19,6 +19,12 @@ const { processLineEvent } = require('./services/line.service');
 
 const prisma = new PrismaClient();
 const app = express();
+
+// Railway sits in front of the app behind a proxy (Hikari). Trusting it means
+// req.ip reflects the real visitor IP instead of the proxy's — needed for
+// rate limiting (below) to key off the right client instead of blocking everyone at once.
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
@@ -47,7 +53,7 @@ if (process.env.REDIS_URL) {
 
 // Start the webhook queue worker: looks up the channel for each queued event
 // and hands it to the same processing logic that used to run inline.
-startWorker(async (channelId, event) => {
+const worker = startWorker(async (channelId, event) => {
   const channel = await prisma.lineChannel.findUnique({ where: { id: channelId } });
   if (!channel) return;
   await processLineEvent(channel, event);
@@ -68,7 +74,16 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/tags', tagRoutes);
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// Checks the process is alive AND can actually reach the database — a plain
+// "process is running" check can stay green while the DB connection is dead.
+app.get('/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: 'ok' });
+  } catch (err) {
+    res.status(503).json({ status: 'degraded', db: 'unreachable', error: err.message });
+  }
+});
 
 // Serve frontend static files (production)
 const path = require('path');
@@ -89,3 +104,31 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+
+// Graceful shutdown: when Railway redeploys, it sends SIGTERM before killing the
+// process. Without this, in-flight HTTP requests and the queue worker get cut
+// off mid-work. Draining them first means a redeploy doesn't drop customer messages.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down gracefully...`);
+  const timeout = setTimeout(() => {
+    console.warn('Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 10000);
+
+  try {
+    if (worker) await worker.close();
+    await new Promise((resolve) => httpServer.close(resolve));
+    await prisma.$disconnect();
+    clearTimeout(timeout);
+    console.log('Shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err.message);
+    process.exit(1);
+  }
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

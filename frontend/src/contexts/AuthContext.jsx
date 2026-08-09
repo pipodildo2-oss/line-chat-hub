@@ -34,6 +34,24 @@ export function AuthProvider({ children }) {
     setAgent(null);
   }
 
+  // If the token expires (7 days) or is otherwise rejected, API calls start
+  // failing with 401 but the UI would just look broken with no clear reason.
+  // Force a clean logout + redirect so the agent immediately sees the login screen.
+  useEffect(() => {
+    const id = axios.interceptors.response.use(
+      (res) => res,
+      (err) => {
+        const isLoginRequest = err.config?.url?.includes('/api/auth/login');
+        if (err.response?.status === 401 && !isLoginRequest) {
+          logout();
+          if (window.location.pathname !== '/login') window.location.href = '/login';
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => axios.interceptors.response.eject(id);
+  }, []);
+
   return (
     <AuthContext.Provider value={{ token, agent, login, logout }}>
       {children}
