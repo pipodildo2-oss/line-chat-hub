@@ -8,7 +8,7 @@ export default {
         aurora: {
           midnight: '#070B18',
           teal: '#18D6C8',
-          tealDeep: '#0B8F84',
+          tealDeep: '#0C7A9E',
           green: '#7CFF6B',
           purple: '#3d276f',
           mist: '#D9FBFF',
