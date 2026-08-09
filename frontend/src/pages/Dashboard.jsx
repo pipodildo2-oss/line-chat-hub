@@ -54,7 +54,7 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={MessageSquare} label="การสนทนาทั้งหมด" value={data.totalConversations} color="bg-aurora-tealDeep" />
+        <StatCard icon={MessageSquare} label="การสนทนาทั้งหมด" value={data.totalConversations} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
         <StatCard icon={Clock} label="กำลังเปิด" value={data.openConversations} color="bg-aurora-purple" />
         <StatCard icon={CheckCircle} label="ปิดแล้ว" value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" />
         <StatCard icon={Users} label={`การสนทนาใหม่ (${days}วัน)`} value={data.newConversations} color="bg-amber-500" />

@@ -51,7 +51,7 @@ export default function Sidebar() {
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors
                     ${isActive
-                      ? 'bg-aurora-tealDeep/15 text-aurora-teal'
+                      ? 'bg-gradient-to-r from-aurora-teal/20 to-aurora-purple/20 text-aurora-teal'
                       : 'text-slate-400 hover:bg-slate-800'}`
                   }
                 >

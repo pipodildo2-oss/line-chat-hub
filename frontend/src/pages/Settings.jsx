@@ -86,7 +86,7 @@ function AgentChannelAccess({ agentItem, channels, onSave }) {
             ))}
           </div>
           <div className="flex gap-2 mt-2">
-            <button onClick={save} disabled={saving} className="text-xs bg-aurora-tealDeep text-white rounded-lg px-3 py-1.5 hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
+            <button onClick={save} disabled={saving} className="text-xs bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-3 py-1.5 hover:brightness-110 disabled:opacity-50">บันทึก</button>
             <button onClick={() => setOpen(false)} className="text-xs text-gray-500 dark:text-slate-400 px-3 py-1.5">ยกเลิก</button>
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function Settings() {
               onClick={() => { setTab(c.key); setError(''); setShowAddChannel(false); setShowAddAgent(false); }}
               className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                 tab === c.key
-                  ? 'bg-aurora-teal/10 dark:bg-aurora-tealDeep/10'
+                  ? 'bg-gradient-to-r from-aurora-teal/15 to-aurora-purple/15'
                   : 'hover:bg-gray-50 dark:hover:bg-slate-800'
               }`}
             >
@@ -240,7 +240,7 @@ export default function Settings() {
                 <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
                 <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
                 <div className="flex gap-2">
-                  <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
+                  <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
                 </div>
               </form>
@@ -286,7 +286,7 @@ export default function Settings() {
                   <option value="admin">Admin</option>
                 </select>
                 <div className="flex gap-2">
-                  <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">บันทึก</button>
+                  <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-gray-500 dark:text-slate-400 px-4 py-2">ยกเลิก</button>
                 </div>
               </form>
@@ -330,7 +330,7 @@ export default function Settings() {
                   ))}
                 </div>
               </div>
-              <button type="submit" disabled={saving} className="bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm hover:bg-aurora-teal disabled:opacity-50">เพิ่มแท็ก</button>
+              <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">เพิ่มแท็ก</button>
             </form>
           </div>
         )}

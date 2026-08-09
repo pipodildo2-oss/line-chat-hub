@@ -30,7 +30,7 @@ export default class ErrorBoundary extends Component {
             <p className="text-sm text-gray-500 mb-5">หน้านี้มีปัญหาชั่วคราว ลองรีเฟรชอีกครั้ง ข้อมูลของคุณยังปลอดภัยอยู่</p>
             <button
               onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 bg-aurora-tealDeep text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-aurora-teal transition-colors"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 transition-all"
             >
               <RefreshCw size={15} /> รีเฟรชหน้า
             </button>

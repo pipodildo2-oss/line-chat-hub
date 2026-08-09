@@ -39,7 +39,7 @@ function ConversationItem({ conv, selected, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors flex gap-3 ${selected ? 'bg-aurora-teal/10 dark:bg-aurora-tealDeep/10 border-l-2 border-l-aurora-tealDeep' : ''}`}
+      className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors flex gap-3 ${selected ? 'bg-gradient-to-r from-aurora-teal/10 to-aurora-purple/10 border-l-2 border-l-aurora-teal' : ''}`}
     >
       <Avatar name={conv.displayName} pictureUrl={conv.pictureUrl} />
       <div className="flex-1 min-w-0">
@@ -95,7 +95,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
             <button
               key={s || 'all'}
               onClick={() => setFilter(f => ({ ...f, status: s }))}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               {s === '' ? 'ทั้งหมด' : s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
             </button>
@@ -107,7 +107,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
         <div className="flex gap-1 flex-wrap">
           <button
             onClick={() => setFilter(f => ({ ...f, lifecycleStage: '' }))}
-            className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === '' ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === '' ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
           >
             ทั้งหมด
           </button>
@@ -154,7 +154,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setFilter(f => ({ ...f, tagId: '' }))}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.tagId === '' ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.tagId === '' ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               ทั้งหมด
             </button>
@@ -429,7 +429,7 @@ export default function Inbox() {
             </div>
             <button
               onClick={() => setShowFilters(v => !v)}
-              className={`relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${showFilters || activeFilterCount ? 'bg-aurora-tealDeep border-aurora-tealDeep text-white' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              className={`relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${showFilters || activeFilterCount ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple border-transparent text-white' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               <SlidersHorizontal size={15} />
               {activeFilterCount > 0 && !showFilters && (
@@ -442,7 +442,7 @@ export default function Inbox() {
               <button
                 key={s}
                 onClick={() => setFilter(f => ({ ...f, status: f.status === s ? '' : s }))}
-                className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-aurora-tealDeep text-white border-aurora-tealDeep' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
               >
                 {s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
               </button>
@@ -500,7 +500,7 @@ export default function Inbox() {
               </select>
               <button
                 onClick={() => setShowDetail(v => !v)}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showDetail ? 'bg-aurora-teal/15 dark:bg-aurora-tealDeep/20 text-aurora-teal dark:text-aurora-teal' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showDetail ? 'bg-gradient-to-r from-aurora-teal/20 to-aurora-purple/20 text-aurora-teal' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
                 title="รายละเอียดลูกค้า"
               >
                 <Info size={16} />
@@ -515,10 +515,10 @@ export default function Inbox() {
 
             {/* AI suggestion */}
             {suggestion && (
-              <div className="bg-aurora-teal/10 dark:bg-aurora-tealDeep/10 border-t border-aurora-teal/15 dark:border-aurora-tealDeep/20 px-4 py-2 flex items-center gap-2">
-                <Sparkles size={14} className="text-aurora-tealDeep flex-shrink-0" />
-                <span className="text-sm text-aurora-teal dark:text-aurora-teal flex-1">{suggestion}</span>
-                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-aurora-tealDeep text-white px-2 py-1 rounded hover:bg-aurora-teal">ใช้</button>
+              <div className="bg-gradient-to-r from-aurora-teal/10 to-aurora-purple/10 border-t border-aurora-teal/20 px-4 py-2 flex items-center gap-2">
+                <Sparkles size={14} className="text-aurora-teal flex-shrink-0" />
+                <span className="text-sm text-aurora-teal flex-1">{suggestion}</span>
+                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-gradient-to-r from-aurora-teal to-aurora-purple text-white px-2 py-1 rounded hover:brightness-110">ใช้</button>
                 <button onClick={() => setSuggestion('')}><X size={14} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300" /></button>
               </div>
             )}
@@ -542,7 +542,7 @@ export default function Inbox() {
               <button
                 onClick={() => handleSend()}
                 disabled={!input.trim() || sending}
-                className="bg-aurora-tealDeep text-white rounded-xl px-4 py-2 hover:bg-aurora-teal disabled:opacity-40 transition-colors flex-shrink-0"
+                className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-xl px-4 py-2 hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
               >
                 <Send size={18} />
               </button>
