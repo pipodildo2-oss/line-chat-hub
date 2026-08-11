@@ -8,10 +8,19 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
 
+// Tailwind's JIT compiler only picks up class names it can see literally in the
+// source, so `w-${size}` (a runtime template string) never gets generated and the
+// avatar ends up with no size constraint at all. Map to static classes instead.
+const AVATAR_SIZE_CLASSES = {
+  10: 'w-10 h-10',
+  16: 'w-16 h-16',
+};
+
 function Avatar({ name, pictureUrl, size = 10 }) {
-  if (pictureUrl) return <img src={pictureUrl} className={`w-${size} h-${size} rounded-full object-cover flex-shrink-0`} />;
+  const sizeCls = AVATAR_SIZE_CLASSES[size] || AVATAR_SIZE_CLASSES[10];
+  if (pictureUrl) return <img src={pictureUrl} className={`${sizeCls} rounded-full object-cover flex-shrink-0`} />;
   return (
-    <div className={`w-${size} h-${size} rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium text-sm flex-shrink-0`}>
+    <div className={`${sizeCls} rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium text-sm flex-shrink-0`}>
       {name?.[0]?.toUpperCase() || '?'}
     </div>
   );
