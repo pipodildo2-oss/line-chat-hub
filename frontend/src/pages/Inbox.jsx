@@ -124,31 +124,56 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">ช่องทาง</p>
-          <select
-            className="w-full text-xs border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
-            value={filter.channelId}
-            onChange={e => setFilter(f => ({ ...f, channelId: e.target.value }))}
-          >
-            <option value="">ทุก OA</option>
-            {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+      <div>
+        <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">เรียงตาม</p>
+        <div className="flex gap-1 flex-wrap">
+          {[
+            { key: 'newest', label: 'ใหม่สุด → เก่าสุด' },
+            { key: 'oldest', label: 'เก่าสุด → ใหม่สุด' },
+          ].map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setFilter(f => ({ ...f, sort: opt.key }))}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${(filter.sort || 'newest') === opt.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
-        <div>
-          <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">พนักงาน</p>
-          <select
-            className="w-full text-xs border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
-            value={filter.agentId}
-            onChange={e => setFilter(f => ({ ...f, agentId: e.target.value }))}
-          >
-            <option value="">ทั้งหมด</option>
-            <option value="me">ของฉัน</option>
-            <option value="unassigned">ยังไม่ assign</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">ช่องทาง</p>
+        <div className="border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-32 overflow-y-auto bg-white dark:bg-slate-700">
+          {channels.map(c => (
+            <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                className="accent-aurora-teal"
+                checked={filter.channelIds.includes(c.id)}
+                onChange={() => setFilter(f => ({
+                  ...f,
+                  channelIds: f.channelIds.includes(c.id) ? f.channelIds.filter(x => x !== c.id) : [...f.channelIds, c.id],
+                }))}
+              />
+              {c.name}
+            </label>
+          ))}
+          {channels.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
         </div>
+        <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">ไม่เลือก = ทุก OA</p>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">พนักงาน</p>
+        <select
+          className="w-full text-xs border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={filter.agentId}
+          onChange={e => setFilter(f => ({ ...f, agentId: e.target.value }))}
+        >
+          <option value="">ทั้งหมด</option>
+          <option value="me">ของฉัน</option>
+          <option value="unassigned">ยังไม่ assign</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
       </div>
       {tags.length > 0 && (
         <div>
@@ -294,7 +319,7 @@ export default function Inbox() {
   const [agents, setAgents] = useState([]);
   const [channels, setChannels] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filter, setFilter] = useState({ status: 'open', channelId: '', search: '', tagId: '', lifecycleStage: '', agentId: '' });
+  const [filter, setFilter] = useState({ status: 'open', channelIds: [], search: '', tagId: '', lifecycleStage: '', agentId: '', sort: 'newest' });
   const [showFilters, setShowFilters] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [sending, setSending] = useState(false);
@@ -302,7 +327,7 @@ export default function Inbox() {
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
-    if (filter.channelId) n++;
+    if (filter.channelIds.length > 0) n++;
     if (filter.tagId) n++;
     if (filter.lifecycleStage) n++;
     if (filter.agentId) n++;
@@ -311,7 +336,10 @@ export default function Inbox() {
 
   const loadConversations = useCallback(async () => {
     const params = {};
-    Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
+    Object.entries(filter).forEach(([k, v]) => {
+      if (k === 'channelIds') { if (v.length > 0) params.channelIds = v.join(','); return; }
+      if (v) params[k] = v;
+    });
     const { data } = await axios.get('/api/conversations', { params });
     setConversations(data.conversations);
   }, [filter]);
@@ -349,12 +377,13 @@ export default function Inbox() {
         if (idx === -1) return [conv, ...prev];
         const next = [...prev];
         next[idx] = { ...next[idx], ...conv };
-        return next.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+        const dir = filter.sort === 'oldest' ? 1 : -1;
+        return next.sort((a, b) => dir * (new Date(b.lastMessageAt) - new Date(a.lastMessageAt)));
       });
       setSelected(prev => (prev?.id === conv.id ? { ...prev, ...conv } : prev));
     });
     return () => { socket.off('new_message'); socket.off('conversation_updated'); };
-  }, [socket, selected?.id]);
+  }, [socket, selected?.id, filter.sort]);
 
   async function handleSend(text) {
     const content = (text || input).trim();

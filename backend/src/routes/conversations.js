@@ -21,12 +21,17 @@ async function getVisibleChannelIds(agent) {
 
 // GET /api/conversations
 router.get('/', auth, async (req, res) => {
-  const { status, channelId, agentId, search, tagId, lifecycleStage, page = 1, limit = 30 } = req.query;
+  const { status, channelId, channelIds, agentId, search, tagId, lifecycleStage, sort = 'newest', page = 1, limit = 30 } = req.query;
+
+  // Support both a single channelId (legacy) and a multi-select channelIds list (comma-separated).
+  let selectedChannelIds = [];
+  if (channelIds) selectedChannelIds = String(channelIds).split(',').filter(Boolean);
+  else if (channelId) selectedChannelIds = [channelId];
 
   const where = {};
   if (status) where.status = status;
   if (lifecycleStage) where.lifecycleStage = lifecycleStage;
-  if (channelId) where.channelId = channelId;
+  if (selectedChannelIds.length > 0) where.channelId = { in: selectedChannelIds };
   if (agentId === 'me') where.agentId = req.agent.id;
   else if (agentId === 'unassigned') where.agentId = null;
   else if (agentId) where.agentId = agentId;
@@ -40,9 +45,14 @@ router.get('/', auth, async (req, res) => {
 
   const visibleChannelIds = await getVisibleChannelIds(req.agent);
   if (visibleChannelIds) {
-    where.channelId = channelId ? channelId : { in: visibleChannelIds };
-    if (channelId && !visibleChannelIds.includes(channelId)) {
-      return res.json({ conversations: [], total: 0, page: Number(page), limit: Number(limit) });
+    if (selectedChannelIds.length > 0) {
+      const allowed = selectedChannelIds.filter(id => visibleChannelIds.includes(id));
+      if (allowed.length === 0) {
+        return res.json({ conversations: [], total: 0, page: Number(page), limit: Number(limit) });
+      }
+      where.channelId = { in: allowed };
+    } else {
+      where.channelId = { in: visibleChannelIds };
     }
   }
 
@@ -59,7 +69,7 @@ router.get('/', auth, async (req, res) => {
         },
         _count: { select: { messages: { where: { read: false, sender: 'user' } } } },
       },
-      orderBy: { lastMessageAt: 'desc' },
+      orderBy: { lastMessageAt: sort === 'oldest' ? 'asc' : 'desc' },
       skip: (page - 1) * limit,
       take: Number(limit),
     }),
