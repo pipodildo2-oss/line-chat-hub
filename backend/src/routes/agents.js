@@ -69,6 +69,40 @@ router.patch('/me/password', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/agents/:id — admin updates another agent's role
+router.patch('/:id', auth, async (req, res) => {
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    const { role } = req.body;
+    const data = {};
+    if (role !== undefined) data.role = role;
+    const updated = await prisma.agent.update({
+      where: { id: req.params.id },
+      data,
+      select: { id: true, name: true, email: true, role: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/agents/:id/password — admin resets another agent's password
+router.patch('/:id/password', auth, async (req, res) => {
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' });
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.agent.update({ where: { id: req.params.id }, data: { password: hashed } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/agents/:id
 router.delete('/:id', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });

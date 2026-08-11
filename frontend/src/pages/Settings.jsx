@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -217,50 +217,121 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
   );
 }
 
-function AgentChannelAccess({ agentItem, channels, onSave }) {
-  const [open, setOpen] = useState(false);
+function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
+  const [role, setRole] = useState(agentItem.role);
   const [selectedIds, setSelectedIds] = useState(agentItem.channelIds || []);
+  const [newPassword, setNewPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
+  const [error, setError] = useState('');
 
-  function toggle(id) {
+  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+
+  function toggleChannel(id) {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
-  async function save() {
-    setSaving(true);
+  async function handleSave() {
+    setSaving(true); setError('');
     try {
-      await onSave(agentItem.id, selectedIds);
-      setOpen(false);
+      await onSave(agentItem.id, { role, channelIds: selectedIds });
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
     } finally { setSaving(false); }
   }
 
-  const label = selectedIds.length === 0 ? 'มองเห็นทุก OA' : `${selectedIds.length} OA ที่เลือก`;
+  async function handleResetPassword() {
+    if (!newPassword || newPassword.length < 6) { setError('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร'); return; }
+    setResetting(true); setError('');
+    try {
+      await axios.patch(`/api/agents/${agentItem.id}/password`, { newPassword });
+      setNewPassword('');
+      setResetDone(true);
+      setTimeout(() => setResetDone(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setResetting(false); }
+  }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 text-xs text-slate-400 border border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-slate-500"
-      >
-        <Radio size={12} /> {label}
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-lg z-20 p-3 w-56">
-          <p className="text-xs font-medium text-slate-400 mb-2">เลือก OA ที่ agent นี้เห็นได้ (ไม่เลือก = เห็นทั้งหมด)</p>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {channels.map(ch => (
-              <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-slate-700 cursor-pointer text-slate-200">
-                <input type="checkbox" checked={selectedIds.includes(ch.id)} onChange={() => toggle(ch.id)} className="accent-aurora-teal" />
-                {ch.name}
-              </label>
-            ))}
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-100">{agentItem.name}</h3>
+            <p className="text-xs text-slate-500">{agentItem.email}</p>
           </div>
-          <div className="flex gap-2 mt-2">
-            <button onClick={save} disabled={saving} className="text-xs bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-3 py-1.5 hover:brightness-110 disabled:opacity-50">บันทึก</button>
-            <button onClick={() => setOpen(false)} className="text-xs text-slate-400 px-3 py-1.5">ยกเลิก</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+        </div>
+
+        {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
+
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>{t('role')}</label>
+            <select className={fieldCls} value={role} onChange={e => setRole(e.target.value)}>
+              <option value="agent">Agent</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={labelCls}>{t('channel_visibility')}</label>
+            <div className="border border-slate-700 rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto">
+              {channels.map(ch => (
+                <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-slate-800 cursor-pointer text-slate-200">
+                  <input type="checkbox" checked={selectedIds.includes(ch.id)} onChange={() => toggleChannel(ch.id)} className="accent-aurora-teal" />
+                  {ch.name}
+                </label>
+              ))}
+              {channels.length === 0 && <p className="text-xs text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = มองเห็นทุกช่องทาง</p>
+          </div>
+
+          <div className="border-t border-slate-800 pt-4">
+            <label className={labelCls}>{t('reset_password')}</label>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  className={`${fieldCls} pr-10`}
+                  placeholder={t('new_password')}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={resetting || !newPassword}
+                className="text-sm text-rose-400 hover:text-rose-300 font-medium border border-rose-500/30 rounded-lg px-3 py-2 hover:bg-rose-500/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+              >
+                {t('reset_password')}
+              </button>
+            </div>
+            {resetDone && <span className="flex items-center gap-1 text-xs text-aurora-teal mt-1.5"><Check size={13} /> เปลี่ยนรหัสผ่านแล้ว</span>}
           </div>
         </div>
-      )}
+
+        <div className="flex items-center gap-3 mt-5">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all"
+          >
+            {t('save')}
+          </button>
+          <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">{t('cancel')}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -277,11 +348,13 @@ function useCategories() {
 export default function Settings() {
   const { tab } = useParams();
   const { agent } = useAuth();
+  const { t } = useLanguage();
   const [channels, setChannels] = useState([]);
   const [agents, setAgents] = useState([]);
   const [tags, setTags] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [manageChannelId, setManageChannelId] = useState(null);
+  const [editAgentTarget, setEditAgentTarget] = useState(null);
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [showAgentPassword, setShowAgentPassword] = useState(false);
@@ -342,9 +415,13 @@ export default function Settings() {
     setAgents(prev => prev.filter(a => a.id !== id));
   }
 
-  async function saveAgentChannels(agentId, channelIds) {
+  async function saveAgentEdit(agentId, { role, channelIds }) {
+    const original = agents.find(a => a.id === agentId);
+    if (role !== original?.role) {
+      await axios.patch(`/api/agents/${agentId}`, { role });
+    }
     await axios.put(`/api/agents/${agentId}/channels`, { channelIds });
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, channelIds } : a));
+    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, role, channelIds } : a));
   }
 
   async function addTag(e) {
@@ -424,25 +501,42 @@ export default function Settings() {
 
       {/* Agents */}
       {tab === 'agents' && (
-        <div className="space-y-3 max-w-2xl">
-          {agents.map(a => (
-            <div key={a.id} className={`${cardCls} flex items-center gap-3`}>
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium flex-shrink-0">
-                {a.name[0].toUpperCase()}
+        <div className="space-y-6 max-w-2xl">
+          {[
+            { key: 'admins', label: t('section_admins'), rows: agents.filter(a => a.role === 'admin') },
+            { key: 'agents', label: t('section_agents'), rows: agents.filter(a => a.role !== 'admin') },
+          ].map(group => (
+            group.rows.length > 0 && (
+              <div key={group.key}>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">{group.label}</p>
+                <div className="space-y-3">
+                  {group.rows.map(a => (
+                    <div key={a.id} className={`${cardCls} flex items-center gap-3`}>
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium flex-shrink-0">
+                        {a.name[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-100 text-sm">{a.name}</p>
+                        <p className="text-xs text-slate-500">{a.email} · {a.role}</p>
+                      </div>
+                      {agent?.role === 'admin' && a.id !== agent?.id && (
+                        <button
+                          onClick={() => setEditAgentTarget(a)}
+                          className="flex items-center gap-1.5 text-xs text-slate-400 border border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-slate-500 hover:text-slate-200"
+                        >
+                          <Pencil size={12} /> {t('edit')}
+                        </button>
+                      )}
+                      {a.id !== agent?.id && agent?.role === 'admin' && (
+                        <button onClick={() => deleteAgent(a.id)} className="text-slate-600 hover:text-rose-400">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-100 text-sm">{a.name}</p>
-                <p className="text-xs text-slate-500">{a.email} · {a.role}</p>
-              </div>
-              {agent?.role === 'admin' && a.role !== 'admin' && (
-                <AgentChannelAccess agentItem={a} channels={channels} onSave={saveAgentChannels} />
-              )}
-              {a.id !== agent?.id && agent?.role === 'admin' && (
-                <button onClick={() => deleteAgent(a.id)} className="text-slate-600 hover:text-rose-400">
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </div>
+            )
           ))}
 
           {agent?.role === 'admin' && (showAddAgent ? (
@@ -522,6 +616,15 @@ export default function Settings() {
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />
+      {editAgentTarget && (
+        <AgentEditModal
+          agentItem={editAgentTarget}
+          channels={channels}
+          onSave={saveAgentEdit}
+          onClose={() => setEditAgentTarget(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 }
