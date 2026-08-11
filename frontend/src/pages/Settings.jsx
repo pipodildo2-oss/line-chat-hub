@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle, ArrowLeft, QrCode, MessageCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
 
@@ -14,41 +14,158 @@ function CopyButton({ text }) {
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <button onClick={copy} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
-      {copied ? <Check size={13} className="text-aurora-teal" /> : <Copy size={13} />}
+    <button type="button" onClick={copy} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
+      {copied ? <Check size={14} className="text-aurora-teal" /> : <Copy size={14} />}
     </button>
   );
 }
 
-function ChannelTile({ channel, onRequestDelete }) {
-  const webhookUrl = `${window.location.origin}/api/webhooks/line/${channel.id}`;
+function ChannelListCard({ channel, onManage }) {
   return (
-    <div className="relative rounded-xl border border-slate-800 bg-slate-900 p-3 pt-8 flex flex-col gap-2">
-      <button
-        onClick={() => onRequestDelete(channel)}
-        title="ลบช่องทางนี้"
-        className="absolute top-2 left-2 text-slate-600 hover:text-rose-400 p-1"
-      >
-        <Trash2 size={13} />
-      </button>
-      <span
-        title={'อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'}
-        className="absolute top-2 right-2 text-amber-500 p-1 cursor-help"
-      >
-        <AlertTriangle size={14} />
-      </span>
-
-      <div className="flex flex-col items-center text-center">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 mb-1.5">
-          {channel.name?.[0]?.toUpperCase() || '?'}
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium text-slate-100 truncate">{channel.name}</p>
+          <p className="text-xs text-slate-500 truncate">LINE (ID: {channel.lineId || '—'})</p>
         </div>
-        <p className="text-sm font-medium text-slate-100 truncate w-full">{channel.name}</p>
-        <p className="text-[11px] text-slate-500 truncate w-full">{channel.lineId || 'ยังไม่ระบุ LINE ID'}</p>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white flex-shrink-0">
+          <MessageCircle size={15} />
+        </div>
+      </div>
+      <div className="border-t border-slate-800 pt-3 flex justify-end">
+        <button
+          onClick={onManage}
+          className="text-sm text-aurora-teal font-medium border border-aurora-teal/30 rounded-lg px-3 py-1.5 hover:bg-aurora-teal/10 transition-colors"
+        >
+          Manage
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
+  const [name, setName] = useState(channel.name);
+  const [lineId, setLineId] = useState(channel.lineId || '');
+  const [channelSecret, setChannelSecret] = useState(channel.channelSecret || '');
+  const [accessToken, setAccessToken] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+
+  const webhookUrl = `${window.location.origin}/api/webhooks/line/${channel.id}`;
+  const handle = lineId ? `@${lineId.replace(/^@/, '')}` : null;
+  const chatLink = handle ? `https://line.me/R/ti/p/${encodeURIComponent(handle)}` : null;
+
+  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+  const readonlyCls = 'w-full border border-slate-800 bg-slate-800/50 text-slate-500 rounded-lg px-3 py-2 text-sm cursor-not-allowed';
+
+  async function handleSave() {
+    setSaving(true); setSaved(false);
+    try {
+      await onSave(channel.id, { name, lineId, channelSecret, accessToken: accessToken || undefined });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="max-w-xl">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 mb-4">
+        <ArrowLeft size={15} /> กลับไปหน้ารายการ
+      </button>
+      <h2 className="text-lg font-semibold text-slate-100 mb-0.5">ตั้งค่า LINE OA</h2>
+      <p className="text-sm text-slate-500 mb-6">จัดการข้อมูลและการตั้งค่าของช่องทางนี้</p>
+
+      <div className="space-y-4">
+        {chatLink && (
+          <div>
+            <label className={labelCls}>Chat Link</label>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border border-slate-700 bg-slate-800 rounded-lg px-3 py-2 flex items-center gap-2">
+                <code className="text-sm text-slate-300 flex-1 truncate">{chatLink}</code>
+                <CopyButton text={chatLink} />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQr(v => !v)}
+                className="flex items-center gap-1.5 text-sm text-aurora-teal hover:brightness-110 whitespace-nowrap"
+              >
+                <QrCode size={15} /> QR code
+              </button>
+            </div>
+            {showQr && (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(chatLink)}`}
+                alt="QR code"
+                className="mt-2 rounded-lg border border-slate-700 bg-white p-2"
+                width={120}
+                height={120}
+              />
+            )}
+          </div>
+        )}
+
+        <div>
+          <label className={labelCls}>ชื่อช่องทาง</label>
+          <input className={fieldCls} value={name} onChange={e => setName(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelCls}>LINE ID</label>
+          <input className={fieldCls} placeholder="เช่น abc1234 (ไม่ต้องใส่ @)" value={lineId} onChange={e => setLineId(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelCls}>Channel Secret</label>
+          <input className={fieldCls} value={channelSecret} onChange={e => setChannelSecret(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelCls}>Channel Access Token</label>
+          <input className={fieldCls} placeholder="ปล่อยว่างไว้ถ้าไม่ต้องการเปลี่ยน" value={accessToken} onChange={e => setAccessToken(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelCls}>Channel ID</label>
+          <input className={readonlyCls} value={channel.channelId} disabled />
+        </div>
+
+        <div>
+          <label className={labelCls}>Webhook URL</label>
+          <div className="flex items-center gap-2 border border-slate-800 bg-slate-800/50 rounded-lg px-3 py-2">
+            <code className="text-sm text-slate-400 flex-1 truncate">{webhookUrl}</code>
+            <CopyButton text={webhookUrl} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all"
+          >
+            {saving ? 'กำลังบันทึก...' : 'Save Changes'}
+          </button>
+          {saved && <span className="text-sm text-aurora-teal">บันทึกแล้ว</span>}
+        </div>
       </div>
 
-      <div className="bg-slate-800 rounded-lg px-2 py-1.5 flex items-center gap-1.5 mt-1">
-        <code className="text-[10px] text-slate-400 flex-1 truncate">{webhookUrl}</code>
-        <CopyButton text={webhookUrl} />
+      <div className="mt-8 pt-6 border-t border-slate-800">
+        <h3 className="font-semibold text-slate-100 mb-3">Danger Zone</h3>
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
+          <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-amber-400">
+            ถ้าลบช่องทางนี้ การสนทนาและข้อความทั้งหมดที่เชื่อมกับช่องทางนี้จะถูกลบถาวรไปด้วย และจะไม่สามารถรับ-ส่งข้อความผ่านช่องทางนี้ได้อีก
+          </p>
+        </div>
+        <button
+          onClick={() => onRequestDelete(channel)}
+          className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+        >
+          <Trash2 size={15} /> Delete Channel
+        </button>
       </div>
     </div>
   );
@@ -159,6 +276,7 @@ export default function Settings() {
   const [agents, setAgents] = useState([]);
   const [tags, setTags] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [manageChannelId, setManageChannelId] = useState(null);
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
@@ -186,10 +304,16 @@ export default function Settings() {
     } finally { setSaving(false); }
   }
 
+  async function updateChannel(id, fields) {
+    const { data } = await axios.put(`/api/channels/${id}`, fields);
+    setChannels(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+  }
+
   async function confirmDeleteChannel(id) {
     await axios.delete(`/api/channels/${id}`);
     setChannels(prev => prev.filter(c => c.id !== id));
     setDeleteTarget(null);
+    setManageChannelId(null);
   }
 
   async function addAgent(e) {
@@ -238,6 +362,7 @@ export default function Settings() {
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
   const active = CATEGORIES[tab] || CATEGORIES.channels;
+  const manageChannel = channels.find(c => c.id === manageChannelId);
 
   return (
     <div className="h-full overflow-y-auto p-6 max-w-3xl">
@@ -250,35 +375,44 @@ export default function Settings() {
 
       {/* Channels */}
       {tab === 'channels' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {channels.map(ch => (
-              <ChannelTile key={ch.id} channel={ch} onRequestDelete={setDeleteTarget} />
-            ))}
-            <button
-              onClick={() => setShowAddChannel(true)}
-              className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1 transition-colors min-h-[152px]"
-            >
-              <Plus size={20} />
-              <span className="text-xs">เพิ่ม LINE OA</span>
-            </button>
-          </div>
+        manageChannel ? (
+          <ChannelConfigure
+            channel={manageChannel}
+            onBack={() => setManageChannelId(null)}
+            onSave={updateChannel}
+            onRequestDelete={setDeleteTarget}
+          />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {channels.map(ch => (
+                <ChannelListCard key={ch.id} channel={ch} onManage={() => setManageChannelId(ch.id)} />
+              ))}
+              <button
+                onClick={() => setShowAddChannel(true)}
+                className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1 transition-colors min-h-[104px]"
+              >
+                <Plus size={20} />
+                <span className="text-xs">เพิ่ม LINE OA</span>
+              </button>
+            </div>
 
-          {showAddChannel && (
-            <form onSubmit={addChannel} className={`${cardCls} space-y-3`}>
-              <h3 className="font-medium text-slate-100">เพิ่ม LINE OA</h3>
-              <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
-              <input className={inputCls} placeholder="LINE ID (เช่น @abc1234) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
-              <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
-              <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
-              <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
-              <div className="flex gap-2">
-                <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
-                <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
-              </div>
-            </form>
-          )}
-        </div>
+            {showAddChannel && (
+              <form onSubmit={addChannel} className={`${cardCls} space-y-3`}>
+                <h3 className="font-medium text-slate-100">เพิ่ม LINE OA</h3>
+                <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
+                <input className={inputCls} placeholder="LINE ID (เช่น abc1234 ไม่ต้องใส่ @) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
+                <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
+                <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
+                <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
+                <div className="flex gap-2">
+                  <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
+                  <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+                </div>
+              </form>
+            )}
+          </div>
+        )
       )}
 
       {/* Agents */}
