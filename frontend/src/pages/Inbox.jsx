@@ -88,6 +88,12 @@ function MessageBubble({ msg }) {
 
 function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
   const { t } = useLanguage();
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
+  const channelLabel = filter.channelIds.length === 0
+    ? 'ทุก OA'
+    : filter.channelIds.length === 1
+      ? channels.find(c => c.id === filter.channelIds[0])?.name || 'เลือก 1 ช่องทาง'
+      : `เลือก ${filter.channelIds.length} ช่องทาง`;
   return (
     <div className="absolute top-full left-3 right-3 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-20 p-3 space-y-3">
       <div>
@@ -141,26 +147,44 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
           ))}
         </div>
       </div>
-      <div>
+      <div className="relative">
         <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">ช่องทาง</p>
-        <div className="border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-32 overflow-y-auto bg-white dark:bg-slate-700">
-          {channels.map(c => (
-            <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+        <button
+          type="button"
+          onClick={() => setShowChannelPicker(v => !v)}
+          className={`w-full flex items-center justify-between text-xs border rounded-lg px-2 py-1.5 focus:outline-none ${filter.channelIds.length > 0 ? 'border-aurora-teal text-aurora-tealDeep dark:text-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200'}`}
+        >
+          <span>{channelLabel}</span>
+          <span className="text-gray-400 dark:text-slate-500">{showChannelPicker ? '▲' : '▼'}</span>
+        </button>
+        {showChannelPicker && (
+          <div className="absolute top-full left-0 right-0 mt-1 border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-40 overflow-y-auto bg-white dark:bg-slate-700 shadow-lg z-30">
+            <label className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200 font-medium border-b border-gray-100 dark:border-slate-600 mb-0.5 pb-1.5">
               <input
                 type="checkbox"
                 className="accent-aurora-teal"
-                checked={filter.channelIds.includes(c.id)}
-                onChange={() => setFilter(f => ({
-                  ...f,
-                  channelIds: f.channelIds.includes(c.id) ? f.channelIds.filter(x => x !== c.id) : [...f.channelIds, c.id],
-                }))}
+                checked={filter.channelIds.length === 0}
+                onChange={() => setFilter(f => ({ ...f, channelIds: [] }))}
               />
-              {c.name}
+              ทั้งหมด
             </label>
-          ))}
-          {channels.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
-        </div>
-        <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">ไม่เลือก = ทุก OA</p>
+            {channels.map(c => (
+              <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  className="accent-aurora-teal"
+                  checked={filter.channelIds.includes(c.id)}
+                  onChange={() => setFilter(f => ({
+                    ...f,
+                    channelIds: f.channelIds.includes(c.id) ? f.channelIds.filter(x => x !== c.id) : [...f.channelIds, c.id],
+                  }))}
+                />
+                {c.name}
+              </label>
+            ))}
+            {channels.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+          </div>
+        )}
       </div>
       <div>
         <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">พนักงาน</p>

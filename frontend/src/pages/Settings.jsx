@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -23,7 +23,13 @@ function CopyButton({ text }) {
 
 function ChannelListCard({ channel, onManage }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4">
+    <div className="relative rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4">
+      <span
+        title='อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'
+        className="absolute top-2 right-2 text-amber-500 p-1 cursor-help"
+      >
+        <AlertTriangle size={15} />
+      </span>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
@@ -79,6 +85,24 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
       </button>
       <h2 className="text-lg font-semibold text-slate-100 mb-0.5">ตั้งค่า LINE OA</h2>
       <p className="text-sm text-slate-500 mb-6">จัดการข้อมูลและการตั้งค่าของช่องทางนี้</p>
+
+      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-4">
+        <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-amber-400">
+          <p>
+            อย่าลืมเปิด <span className="font-medium">"Use webhook redelivery"</span> ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด
+            ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร (LINE ไม่มี API ให้เปิด/ปิดสวิตช์นี้จากในระบบนี้ ต้องไปกดในคอนโซลของ LINE เอง)
+          </p>
+          <a
+            href="https://developers.line.biz/console/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-1.5 font-medium hover:brightness-110"
+          >
+            เปิด LINE Developers Console <ExternalLink size={12} />
+          </a>
+        </div>
+      </div>
 
       <div className="space-y-4">
         {chatLink && (
