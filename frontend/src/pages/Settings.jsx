@@ -22,20 +22,21 @@ function CopyButton({ text }) {
 
 function ChannelListCard({ channel, onManage }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-slate-100 truncate">{channel.name}</p>
-          <p className="text-xs text-slate-500 truncate">LINE (ID: {channel.lineId || '—'})</p>
+          <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
+          <p className="text-sm text-slate-500 truncate mt-0.5">LINE (ID: {channel.lineId || '—'})</p>
         </div>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white flex-shrink-0">
-          <MessageCircle size={15} />
+        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white flex-shrink-0">
+          <MessageCircle size={20} />
         </div>
       </div>
+      <div className="flex-1" />
       <div className="border-t border-slate-800 pt-3 flex justify-end">
         <button
           onClick={onManage}
-          className="text-sm text-aurora-teal font-medium border border-aurora-teal/30 rounded-lg px-3 py-1.5 hover:bg-aurora-teal/10 transition-colors"
+          className="text-sm text-aurora-teal font-medium border border-aurora-teal/30 rounded-lg px-4 py-2 hover:bg-aurora-teal/10 transition-colors"
         >
           Manage
         </button>
@@ -365,7 +366,7 @@ export default function Settings() {
   const manageChannel = channels.find(c => c.id === manageChannelId);
 
   return (
-    <div className="h-full overflow-y-auto p-6 max-w-3xl">
+    <div className="h-full overflow-y-auto p-6">
       <div className="flex items-center gap-2 mb-6">
         <active.icon size={18} className="text-slate-500" />
         <h2 className="text-base font-semibold text-slate-100">{active.label}</h2>
@@ -383,22 +384,22 @@ export default function Settings() {
             onRequestDelete={setDeleteTarget}
           />
         ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="space-y-4 max-w-6xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {channels.map(ch => (
                 <ChannelListCard key={ch.id} channel={ch} onManage={() => setManageChannelId(ch.id)} />
               ))}
               <button
                 onClick={() => setShowAddChannel(true)}
-                className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1 transition-colors min-h-[104px]"
+                className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
               >
-                <Plus size={20} />
-                <span className="text-xs">เพิ่ม LINE OA</span>
+                <Plus size={26} />
+                <span className="text-sm">เพิ่ม LINE OA</span>
               </button>
             </div>
 
             {showAddChannel && (
-              <form onSubmit={addChannel} className={`${cardCls} space-y-3`}>
+              <form onSubmit={addChannel} className={`${cardCls} space-y-3 max-w-xl`}>
                 <h3 className="font-medium text-slate-100">เพิ่ม LINE OA</h3>
                 <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
                 <input className={inputCls} placeholder="LINE ID (เช่น abc1234 ไม่ต้องใส่ @) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
@@ -417,7 +418,7 @@ export default function Settings() {
 
       {/* Agents */}
       {tab === 'agents' && (
-        <div className="space-y-3">
+        <div className="space-y-3 max-w-2xl">
           {agents.map(a => (
             <div key={a.id} className={`${cardCls} flex items-center gap-3`}>
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium flex-shrink-0">
@@ -463,7 +464,7 @@ export default function Settings() {
 
       {/* Tags */}
       {tab === 'tags' && (
-        <div className="space-y-4">
+        <div className="space-y-4 max-w-2xl">
           <div className="flex flex-wrap gap-2">
             {tags.map(t => (
               <div key={t.id} className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1.5 text-sm font-medium" style={{ backgroundColor: `${t.color}1a`, color: t.color }}>
