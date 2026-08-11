@@ -5,6 +5,7 @@ import { th } from 'date-fns/locale';
 import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
 
 function Avatar({ name, pictureUrl, size = 10 }) {
@@ -86,6 +87,7 @@ function MessageBubble({ msg }) {
 }
 
 function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
+  const { t } = useLanguage();
   return (
     <div className="absolute top-full left-3 right-3 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-20 p-3 space-y-3">
       <div>
@@ -97,7 +99,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
               onClick={() => setFilter(f => ({ ...f, status: s }))}
               className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
-              {s === '' ? 'ทั้งหมด' : s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
+              {s === '' ? t('status_all') : s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : t('status_closed')}
             </button>
           ))}
         </div>
@@ -283,6 +285,7 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
 export default function Inbox() {
   const { socket } = useSocket();
   const { agent } = useAuth();
+  const { t } = useLanguage();
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -422,7 +425,7 @@ export default function Inbox() {
               <Search size={14} className="absolute left-2 top-2.5 text-gray-400 dark:text-slate-500" />
               <input
                 className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
-                placeholder="ค้นหา..."
+                placeholder={t('search_placeholder')}
                 value={filter.search}
                 onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
               />
@@ -444,7 +447,7 @@ export default function Inbox() {
                 onClick={() => setFilter(f => ({ ...f, status: f.status === s ? '' : s }))}
                 className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
               >
-                {s === 'open' ? 'เปิด' : s === 'pending' ? 'รอ' : 'ปิด'}
+                {s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : t('status_closed')}
               </button>
             ))}
           </div>

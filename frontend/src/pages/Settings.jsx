@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle, ArrowLeft, QrCode, MessageCircle } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, Radio, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
 
 function CopyButton({ text }) {
@@ -264,11 +265,14 @@ function AgentChannelAccess({ agentItem, channels, onSave }) {
   );
 }
 
-const CATEGORIES = {
-  channels: { label: 'ช่องทาง LINE OA', icon: MessageSquare },
-  agents: { label: 'ทีมงาน', icon: Users },
-  tags: { label: 'แท็ก', icon: TagIcon },
-};
+function useCategories() {
+  const { t } = useLanguage();
+  return {
+    channels: { label: t('settings_channels'), icon: MessageSquare },
+    agents: { label: t('settings_agents'), icon: Users },
+    tags: { label: t('settings_tags'), icon: TagIcon },
+  };
+}
 
 export default function Settings() {
   const { tab } = useParams();
@@ -280,6 +284,7 @@ export default function Settings() {
   const [manageChannelId, setManageChannelId] = useState(null);
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
+  const [showAgentPassword, setShowAgentPassword] = useState(false);
   const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
@@ -362,6 +367,7 @@ export default function Settings() {
 
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
+  const CATEGORIES = useCategories();
   const active = CATEGORIES[tab] || CATEGORIES.channels;
   const manageChannel = channels.find(c => c.id === manageChannelId);
 
@@ -444,7 +450,23 @@ export default function Settings() {
               <h3 className="font-medium text-slate-100">เพิ่ม Agent</h3>
               <input className={inputCls} placeholder="ชื่อ" value={agentForm.name} onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))} required />
               <input type="email" className={inputCls} placeholder="Email" value={agentForm.email} onChange={e => setAgentForm(f => ({ ...f, email: e.target.value }))} required />
-              <input type="password" className={inputCls} placeholder="Password" value={agentForm.password} onChange={e => setAgentForm(f => ({ ...f, password: e.target.value }))} required />
+              <div className="relative">
+                <input
+                  type={showAgentPassword ? 'text' : 'password'}
+                  className={`${inputCls} pr-10`}
+                  placeholder="Password"
+                  value={agentForm.password}
+                  onChange={e => setAgentForm(f => ({ ...f, password: e.target.value }))}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAgentPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  {showAgentPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
               <select className={inputCls} value={agentForm.role} onChange={e => setAgentForm(f => ({ ...f, role: e.target.value }))}>
                 <option value="agent">Agent</option>
                 <option value="admin">Admin</option>

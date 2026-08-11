@@ -26,6 +26,14 @@ export function AuthProvider({ children }) {
     setAgent(agentVal);
   }
 
+  function updateAgent(partial) {
+    setAgent(prev => {
+      const next = { ...prev, ...partial };
+      localStorage.setItem('agent', JSON.stringify(next));
+      return next;
+    });
+  }
+
   function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('agent');
@@ -53,7 +61,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, agent, login, logout }}>
+    <AuthContext.Provider value={{ token, agent, login, logout, updateAgent }}>
       {children}
     </AuthContext.Provider>
   );

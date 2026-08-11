@@ -32,7 +32,7 @@ router.post('/login', loginLimiter, async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.json({ token, agent: { id: agent.id, name: agent.name, email: agent.email, role: agent.role } });
+    res.json({ token, agent: { id: agent.id, name: agent.name, email: agent.email, role: agent.role, language: agent.language } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -42,7 +42,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.get('/me', require('../middleware/auth'), async (req, res) => {
   const agent = await prisma.agent.findUnique({
     where: { id: req.agent.id },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, language: true },
   });
   res.json(agent);
 });

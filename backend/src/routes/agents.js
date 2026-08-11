@@ -33,6 +33,42 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/agents/me — update own profile (name, language)
+router.patch('/me', auth, async (req, res) => {
+  try {
+    const { name, language } = req.body;
+    const data = {};
+    if (name !== undefined && name.trim()) data.name = name.trim();
+    if (language !== undefined) data.language = language;
+    const updated = await prisma.agent.update({
+      where: { id: req.agent.id },
+      data,
+      select: { id: true, name: true, email: true, role: true, language: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/agents/me/password — change own password
+router.patch('/me/password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' });
+    }
+    const agentRow = await prisma.agent.findUnique({ where: { id: req.agent.id } });
+    const valid = await bcrypt.compare(currentPassword || '', agentRow.password);
+    if (!valid) return res.status(401).json({ error: 'รหัสผ่านปัจจุบันไม่ถูกต้อง' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.agent.update({ where: { id: req.agent.id }, data: { password: hashed } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/agents/:id
 router.delete('/:id', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
