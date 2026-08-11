@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
-const { sendMessage } = require('../services/line.service');
+const { sendMessage, sendSticker } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 
 const prisma = new PrismaClient();
@@ -28,11 +28,12 @@ router.get('/:conversationId', auth, async (req, res) => {
   res.json(messages.reverse());
 });
 
-// POST /api/messages/:conversationId — send message
+// POST /api/messages/:conversationId — send message (text or sticker)
 router.post('/:conversationId', auth, async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content?.trim()) return res.status(400).json({ error: 'Content required' });
+    const { content, type = 'text', packageId, stickerId } = req.body;
+    if (type === 'text' && !content?.trim()) return res.status(400).json({ error: 'Content required' });
+    if (type === 'sticker' && (!packageId || !stickerId)) return res.status(400).json({ error: 'packageId/stickerId required' });
 
     const conversation = await prisma.conversation.findUnique({
       where: { id: req.params.conversationId },
@@ -40,20 +41,33 @@ router.post('/:conversationId', auth, async (req, res) => {
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
-    // Send via LINE
-    await sendMessage(conversation.channel, conversation.lineUserId, content);
-
-    // Save to DB
-    const message = await prisma.message.create({
-      data: {
+    let messageData;
+    if (type === 'sticker') {
+      await sendSticker(conversation.channel, conversation.lineUserId, packageId, stickerId);
+      messageData = {
+        conversationId: conversation.id,
+        sender: 'agent',
+        senderName: req.agent.name,
+        type: 'sticker',
+        content: '[Sticker]',
+        metadata: JSON.stringify({ packageId: String(packageId), stickerId: String(stickerId) }),
+        read: true,
+      };
+    } else {
+      // Send via LINE
+      await sendMessage(conversation.channel, conversation.lineUserId, content);
+      messageData = {
         conversationId: conversation.id,
         sender: 'agent',
         senderName: req.agent.name,
         type: 'text',
         content,
         read: true,
-      },
-    });
+      };
+    }
+
+    // Save to DB
+    const message = await prisma.message.create({ data: messageData });
 
     // Update conversation lastMessageAt
     await prisma.conversation.update({
