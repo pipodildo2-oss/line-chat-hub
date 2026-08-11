@@ -12,6 +12,7 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/tags
 router.post('/', auth, async (req, res) => {
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
     const { name, color } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Name required' });

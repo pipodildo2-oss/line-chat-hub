@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Smile, Sticker, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -115,80 +115,6 @@ function MessageBubble({ msg }) {
         <p className="whitespace-pre-wrap break-words">{msg.content}</p>
         {timeLabel}
       </div>
-    </div>
-  );
-}
-
-const EMOJI_LIST = [
-  '😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😉', '😎', '🤔',
-  '😅', '😢', '😭', '😡', '😱', '🙏', '👍', '👎', '👏', '🙌',
-  '💪', '❤️', '💛', '💚', '💙', '💜', '🔥', '✨', '🎉', '💯',
-  '✅', '❌', '⚠️', '❓', '❗', '😴', '🤝', '👋', '🥳', '😇',
-];
-
-// LINE's official demo sticker set (packageId 11537) — the standard fixed set of
-// sticker IDs guaranteed to be sendable via the Messaging API push endpoint.
-const STICKER_PACKAGE_ID = '11537';
-const STICKER_IDS = [
-  '52002734', '52002735', '52002736', '52002737', '52002738', '52002739',
-  '52002740', '52002741', '52002742', '52002743', '52002744', '52002745',
-  '52002746', '52002747', '52002748', '52002749', '52002750', '52002751',
-  '52002752',
-];
-
-function StickerEmojiPicker({ onEmoji, onSticker, onClose }) {
-  const [tab, setTab] = useState('emoji');
-  return (
-    <div className="absolute bottom-full left-0 mb-2 w-72 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-30 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex gap-1">
-          <button
-            onClick={() => setTab('emoji')}
-            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${tab === 'emoji' ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700'}`}
-          >
-            อิโมจิ
-          </button>
-          <button
-            onClick={() => setTab('sticker')}
-            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${tab === 'sticker' ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700'}`}
-          >
-            สติ๊กเกอร์
-          </button>
-        </div>
-        <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
-          <X size={14} />
-        </button>
-      </div>
-      {tab === 'emoji' ? (
-        <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
-          {EMOJI_LIST.map(e => (
-            <button
-              key={e}
-              onClick={() => onEmoji(e)}
-              className="text-xl hover:bg-gray-100 dark:hover:bg-slate-700 rounded p-1 transition-colors"
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-4 gap-1.5 max-h-48 overflow-y-auto">
-          {STICKER_IDS.map(id => (
-            <button
-              key={id}
-              onClick={() => onSticker(STICKER_PACKAGE_ID, id)}
-              className="hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg p-1 transition-colors"
-            >
-              <img
-                src={`https://stickershop.line-scdn.net/stickershop/v1/sticker/${id}/android/sticker.png`}
-                alt="sticker"
-                className="w-full h-12 object-contain"
-                loading="lazy"
-              />
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -334,7 +260,7 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
   );
 }
 
-function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTag, onClose }) {
+function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTag, onClose, isAdmin }) {
   const [name, setName] = useState(conv.displayName || '');
   const [notes, setNotes] = useState(conv.notes || '');
   const [showTagPicker, setShowTagPicker] = useState(false);
@@ -403,22 +329,24 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} /> {t.name}
               </button>
             ))}
-            <div className="flex gap-1 pt-1">
-              <input
-                className="flex-1 text-xs border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 rounded px-1.5 py-1 focus:outline-none"
-                placeholder="สร้างแท็กใหม่..."
-                value={newTagName}
-                onChange={e => setNewTagName(e.target.value)}
-                onKeyDown={async e => {
-                  if (e.key === 'Enter' && newTagName.trim()) {
-                    const tag = await onCreateTag(newTagName.trim());
-                    if (tag) onAddTag(tag.id);
-                    setNewTagName('');
-                    setShowTagPicker(false);
-                  }
-                }}
-              />
-            </div>
+            {isAdmin && (
+              <div className="flex gap-1 pt-1">
+                <input
+                  className="flex-1 text-xs border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 rounded px-1.5 py-1 focus:outline-none"
+                  placeholder="สร้างแท็กใหม่..."
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  onKeyDown={async e => {
+                    if (e.key === 'Enter' && newTagName.trim()) {
+                      const tag = await onCreateTag(newTagName.trim());
+                      if (tag) onAddTag(tag.id);
+                      setNewTagName('');
+                      setShowTagPicker(false);
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -446,7 +374,7 @@ export default function Inbox() {
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [showPicker, setShowPicker] = useState(false);
+  const [suggestion, setSuggestion] = useState('');
   const [agents, setAgents] = useState([]);
   const [channels, setChannels] = useState([]);
   const [tags, setTags] = useState([]);
@@ -521,6 +449,7 @@ export default function Inbox() {
     if (!content || !selected || sending) return;
     setSending(true);
     setInput('');
+    setSuggestion('');
     try {
       const { data } = await axios.post(`/api/messages/${selected.id}`, { content });
       setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
@@ -529,16 +458,9 @@ export default function Inbox() {
     }
   }
 
-  async function handleSendSticker(packageId, stickerId) {
-    if (!selected || sending) return;
-    setSending(true);
-    setShowPicker(false);
-    try {
-      const { data } = await axios.post(`/api/messages/${selected.id}`, { type: 'sticker', packageId, stickerId });
-      setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-    } finally {
-      setSending(false);
-    }
+  async function getSuggestion() {
+    const { data } = await axios.get(`/api/messages/${selected.id}/suggest`);
+    setSuggestion(data.suggestion || '');
   }
 
   async function assignAgent(agentId) {
@@ -669,10 +591,15 @@ export default function Inbox() {
               </select>
               <button
                 onClick={() => setShowDetail(v => !v)}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showDetail ? 'bg-gradient-to-r from-aurora-teal/20 to-aurora-purple/20 text-aurora-teal' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
-                title="รายละเอียดลูกค้า"
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors ${
+                  showDetail
+                    ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent'
+                    : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'
+                }`}
+                title={showDetail ? 'ปิดรายละเอียดลูกค้า' : 'เปิดรายละเอียดลูกค้า'}
               >
-                <Info size={16} />
+                <Info size={15} />
+                ลูกค้า
               </button>
             </div>
 
@@ -682,22 +609,25 @@ export default function Inbox() {
               <div ref={bottomRef} />
             </div>
 
+            {/* AI suggestion */}
+            {suggestion && (
+              <div className="bg-gradient-to-r from-aurora-teal/10 to-aurora-purple/10 border-t border-aurora-teal/20 px-4 py-2 flex items-center gap-2">
+                <Sparkles size={14} className="text-aurora-teal flex-shrink-0" />
+                <span className="text-sm text-aurora-teal flex-1">{suggestion}</span>
+                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-gradient-to-r from-aurora-teal to-aurora-purple text-white px-2 py-1 rounded hover:brightness-110">ใช้</button>
+                <button onClick={() => setSuggestion('')}><X size={14} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300" /></button>
+              </div>
+            )}
+
             {/* Input */}
-            <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
+            <div className="bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
               <button
-                onClick={() => setShowPicker(v => !v)}
-                title="สติ๊กเกอร์และอิโมจิ"
-                className={`transition-colors flex-shrink-0 ${showPicker ? 'text-aurora-tealDeep dark:text-aurora-teal' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                onClick={getSuggestion}
+                title="AI suggest reply"
+                className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
               >
-                <Smile size={20} />
+                <Sparkles size={20} />
               </button>
-              {showPicker && (
-                <StickerEmojiPicker
-                  onEmoji={e => setInput(prev => prev + e)}
-                  onSticker={handleSendSticker}
-                  onClose={() => setShowPicker(false)}
-                />
-              )}
               <input
                 className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="พิมพ์ข้อความ..."
@@ -724,6 +654,7 @@ export default function Inbox() {
               onRemoveTag={removeTag}
               onCreateTag={createTag}
               onClose={() => setShowDetail(false)}
+              isAdmin={agent?.role === 'admin'}
             />
           )}
         </>

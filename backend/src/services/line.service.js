@@ -130,9 +130,4 @@ async function sendMessage(channel, lineUserId, text) {
   await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
 }
 
-async function sendSticker(channel, lineUserId, packageId, stickerId) {
-  const client = getClient(channel.accessToken);
-  await client.pushMessage({ to: lineUserId, messages: [{ type: 'sticker', packageId: String(packageId), stickerId: String(stickerId) }] });
-}
-
-module.exports = { processLineEvent, sendMessage, sendSticker };
+module.exports = { processLineEvent, sendMessage };

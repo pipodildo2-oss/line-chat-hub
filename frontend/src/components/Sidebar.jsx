@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { MessageSquare, BarChart2, Settings, LogOut, Wifi, WifiOff, MessageCircle, ChevronDown, Radio, Users, Tag, User } from 'lucide-react';
+import axios from 'axios';
+import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSocket } from '../contexts/SocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
 
+const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
+const STATUS_LABEL_TH = { online: 'ออนไลน์', break: 'พัก', offline: 'ออฟไลน์' };
+
 export default function Sidebar() {
-  const { agent, logout } = useAuth();
-  const { connected } = useSocket();
+  const { agent, logout, updateAgent } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
   const isAdmin = agent?.role === 'admin';
@@ -16,6 +18,16 @@ export default function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(onSettings);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const status = agent?.status || 'online';
+
+  async function handleStatusChange(next) {
+    setStatusOpen(false);
+    try {
+      const { data } = await axios.patch('/api/agents/me', { status: next });
+      updateAgent(data);
+    } catch { /* ignore */ }
+  }
 
   const settingsChildren = [
     { to: '/settings/channels', icon: Radio, label: t('settings_channels') },
@@ -91,27 +103,41 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div className="border-t border-slate-800 p-3 relative">
-        <button
-          onClick={() => setProfileOpen(v => !v)}
-          className="w-full flex items-center justify-between px-1 py-1 rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="w-full flex items-center gap-1.5 px-1 py-1 rounded-lg hover:bg-slate-800 transition-colors">
+          <button
+            onClick={() => setProfileOpen(v => !v)}
+            className="flex items-center gap-2 min-w-0 flex-1 text-left"
+          >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
               {agent?.name?.[0]?.toUpperCase() || 'A'}
             </div>
-            <div className="min-w-0 text-left">
-              <p className="text-xs font-medium text-slate-200 truncate">{agent?.name}</p>
-              <div className="flex items-center gap-1">
-                {connected ? (
-                  <Wifi size={9} className="text-aurora-green" />
-                ) : (
-                  <WifiOff size={9} className="text-rose-500" />
-                )}
-                <span className="text-[10px] text-slate-500">{connected ? t('online') : t('offline')}</span>
+            <p className="text-xs font-medium text-slate-200 truncate min-w-0">{agent?.name}</p>
+          </button>
+
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); setStatusOpen(v => !v); setProfileOpen(false); }}
+              className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-1 rounded-md hover:bg-slate-700 transition-colors"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+              {STATUS_LABEL_TH[status]}
+              <ChevronDown size={9} />
+            </button>
+            {statusOpen && (
+              <div className="absolute bottom-full right-0 mb-1 w-28 bg-slate-800 border border-slate-700 rounded-lg shadow-lg overflow-hidden z-20">
+                {['online', 'break', 'offline'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => handleStatusChange(s)}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 text-xs text-slate-200 hover:bg-slate-700 transition-colors"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s]}`} /> {STATUS_LABEL_TH[s]}
+                  </button>
+                ))}
               </div>
-            </div>
+            )}
           </div>
-        </button>
+        </div>
 
         {profileOpen && (
           <div className="absolute bottom-full left-3 right-3 mb-1 bg-slate-800 border border-slate-700 rounded-xl shadow-lg overflow-hidden">

@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 router.get('/', auth, async (req, res) => {
   const agents = await prisma.agent.findMany({
     select: {
-      id: true, name: true, email: true, role: true, createdAt: true,
+      id: true, name: true, email: true, role: true, status: true, createdAt: true,
       channels: { select: { channelId: true } },
     },
   });
@@ -33,17 +33,23 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// PATCH /api/agents/me — update own profile (name, language)
+// PATCH /api/agents/me — update own profile (name, language, status)
 router.patch('/me', auth, async (req, res) => {
   try {
-    const { name, language } = req.body;
+    const { name, language, status } = req.body;
     const data = {};
     if (name !== undefined && name.trim()) data.name = name.trim();
     if (language !== undefined) data.language = language;
+    if (status !== undefined) {
+      if (!['online', 'offline', 'break'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+      data.status = status;
+    }
     const updated = await prisma.agent.update({
       where: { id: req.agent.id },
       data,
-      select: { id: true, name: true, email: true, role: true, language: true },
+      select: { id: true, name: true, email: true, role: true, language: true, status: true },
     });
     res.json(updated);
   } catch (err) {

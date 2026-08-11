@@ -14,6 +14,7 @@ model Agent {
   password      String
   role          String         @default("agent") // admin | agent
   language      String         @default("th") // th | en
+  status        String         @default("online") // online | offline | break
   createdAt     DateTime       @default(now())
   conversations Conversation[]
   channels      AgentChannel[]
