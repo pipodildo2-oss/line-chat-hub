@@ -414,8 +414,15 @@ function QuickReplyImageUpload({ value, onChange }) {
   );
 }
 
+const QR_KIND_OPTIONS = [
+  { key: 'reply', label: 'ตอบกลับ' },
+  { key: 'promotion', label: 'โปรโมชั่น' },
+];
+const qrKindLabel = (kind) => QR_KIND_OPTIONS.find(k => k.key === kind)?.label || kind;
+
 function QuickReplyEditModal({ item, onSave, onClose }) {
   const [name, setName] = useState(item.name);
+  const [kind, setKind] = useState(item.kind || 'reply');
   const [content, setContent] = useState(item.content);
   const [imageData, setImageData] = useState(item.imageData || (item.hasImage ? `/api/quick-replies/${item.id}/image` : ''));
   const [imageTouched, setImageTouched] = useState(false);
@@ -429,7 +436,7 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
     if (!name.trim() || !content.trim()) { setError('กรอกชื่อและรายละเอียดข้อความให้ครบ'); return; }
     setSaving(true); setError('');
     try {
-      const payload = { name, content };
+      const payload = { name, content, kind };
       if (imageTouched) payload.imageData = imageData; // only send if the user actually changed it
       await onSave(item.id, payload);
       onClose();
@@ -447,6 +454,21 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
         </div>
         {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="space-y-3">
+          <div>
+            <label className={labelCls}>ประเภท</label>
+            <div className="flex gap-2">
+              {QR_KIND_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setKind(opt.key)}
+                  className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label className={labelCls}>ชื่อข้อความ</label>
             <input className={fieldCls} value={name} onChange={e => setName(e.target.value)} />
@@ -475,64 +497,61 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
   );
 }
 
-// 1.1 เลือกหมวดหมู่ = เลือกช่องทาง LINE OA ก่อน, 1.2 เลือกประเภท = กลุ่มย่อยที่แอดมินตั้งไว้ในช่องทางนั้น,
-// 1.3-1.5 ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
-function QuickRepliesSettings({ channels, isAdmin }) {
-  const [channelId, setChannelId] = useState('');
-  const [types, setTypes] = useState([]);
-  const [typeId, setTypeId] = useState('');
+// 1. เลือกหมวดหมู่ = หมวดที่แอดมินพิมพ์สร้างเอง (ไม่ผูกกับ OA ไหนเป็นการเฉพาะ — ตอนส่งจะเลือกแชท/ไลน์เอง)
+// 2. เลือกประเภท = ค่าคงที่ 2 อย่าง ตอบกลับ / โปรโมชั่น
+// 3-5. ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
+function QuickRepliesSettings({ isAdmin }) {
+  const [categories, setCategories] = useState([]);
+  const [categoryId, setCategoryId] = useState('');
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const [quickReplies, setQuickReplies] = useState([]);
-  const [loadingTypes, setLoadingTypes] = useState(false);
   const [loadingReplies, setLoadingReplies] = useState(false);
-  const [newTypeName, setNewTypeName] = useState('');
-  const [addingType, setAddingType] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
   const [showAddQr, setShowAddQr] = useState(false);
-  const [qrForm, setQrForm] = useState({ name: '', content: '', imageData: '' });
+  const [qrForm, setQrForm] = useState({ kind: 'reply', name: '', content: '', imageData: '' });
   const [savingQr, setSavingQr] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!channelId && channels.length > 0) setChannelId(channels[0].id);
-  }, [channels, channelId]);
+    setLoadingCategories(true);
+    axios.get('/api/quick-replies/categories')
+      .then(r => {
+        setCategories(r.data);
+        if (r.data.length > 0) setCategoryId(prev => prev || r.data[0].id);
+      })
+      .finally(() => setLoadingCategories(false));
+  }, []);
 
   useEffect(() => {
-    if (!channelId) return;
-    setLoadingTypes(true);
-    setTypeId('');
-    setQuickReplies([]);
-    axios.get('/api/quick-replies/types', { params: { channelId } })
-      .then(r => setTypes(r.data))
-      .finally(() => setLoadingTypes(false));
-  }, [channelId]);
-
-  useEffect(() => {
-    if (!typeId) { setQuickReplies([]); return; }
+    if (!categoryId) { setQuickReplies([]); return; }
     setLoadingReplies(true);
-    axios.get('/api/quick-replies', { params: { typeId } })
+    axios.get('/api/quick-replies', { params: { categoryId } })
       .then(r => setQuickReplies(r.data))
       .finally(() => setLoadingReplies(false));
-  }, [typeId]);
+  }, [categoryId]);
 
-  async function addType(e) {
+  async function addCategory(e) {
     e.preventDefault();
-    if (!newTypeName.trim()) return;
+    if (!newCategoryName.trim()) return;
     setError('');
     try {
-      const { data } = await axios.post('/api/quick-replies/types', { channelId, name: newTypeName.trim() });
-      setTypes(prev => [...prev, { ...data, _count: { quickReplies: 0 } }]);
-      setNewTypeName('');
-      setAddingType(false);
+      const { data } = await axios.post('/api/quick-replies/categories', { name: newCategoryName.trim() });
+      setCategories(prev => [...prev, data]);
+      setCategoryId(data.id);
+      setNewCategoryName('');
+      setAddingCategory(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
     }
   }
 
-  async function deleteType(id) {
-    if (!confirm('ลบประเภทนี้? ข้อความลัดทั้งหมดในประเภทนี้จะถูกลบไปด้วย')) return;
-    await axios.delete(`/api/quick-replies/types/${id}`);
-    setTypes(prev => prev.filter(t => t.id !== id));
-    if (typeId === id) setTypeId('');
+  async function deleteCategory(id) {
+    if (!confirm('ลบหมวดหมู่นี้? ข้อความลัดทั้งหมดในหมวดนี้จะถูกลบไปด้วย')) return;
+    await axios.delete(`/api/quick-replies/categories/${id}`);
+    setCategories(prev => prev.filter(c => c.id !== id));
+    if (categoryId === id) setCategoryId('');
   }
 
   async function addQuickReply(e) {
@@ -540,10 +559,10 @@ function QuickRepliesSettings({ channels, isAdmin }) {
     if (!qrForm.name.trim() || !qrForm.content.trim()) return;
     setSavingQr(true); setError('');
     try {
-      const { data } = await axios.post('/api/quick-replies', { typeId, ...qrForm });
+      const { data } = await axios.post('/api/quick-replies', { categoryId, ...qrForm });
       setQuickReplies(prev => [...prev, data]);
-      setTypes(prev => prev.map(t => t.id === typeId ? { ...t, _count: { quickReplies: (t._count?.quickReplies || 0) + 1 } } : t));
-      setQrForm({ name: '', content: '', imageData: '' });
+      setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: (c._count?.quickReplies || 0) + 1 } } : c));
+      setQrForm({ kind: 'reply', name: '', content: '', imageData: '' });
       setShowAddQr(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -559,49 +578,37 @@ function QuickRepliesSettings({ channels, isAdmin }) {
     if (!confirm('ลบข้อความลัดนี้?')) return;
     await axios.delete(`/api/quick-replies/${id}`);
     setQuickReplies(prev => prev.filter(q => q.id !== id));
-    setTypes(prev => prev.map(t => t.id === typeId ? { ...t, _count: { quickReplies: Math.max(0, (t._count?.quickReplies || 1) - 1) } } : t));
+    setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: Math.max(0, (c._count?.quickReplies || 1) - 1) } } : c));
   }
 
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
 
-  if (channels.length === 0) {
-    return <p className="text-sm text-slate-500">เพิ่มช่องทาง LINE OA ก่อน จึงจะสร้างข้อความลัดได้</p>;
-  }
-
   return (
     <div className="max-w-3xl space-y-5">
       {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-4 py-2 rounded-lg">{error}</div>}
 
-      {/* 1.1 เลือกหมวดหมู่ (ช่องทาง) */}
+      {/* 1. เลือกหมวดหมู่ (สร้างเองโดยพิมพ์) */}
       <div>
-        <label className="text-xs font-medium text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่ (ช่องทาง LINE OA)</label>
-        <select className={`${inputCls} max-w-xs`} value={channelId} onChange={e => setChannelId(e.target.value)}>
-          {channels.map(ch => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
-        </select>
-      </div>
-
-      {/* 1.2 เลือกประเภท */}
-      <div>
-        <label className="text-xs font-medium text-slate-400 mb-1.5 block">2. เลือกประเภท</label>
+        <label className="text-xs font-medium text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่</label>
         <div className="flex flex-wrap gap-2 items-center">
-          {loadingTypes && <span className="text-sm text-slate-500">กำลังโหลด...</span>}
-          {!loadingTypes && types.map(t => (
+          {loadingCategories && <span className="text-sm text-slate-500">กำลังโหลด...</span>}
+          {!loadingCategories && categories.map(c => (
             <button
-              key={t.id}
-              onClick={() => setTypeId(t.id)}
+              key={c.id}
+              onClick={() => setCategoryId(c.id)}
               className={`group flex items-center gap-1.5 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium border transition-colors ${
-                typeId === t.id
+                categoryId === c.id
                   ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal'
                   : 'border-slate-700 text-slate-300 hover:border-slate-500'
               }`}
             >
-              {t.name}
-              <span className="text-xs opacity-60">({t._count?.quickReplies ?? 0})</span>
+              {c.name}
+              <span className="text-xs opacity-60">({c._count?.quickReplies ?? 0})</span>
               {isAdmin && (
                 <span
                   role="button"
-                  onClick={(e) => { e.stopPropagation(); deleteType(t.id); }}
+                  onClick={(e) => { e.stopPropagation(); deleteCategory(c.id); }}
                   className="opacity-0 group-hover:opacity-100 hover:text-rose-400 w-4 h-4 flex items-center justify-center"
                 >
                   <X size={12} />
@@ -609,31 +616,31 @@ function QuickRepliesSettings({ channels, isAdmin }) {
               )}
             </button>
           ))}
-          {!loadingTypes && types.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีประเภท</span>}
-          {isAdmin && (addingType ? (
-            <form onSubmit={addType} className="flex items-center gap-1.5">
+          {!loadingCategories && categories.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีหมวดหมู่</span>}
+          {isAdmin && (addingCategory ? (
+            <form onSubmit={addCategory} className="flex items-center gap-1.5">
               <input
                 autoFocus
-                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2.5 py-1.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-aurora-teal"
-                placeholder="ชื่อประเภท"
-                value={newTypeName}
-                onChange={e => setNewTypeName(e.target.value)}
+                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2.5 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                placeholder="ชื่อหมวดหมู่"
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
               />
               <button type="submit" className="text-aurora-teal text-sm font-medium">เพิ่ม</button>
-              <button type="button" onClick={() => { setAddingType(false); setNewTypeName(''); }} className="text-slate-500 text-sm">ยกเลิก</button>
+              <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} className="text-slate-500 text-sm">ยกเลิก</button>
             </form>
           ) : (
-            <button onClick={() => setAddingType(true)} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
-              <Plus size={14} /> เพิ่มประเภท
+            <button onClick={() => setAddingCategory(true)} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
+              <Plus size={14} /> เพิ่มหมวดหมู่
             </button>
           ))}
         </div>
       </div>
 
-      {/* 1.3-1.5 รายการข้อความลัดในประเภทที่เลือก */}
-      {typeId && (
+      {/* 2-5. รายการข้อความลัดในหมวดหมู่ที่เลือก */}
+      {categoryId && (
         <div className="space-y-3">
-          <label className="text-xs font-medium text-slate-400 block">3. ข้อความลัดในประเภทนี้</label>
+          <label className="text-xs font-medium text-slate-400 block">ข้อความลัดในหมวดหมู่นี้</label>
           {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
           {!loadingReplies && quickReplies.map(qr => (
             <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
@@ -641,7 +648,10 @@ function QuickRepliesSettings({ channels, isAdmin }) {
                 <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
+                </div>
                 <p className="text-sm text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
               </div>
               {isAdmin && (
@@ -652,11 +662,26 @@ function QuickRepliesSettings({ channels, isAdmin }) {
               )}
             </div>
           ))}
-          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในประเภทนี้</p>}
+          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
 
           {isAdmin && (showAddQr ? (
             <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
               <h3 className="font-medium text-slate-100">เพิ่มข้อความลัด</h3>
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">เลือกประเภท</label>
+                <div className="flex gap-2">
+                  {QR_KIND_OPTIONS.map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setQrForm(f => ({ ...f, kind: opt.key }))}
+                      className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${qrForm.kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="text-xs font-medium text-slate-400 mb-1.5 block">ตั้งชื่อข้อความ</label>
                 <input className={inputCls} placeholder="เช่น ทักทายลูกค้าใหม่" value={qrForm.name} onChange={e => setQrForm(f => ({ ...f, name: e.target.value }))} required />
@@ -971,7 +996,7 @@ export default function Settings() {
 
       {/* Quick Replies */}
       {tab === 'quick-replies' && (
-        <QuickRepliesSettings channels={channels} isAdmin={agent?.role === 'admin'} />
+        <QuickRepliesSettings isAdmin={agent?.role === 'admin'} />
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />

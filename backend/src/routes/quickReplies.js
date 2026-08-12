@@ -6,57 +6,57 @@ const { sendMessage, sendImageMessage } = require('../services/line.service');
 
 const prisma = new PrismaClient();
 
+const KINDS = ['reply', 'promotion'];
+
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 }
 
-// ---------- Quick Reply Types ("ประเภท") ----------
-// A type always belongs to exactly one channel ("หมวดหมู่" = pick the channel first).
+// ---------- Quick Reply Categories ("หมวดหมู่") ----------
+// Free-form, admin-created by typing a name. Not tied to any specific LINE OA —
+// an admin picks which conversation to send a quick reply into at send time.
 
-// GET /api/quick-reply-types?channelId=...
-router.get('/types', auth, async (req, res) => {
-  const { channelId } = req.query;
-  const where = channelId ? { channelId } : {};
-  const types = await prisma.quickReplyType.findMany({
-    where,
+// GET /api/quick-replies/categories
+router.get('/categories', auth, async (req, res) => {
+  const categories = await prisma.quickReplyCategory.findMany({
     include: { _count: { select: { quickReplies: true } } },
     orderBy: { name: 'asc' },
   });
-  res.json(types);
+  res.json(categories);
 });
 
-// POST /api/quick-reply-types — admin only
-router.post('/types', auth, requireAdmin, async (req, res) => {
+// POST /api/quick-replies/categories — admin only
+router.post('/categories', auth, requireAdmin, async (req, res) => {
   try {
-    const { channelId, name } = req.body;
-    if (!channelId || !name?.trim()) return res.status(400).json({ error: 'channelId and name required' });
-    const type = await prisma.quickReplyType.create({ data: { channelId, name: name.trim() } });
-    res.status(201).json(type);
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+    const category = await prisma.quickReplyCategory.create({ data: { name: name.trim() } });
+    res.status(201).json({ ...category, _count: { quickReplies: 0 } });
   } catch (err) {
-    if (err.code === 'P2002') return res.status(409).json({ error: 'มีประเภทนี้อยู่แล้วในช่องทางนี้' });
+    if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
     res.status(500).json({ error: err.message });
   }
 });
 
-// PATCH /api/quick-reply-types/:id — admin only
-router.patch('/types/:id', auth, requireAdmin, async (req, res) => {
+// PATCH /api/quick-replies/categories/:id — admin only
+router.patch('/categories/:id', auth, requireAdmin, async (req, res) => {
   try {
     const { name } = req.body;
-    const type = await prisma.quickReplyType.update({
+    const category = await prisma.quickReplyCategory.update({
       where: { id: req.params.id },
       data: { ...(name?.trim() ? { name: name.trim() } : {}) },
     });
-    res.json(type);
+    res.json(category);
   } catch {
     res.status(404).json({ error: 'Not found' });
   }
 });
 
-// DELETE /api/quick-reply-types/:id — admin only (cascades to its quick replies)
-router.delete('/types/:id', auth, requireAdmin, async (req, res) => {
+// DELETE /api/quick-replies/categories/:id — admin only (cascades to its quick replies)
+router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
   try {
-    await prisma.quickReplyType.delete({ where: { id: req.params.id } });
+    await prisma.quickReplyCategory.delete({ where: { id: req.params.id } });
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -65,15 +65,15 @@ router.delete('/types/:id', auth, requireAdmin, async (req, res) => {
 
 // ---------- Quick Replies ----------
 
-// GET /api/quick-replies?channelId=...&typeId=...
+// GET /api/quick-replies?categoryId=...&kind=...
 router.get('/', auth, async (req, res) => {
-  const { channelId, typeId } = req.query;
+  const { categoryId, kind } = req.query;
   const where = {};
-  if (typeId) where.typeId = typeId;
-  if (channelId) where.type = { channelId };
+  if (categoryId) where.categoryId = categoryId;
+  if (kind) where.kind = kind;
   const quickReplies = await prisma.quickReply.findMany({
     where,
-    include: { type: { select: { id: true, name: true, channelId: true } } },
+    include: { category: { select: { id: true, name: true } } },
     orderBy: { name: 'asc' },
   });
   // Don't ship the full base64 blob in list views — just whether an image exists.
@@ -83,15 +83,16 @@ router.get('/', auth, async (req, res) => {
 // POST /api/quick-replies — admin only
 router.post('/', auth, requireAdmin, async (req, res) => {
   try {
-    const { typeId, name, content, imageData } = req.body;
-    if (!typeId || !name?.trim() || !content?.trim()) {
-      return res.status(400).json({ error: 'typeId, name and content required' });
+    const { categoryId, kind, name, content, imageData } = req.body;
+    if (!categoryId || !name?.trim() || !content?.trim()) {
+      return res.status(400).json({ error: 'categoryId, name and content required' });
     }
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
     if (imageData && !/^data:image\/(png|jpe?g|gif|webp);base64,/.test(imageData)) {
       return res.status(400).json({ error: 'รูปภาพต้องเป็นไฟล์ png, jpg, gif หรือ webp' });
     }
     const quickReply = await prisma.quickReply.create({
-      data: { typeId, name: name.trim(), content: content.trim(), imageData: imageData || null },
+      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: imageData || null },
     });
     const { imageData: _omit, ...safe } = quickReply;
     res.status(201).json({ ...safe, hasImage: !!quickReply.imageData });
@@ -103,12 +104,14 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 // PATCH /api/quick-replies/:id — admin only
 router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const { name, content, imageData, typeId } = req.body;
+    const { name, content, imageData, categoryId, kind } = req.body;
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
     if (imageData && !/^data:image\/(png|jpe?g|gif|webp);base64,/.test(imageData)) {
       return res.status(400).json({ error: 'รูปภาพต้องเป็นไฟล์ png, jpg, gif หรือ webp' });
     }
     const data = {};
-    if (typeId) data.typeId = typeId;
+    if (categoryId) data.categoryId = categoryId;
+    if (kind) data.kind = kind;
     if (name?.trim()) data.name = name.trim();
     if (content?.trim()) data.content = content.trim();
     if (imageData !== undefined) data.imageData = imageData || null; // allow explicit removal with ""
@@ -144,7 +147,9 @@ router.get('/:id/image', async (req, res) => {
   res.send(Buffer.from(base64, 'base64'));
 });
 
-// POST /api/quick-replies/:id/send — any agent, sends this quick reply into a conversation
+// POST /api/quick-replies/:id/send — any agent, sends this quick reply into a conversation.
+// The quick reply itself isn't tied to a channel — the conversation being viewed
+// decides which LINE OA (and access token) it actually goes out through.
 router.post('/:id/send', auth, async (req, res) => {
   try {
     const { conversationId } = req.body;

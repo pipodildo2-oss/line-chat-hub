@@ -436,28 +436,28 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
   );
 }
 
-// Picker for the quick-reply/canned-message feature. Scoped to whichever LINE OA
-// channel the active conversation belongs to — "หมวดหมู่" is already fixed by
-// the conversation, agents just pick a "ประเภท" then a message to send.
-function QuickReplyPicker({ channelId, onSend, onClose }) {
-  const [types, setTypes] = useState([]);
-  const [typeId, setTypeId] = useState('');
+// Picker for the quick-reply/canned-message feature. Categories are admin-typed
+// and shared across all LINE OAs — the currently open conversation's channel is
+// just what actually gets used to push the message out when an agent picks one.
+function QuickReplyPicker({ onSend, onClose }) {
+  const [categories, setCategories] = useState([]);
+  const [categoryId, setCategoryId] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState('');
 
   useEffect(() => {
-    axios.get('/api/quick-replies/types', { params: { channelId } }).then(r => {
-      setTypes(r.data);
-      if (r.data.length > 0) setTypeId(r.data[0].id);
+    axios.get('/api/quick-replies/categories').then(r => {
+      setCategories(r.data);
+      if (r.data.length > 0) setCategoryId(r.data[0].id);
     });
-  }, [channelId]);
+  }, []);
 
   useEffect(() => {
-    if (!typeId) { setItems([]); return; }
+    if (!categoryId) { setItems([]); return; }
     setLoading(true);
-    axios.get('/api/quick-replies', { params: { typeId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
-  }, [typeId]);
+    axios.get('/api/quick-replies', { params: { categoryId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
+  }, [categoryId]);
 
   async function handlePick(item) {
     setSendingId(item.id);
@@ -475,26 +475,26 @@ function QuickReplyPicker({ channelId, onSend, onClose }) {
         <p className="text-sm font-medium text-gray-700 dark:text-slate-200">ข้อความลัด</p>
         <button onClick={onClose}><X size={14} className="text-gray-400 dark:text-slate-500" /></button>
       </div>
-      {types.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-4">ยังไม่มีข้อความลัดสำหรับช่องทางนี้ — ตั้งค่าได้ในหน้า ตั้งค่า &gt; ข้อความลัด</p>
+      {categories.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-4">ยังไม่มีข้อความลัด — ตั้งค่าได้ในหน้า ตั้งค่า &gt; ข้อความลัด</p>
       ) : (
         <>
           <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-slate-800/60 flex-shrink-0">
-            {types.map(t => (
+            {categories.map(c => (
               <button
-                key={t.id}
-                onClick={() => setTypeId(t.id)}
+                key={c.id}
+                onClick={() => setCategoryId(c.id)}
                 className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0 font-medium transition-colors ${
-                  typeId === t.id ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
+                  categoryId === c.id ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
                 }`}
               >
-                {t.name}
+                {c.name}
               </button>
             ))}
           </div>
           <div className="overflow-y-auto flex-1">
             {loading && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">กำลังโหลด...</p>}
-            {!loading && items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">ยังไม่มีข้อความลัดในประเภทนี้</p>}
+            {!loading && items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
             {!loading && items.map(item => (
               <button
                 key={item.id}
@@ -506,7 +506,12 @@ function QuickReplyPicker({ channelId, onSend, onClose }) {
                   <img src={`/api/quick-replies/${item.id}/image`} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
                 )}
                 <span className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 dark:text-slate-100">{item.name}</p>
+                  <span className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-gray-800 dark:text-slate-100">{item.name}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex-shrink-0">
+                      {item.kind === 'promotion' ? 'โปรโมชั่น' : 'ตอบกลับ'}
+                    </span>
+                  </span>
                   <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mt-0.5">{item.content}</p>
                 </span>
               </button>
@@ -827,7 +832,6 @@ export default function Inbox() {
             <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
               {showQrPicker && (
                 <QuickReplyPicker
-                  channelId={selected.channelId}
                   onSend={sendQuickReply}
                   onClose={() => setShowQrPicker(false)}
                 />

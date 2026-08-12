@@ -32,33 +32,29 @@ model LineChannel {
   createdAt                  DateTime       @default(now())
   conversations              Conversation[]
   agents                     AgentChannel[]
-  quickReplyTypes            QuickReplyType[]
 }
 
-// "หมวดหมู่" in the quick-reply UI is just picking one of these channels — a
-// quick reply always belongs to exactly one channel. "ประเภท" (type) is a
-// second, admin-managed grouping within that channel (e.g. ทักทาย, ราคา, ปิดการขาย).
-model QuickReplyType {
+// "หมวดหมู่" — a free-form group an admin creates by typing a name (e.g. "ทักทายลูกค้า",
+// "ปิดการขาย"). Not tied to any specific LINE OA — admins decide per-send which
+// conversation/channel to use it in, same as respond.io's workspace-level snippets.
+model QuickReplyCategory {
   id           String       @id @default(cuid())
-  channelId    String
-  channel      LineChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  name         String
+  name         String       @unique
   createdAt    DateTime     @default(now())
   quickReplies QuickReply[]
-
-  @@unique([channelId, name])
 }
 
 model QuickReply {
-  id        String         @id @default(cuid())
-  typeId    String
-  type      QuickReplyType @relation(fields: [typeId], references: [id], onDelete: Cascade)
-  name      String         // internal shortcut name/title agents see in the picker
-  content   String         // message text
-  imageData String?        // optional attached image, stored as a base64 data URL
-  createdAt DateTime       @default(now())
+  id         String             @id @default(cuid())
+  categoryId String
+  category   QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind       String             @default("reply") // "ประเภท" — fixed choice: reply | promotion
+  name       String             // internal shortcut name/title agents see in the picker
+  content    String             // message text
+  imageData  String?            // optional attached image, stored as a base64 data URL
+  createdAt  DateTime           @default(now())
 
-  @@index([typeId])
+  @@index([categoryId])
 }
 
 // Restricts which LINE OA channels an agent is allowed to see.
