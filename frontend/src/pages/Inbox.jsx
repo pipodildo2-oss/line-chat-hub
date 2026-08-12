@@ -653,8 +653,14 @@ export default function Inbox() {
         if (idx === -1) return [conv, ...prev];
         const next = [...prev];
         next[idx] = { ...next[idx], ...conv };
+        // dir=-1 (newest first, the default) must produce a DESCENDING sort, i.e.
+        // compare as (b - a). The previous version compared (b - a) but then
+        // multiplied by -1 for the "newest" case, which is actually the formula
+        // for ASCENDING order — so every local resort (message sent, status
+        // changed, anything touching the conversation) flipped the whole list to
+        // oldest-first. Comparing (a - b) here gives the correct sign in both cases.
         const dir = filter.sort === 'oldest' ? 1 : -1;
-        return next.sort((a, b) => dir * (new Date(b.lastMessageAt) - new Date(a.lastMessageAt)));
+        return next.sort((a, b) => dir * (new Date(a.lastMessageAt) - new Date(b.lastMessageAt)));
       });
       setSelected(prev => (prev?.id === conv.id ? { ...prev, ...conv } : prev));
     });
