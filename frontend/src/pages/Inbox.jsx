@@ -537,7 +537,8 @@ export default function Inbox() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendingImage, setSendingImage] = useState(false);
+  const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
+  const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const bottomRef = useRef(null);
 
@@ -548,6 +549,7 @@ export default function Inbox() {
   useEffect(() => {
     setEditingName(false);
     setShowQrPicker(false);
+    setPendingImage(null);
   }, [selected?.id]);
 
   const activeFilterCount = useMemo(() => {
@@ -610,15 +612,32 @@ export default function Inbox() {
     return () => { socket.off('new_message'); socket.off('conversation_updated'); };
   }, [socket, selected?.id, filter.sort]);
 
+  // Reads a dropped/picked file into a pending attachment shown in the composer —
+  // it isn't sent to the customer until the agent hits Send.
+  function attachImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => setPendingImage({ previewUrl: reader.result, base64: reader.result });
+    reader.readAsDataURL(file);
+  }
+
   async function handleSend(text) {
-    const content = (text || input).trim();
-    if (!content || !selected || sending) return;
+    const content = (text ?? input).trim();
+    const image = pendingImage;
+    if ((!content && !image) || !selected || sending) return;
     setSending(true);
     setInput('');
+    setPendingImage(null);
     setSuggestion('');
     try {
-      const { data } = await axios.post(`/api/messages/${selected.id}`, { content });
-      setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+      if (image) {
+        const { data } = await axios.post(`/api/messages/${selected.id}`, { imageData: image.base64 });
+        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+      }
+      if (content) {
+        const { data } = await axios.post(`/api/messages/${selected.id}`, { content });
+        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+      }
     } finally {
       setSending(false);
     }
@@ -627,17 +646,6 @@ export default function Inbox() {
   async function getSuggestion() {
     const { data } = await axios.get(`/api/messages/${selected.id}/suggest`);
     setSuggestion(data.suggestion || '');
-  }
-
-  async function sendImageAttachment(imageData) {
-    if (!selected || sendingImage) return;
-    setSendingImage(true);
-    try {
-      const { data } = await axios.post(`/api/messages/${selected.id}`, { imageData });
-      setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-    } finally {
-      setSendingImage(false);
-    }
   }
 
   async function sendQuickReply(quickReplyId) {
@@ -818,8 +826,25 @@ export default function Inbox() {
               </button>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-midnight">
+            {/* Messages — also acts as an image drop zone; dropping a file attaches
+                it to the composer below rather than sending it immediately. */}
+            <div
+              className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-midnight relative"
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
+              onDrop={e => {
+                e.preventDefault();
+                setDragOver(false);
+                attachImageFile(e.dataTransfer.files?.[0]);
+              }}
+            >
+              {dragOver && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-aurora-teal/10 border-2 border-dashed border-aurora-teal pointer-events-none">
+                  <p className="text-sm font-medium text-aurora-tealDeep dark:text-aurora-teal bg-white dark:bg-slate-900 px-4 py-2 rounded-lg shadow">
+                    วางรูปที่นี่เพื่อแนบ
+                  </p>
+                </div>
+              )}
               {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
               <div ref={bottomRef} />
             </div>
@@ -835,62 +860,77 @@ export default function Inbox() {
             )}
 
             {/* Input */}
-            <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
+            <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800">
               {showQrPicker && (
-                <QuickReplyPicker
-                  channelId={selected.channelId}
-                  onSend={sendQuickReply}
-                  onClose={() => setShowQrPicker(false)}
-                />
+                <div className="relative px-4">
+                  <QuickReplyPicker
+                    channelId={selected.channelId}
+                    onSend={sendQuickReply}
+                    onClose={() => setShowQrPicker(false)}
+                  />
+                </div>
               )}
-              <button
-                onClick={() => setShowQrPicker(v => !v)}
-                title="ข้อความลัด"
-                className={`transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-              >
-                <Zap size={20} />
-              </button>
-              <button
-                onClick={getSuggestion}
-                title="AI suggest reply"
-                className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
-              >
-                <Sparkles size={20} />
-              </button>
-              <label
-                title="แนบรูปภาพ"
-                className={`transition-colors flex-shrink-0 cursor-pointer ${sendingImage ? 'text-aurora-tealDeep animate-pulse' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-              >
-                <ImagePlus size={20} />
+
+              {pendingImage && (
+                <div className="px-4 pt-3 flex items-center gap-2">
+                  <div className="relative">
+                    <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+                    <button
+                      onClick={() => setPendingImage(null)}
+                      className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                  <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
+                </div>
+              )}
+
+              <div className="px-4 py-3 flex gap-2">
+                <button
+                  onClick={() => setShowQrPicker(v => !v)}
+                  title="ข้อความลัด"
+                  className={`transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                >
+                  <Zap size={20} />
+                </button>
+                <button
+                  onClick={getSuggestion}
+                  title="AI suggest reply"
+                  className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
+                >
+                  <Sparkles size={20} />
+                </button>
+                <label
+                  title="แนบรูปภาพ"
+                  className={`transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                >
+                  <ImagePlus size={20} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      attachImageFile(e.target.files?.[0]);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
                 <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={sendingImage}
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    e.target.value = '';
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => sendImageAttachment(reader.result);
-                    reader.readAsDataURL(file);
-                  }}
+                  className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
+                  placeholder="พิมพ์ข้อความ..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 />
-              </label>
-              <input
-                className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
-                placeholder="พิมพ์ข้อความ..."
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() || sending}
-                className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-xl px-4 py-2 hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
-              >
-                <Send size={18} />
-              </button>
+                <button
+                  onClick={() => handleSend()}
+                  disabled={(!input.trim() && !pendingImage) || sending}
+                  className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-xl px-4 py-2 hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
             </div>
           </div>
 
