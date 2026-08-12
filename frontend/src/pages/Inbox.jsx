@@ -380,9 +380,21 @@ export default function Inbox() {
   const [tags, setTags] = useState([]);
   const [filter, setFilter] = useState({ status: 'open', channelIds: [], search: '', tagId: '', lifecycleStage: '', agentId: '', sort: 'newest' });
   const [showFilters, setShowFilters] = useState(false);
-  const [showDetail, setShowDetail] = useState(false);
+  // Persisted across conversation switches (and page reloads) so the panel stays
+  // open/closed the same way no matter which chat you're looking at.
+  const [showDetail, setShowDetail] = useState(() => localStorage.getItem('inbox_showDetail') === '1');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
+  }, [showDetail]);
+
+  useEffect(() => {
+    setEditingName(false);
+  }, [selected?.id]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
@@ -567,9 +579,27 @@ export default function Inbox() {
               <Avatar name={selected.displayName} pictureUrl={selected.pictureUrl} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="font-medium text-gray-900 dark:text-slate-100 truncate">{selected.displayName || selected.lineUserId}</h3>
+                  {editingName ? (
+                    <input
+                      autoFocus
+                      className="font-medium text-gray-900 dark:text-slate-100 bg-transparent border-b border-aurora-tealDeep focus:outline-none px-0.5 -ml-0.5 min-w-0 flex-1"
+                      value={nameDraft}
+                      onChange={e => setNameDraft(e.target.value)}
+                      onBlur={async () => {
+                        const trimmed = nameDraft.trim();
+                        setEditingName(false);
+                        if (trimmed && trimmed !== selected.displayName) await updateConv({ displayName: trimmed });
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                        if (e.key === 'Escape') setEditingName(false);
+                      }}
+                    />
+                  ) : (
+                    <h3 className="font-medium text-gray-900 dark:text-slate-100 truncate">{selected.displayName || selected.lineUserId}</h3>
+                  )}
                   <button
-                    onClick={() => setShowDetail(true)}
+                    onClick={() => { setNameDraft(selected.displayName || ''); setEditingName(true); }}
                     title="แก้ไขชื่อลูกค้า"
                     className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
                   >
