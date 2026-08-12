@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -33,6 +33,7 @@ export default function Sidebar() {
     { to: '/settings/channels', icon: Radio, label: t('settings_channels') },
     { to: '/settings/agents', icon: Users, label: t('settings_agents') },
     { to: '/settings/tags', icon: Tag, label: t('settings_tags') },
+    { to: '/settings/quick-replies', icon: Zap, label: t('settings_quick_replies') },
   ];
 
   const linkCls = ({ isActive }) =>

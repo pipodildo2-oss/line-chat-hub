@@ -32,6 +32,33 @@ model LineChannel {
   createdAt                  DateTime       @default(now())
   conversations              Conversation[]
   agents                     AgentChannel[]
+  quickReplyTypes            QuickReplyType[]
+}
+
+// "หมวดหมู่" in the quick-reply UI is just picking one of these channels — a
+// quick reply always belongs to exactly one channel. "ประเภท" (type) is a
+// second, admin-managed grouping within that channel (e.g. ทักทาย, ราคา, ปิดการขาย).
+model QuickReplyType {
+  id           String       @id @default(cuid())
+  channelId    String
+  channel      LineChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  name         String
+  createdAt    DateTime     @default(now())
+  quickReplies QuickReply[]
+
+  @@unique([channelId, name])
+}
+
+model QuickReply {
+  id        String         @id @default(cuid())
+  typeId    String
+  type      QuickReplyType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  name      String         // internal shortcut name/title agents see in the picker
+  content   String         // message text
+  imageData String?        // optional attached image, stored as a base64 data URL
+  createdAt DateTime       @default(now())
+
+  @@index([typeId])
 }
 
 // Restricts which LINE OA channels an agent is allowed to see.

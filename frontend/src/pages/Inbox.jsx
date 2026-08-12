@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil, Zap } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -129,6 +129,28 @@ function MessageBubble({ msg }) {
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
           <ImageMessage messageId={msg.lineMessageId} />
+          <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
+            {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
+            {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Image attached to a quick-reply we sent — served from our own public
+  // /api/quick-replies/:id/image route, so it can be linked directly (no auth proxy needed).
+  if (msg.type === 'image' && !msg.lineMessageId) {
+    let meta = {};
+    try { meta = msg.metadata ? JSON.parse(msg.metadata) : {}; } catch { /* ignore */ }
+    return (
+      <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
+        <div className="max-w-xs lg:max-w-md">
+          {meta.url ? (
+            <a href={meta.url} target="_blank" rel="noopener noreferrer">
+              <img src={meta.url} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+            </a>
+          ) : <p className="text-sm text-gray-400">[Image]</p>}
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
@@ -414,6 +436,88 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
   );
 }
 
+// Picker for the quick-reply/canned-message feature. Scoped to whichever LINE OA
+// channel the active conversation belongs to — "หมวดหมู่" is already fixed by
+// the conversation, agents just pick a "ประเภท" then a message to send.
+function QuickReplyPicker({ channelId, onSend, onClose }) {
+  const [types, setTypes] = useState([]);
+  const [typeId, setTypeId] = useState('');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [sendingId, setSendingId] = useState('');
+
+  useEffect(() => {
+    axios.get('/api/quick-replies/types', { params: { channelId } }).then(r => {
+      setTypes(r.data);
+      if (r.data.length > 0) setTypeId(r.data[0].id);
+    });
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!typeId) { setItems([]); return; }
+    setLoading(true);
+    axios.get('/api/quick-replies', { params: { typeId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
+  }, [typeId]);
+
+  async function handlePick(item) {
+    setSendingId(item.id);
+    try {
+      await onSend(item.id);
+      onClose();
+    } finally {
+      setSendingId('');
+    }
+  }
+
+  return (
+    <div className="absolute bottom-full left-0 mb-2 w-80 max-h-96 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-xl flex flex-col overflow-hidden z-20">
+      <div className="px-3 py-2 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-200">ข้อความลัด</p>
+        <button onClick={onClose}><X size={14} className="text-gray-400 dark:text-slate-500" /></button>
+      </div>
+      {types.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-4">ยังไม่มีข้อความลัดสำหรับช่องทางนี้ — ตั้งค่าได้ในหน้า ตั้งค่า &gt; ข้อความลัด</p>
+      ) : (
+        <>
+          <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-slate-800/60 flex-shrink-0">
+            {types.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTypeId(t.id)}
+                className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0 font-medium transition-colors ${
+                  typeId === t.id ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {loading && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">กำลังโหลด...</p>}
+            {!loading && items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">ยังไม่มีข้อความลัดในประเภทนี้</p>}
+            {!loading && items.map(item => (
+              <button
+                key={item.id}
+                onClick={() => handlePick(item)}
+                disabled={!!sendingId}
+                className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800/60 border-b border-gray-50 dark:border-slate-800/40 disabled:opacity-50 flex items-start gap-2"
+              >
+                {item.hasImage && (
+                  <img src={`/api/quick-replies/${item.id}/image`} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                )}
+                <span className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 dark:text-slate-100">{item.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mt-0.5">{item.content}</p>
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Inbox() {
   const { socket } = useSocket();
   const { agent } = useAuth();
@@ -434,6 +538,7 @@ export default function Inbox() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [showQrPicker, setShowQrPicker] = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -442,6 +547,7 @@ export default function Inbox() {
 
   useEffect(() => {
     setEditingName(false);
+    setShowQrPicker(false);
   }, [selected?.id]);
 
   const activeFilterCount = useMemo(() => {
@@ -521,6 +627,17 @@ export default function Inbox() {
   async function getSuggestion() {
     const { data } = await axios.get(`/api/messages/${selected.id}/suggest`);
     setSuggestion(data.suggestion || '');
+  }
+
+  async function sendQuickReply(quickReplyId) {
+    const { data } = await axios.post(`/api/quick-replies/${quickReplyId}/send`, { conversationId: selected.id });
+    setMessages(prev => {
+      let next = prev;
+      for (const m of data.messages) {
+        if (!next.some(x => x.id === m.id)) next = [...next, m];
+      }
+      return next;
+    });
   }
 
   async function assignAgent(agentId) {
@@ -707,7 +824,21 @@ export default function Inbox() {
             )}
 
             {/* Input */}
-            <div className="bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
+            <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
+              {showQrPicker && (
+                <QuickReplyPicker
+                  channelId={selected.channelId}
+                  onSend={sendQuickReply}
+                  onClose={() => setShowQrPicker(false)}
+                />
+              )}
+              <button
+                onClick={() => setShowQrPicker(v => !v)}
+                title="ข้อความลัด"
+                className={`transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+              >
+                <Zap size={20} />
+              </button>
               <button
                 onClick={getSuggestion}
                 title="AI suggest reply"

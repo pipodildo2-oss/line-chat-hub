@@ -13,6 +13,7 @@ const webhookRoutes = require('./routes/webhooks');
 const analyticsRoutes = require('./routes/analytics');
 const agentRoutes = require('./routes/agents');
 const tagRoutes = require('./routes/tags');
+const quickReplyRoutes = require('./routes/quickReplies');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
@@ -73,6 +74,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/quick-replies', quickReplyRoutes);
 
 // Checks the process is alive AND can actually reach the database — a plain
 // "process is running" check can stay green while the DB connection is dead.

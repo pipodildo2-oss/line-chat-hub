@@ -132,6 +132,16 @@ async function sendMessage(channel, lineUserId, text) {
   await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
 }
 
+// Used by the quick-reply "attach an image" feature. imageUrl must be a public
+// HTTPS URL — LINE's own servers fetch it directly, so it can't be behind our auth.
+async function sendImageMessage(channel, lineUserId, imageUrl) {
+  const client = getClient(channel.accessToken);
+  await client.pushMessage({
+    to: lineUserId,
+    messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl }],
+  });
+}
+
 // Downloads image/video/audio content a customer sent us. LINE requires the
 // Channel Access Token to fetch this (no public URL exists), so the frontend
 // can't hit it directly — this streams the bytes through our own backend.
@@ -141,4 +151,4 @@ async function getMessageContent(channel, messageId) {
   return { stream: body, contentType: httpResponse.headers.get('content-type') || 'application/octet-stream' };
 }
 
-module.exports = { processLineEvent, sendMessage, getMessageContent };
+module.exports = { processLineEvent, sendMessage, sendImageMessage, getMessageContent };

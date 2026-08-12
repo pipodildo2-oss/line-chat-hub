@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -383,12 +383,319 @@ function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
   );
 }
 
+function QuickReplyImageUpload({ value, onChange }) {
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(reader.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+  if (value) {
+    return (
+      <div className="relative inline-block">
+        <img src={value} alt="" className="w-20 h-20 rounded-lg object-cover border border-slate-700" />
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <label className="flex items-center gap-2 text-sm text-slate-400 border border-dashed border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:border-aurora-teal hover:text-aurora-teal w-fit transition-colors">
+      <ImagePlus size={15} /> แนบรูปภาพ (ไม่บังคับ)
+      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleFile} />
+    </label>
+  );
+}
+
+function QuickReplyEditModal({ item, onSave, onClose }) {
+  const [name, setName] = useState(item.name);
+  const [content, setContent] = useState(item.content);
+  const [imageData, setImageData] = useState(item.imageData || (item.hasImage ? `/api/quick-replies/${item.id}/image` : ''));
+  const [imageTouched, setImageTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+
+  async function handleSave() {
+    if (!name.trim() || !content.trim()) { setError('กรอกชื่อและรายละเอียดข้อความให้ครบ'); return; }
+    setSaving(true); setError('');
+    try {
+      const payload = { name, content };
+      if (imageTouched) payload.imageData = imageData; // only send if the user actually changed it
+      await onSave(item.id, payload);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-100">แก้ไขข้อความลัด</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+        </div>
+        {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>ชื่อข้อความ</label>
+            <input className={fieldCls} value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>รายละเอียดข้อความ</label>
+            <textarea className={fieldCls} rows={4} value={content} onChange={e => setContent(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>รูปภาพ</label>
+            <QuickReplyImageUpload value={imageData} onChange={v => { setImageData(v); setImageTouched(true); }} />
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-5">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all"
+          >
+            บันทึก
+          </button>
+          <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 1.1 เลือกหมวดหมู่ = เลือกช่องทาง LINE OA ก่อน, 1.2 เลือกประเภท = กลุ่มย่อยที่แอดมินตั้งไว้ในช่องทางนั้น,
+// 1.3-1.5 ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
+function QuickRepliesSettings({ channels, isAdmin }) {
+  const [channelId, setChannelId] = useState('');
+  const [types, setTypes] = useState([]);
+  const [typeId, setTypeId] = useState('');
+  const [quickReplies, setQuickReplies] = useState([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [loadingReplies, setLoadingReplies] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [addingType, setAddingType] = useState(false);
+  const [showAddQr, setShowAddQr] = useState(false);
+  const [qrForm, setQrForm] = useState({ name: '', content: '', imageData: '' });
+  const [savingQr, setSavingQr] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!channelId && channels.length > 0) setChannelId(channels[0].id);
+  }, [channels, channelId]);
+
+  useEffect(() => {
+    if (!channelId) return;
+    setLoadingTypes(true);
+    setTypeId('');
+    setQuickReplies([]);
+    axios.get('/api/quick-replies/types', { params: { channelId } })
+      .then(r => setTypes(r.data))
+      .finally(() => setLoadingTypes(false));
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!typeId) { setQuickReplies([]); return; }
+    setLoadingReplies(true);
+    axios.get('/api/quick-replies', { params: { typeId } })
+      .then(r => setQuickReplies(r.data))
+      .finally(() => setLoadingReplies(false));
+  }, [typeId]);
+
+  async function addType(e) {
+    e.preventDefault();
+    if (!newTypeName.trim()) return;
+    setError('');
+    try {
+      const { data } = await axios.post('/api/quick-replies/types', { channelId, name: newTypeName.trim() });
+      setTypes(prev => [...prev, { ...data, _count: { quickReplies: 0 } }]);
+      setNewTypeName('');
+      setAddingType(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
+  async function deleteType(id) {
+    if (!confirm('ลบประเภทนี้? ข้อความลัดทั้งหมดในประเภทนี้จะถูกลบไปด้วย')) return;
+    await axios.delete(`/api/quick-replies/types/${id}`);
+    setTypes(prev => prev.filter(t => t.id !== id));
+    if (typeId === id) setTypeId('');
+  }
+
+  async function addQuickReply(e) {
+    e.preventDefault();
+    if (!qrForm.name.trim() || !qrForm.content.trim()) return;
+    setSavingQr(true); setError('');
+    try {
+      const { data } = await axios.post('/api/quick-replies', { typeId, ...qrForm });
+      setQuickReplies(prev => [...prev, data]);
+      setTypes(prev => prev.map(t => t.id === typeId ? { ...t, _count: { quickReplies: (t._count?.quickReplies || 0) + 1 } } : t));
+      setQrForm({ name: '', content: '', imageData: '' });
+      setShowAddQr(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSavingQr(false); }
+  }
+
+  async function saveQuickReplyEdit(id, fields) {
+    const { data } = await axios.patch(`/api/quick-replies/${id}`, fields);
+    setQuickReplies(prev => prev.map(q => q.id === id ? data : q));
+  }
+
+  async function deleteQuickReply(id) {
+    if (!confirm('ลบข้อความลัดนี้?')) return;
+    await axios.delete(`/api/quick-replies/${id}`);
+    setQuickReplies(prev => prev.filter(q => q.id !== id));
+    setTypes(prev => prev.map(t => t.id === typeId ? { ...t, _count: { quickReplies: Math.max(0, (t._count?.quickReplies || 1) - 1) } } : t));
+  }
+
+  const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
+  const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
+
+  if (channels.length === 0) {
+    return <p className="text-sm text-slate-500">เพิ่มช่องทาง LINE OA ก่อน จึงจะสร้างข้อความลัดได้</p>;
+  }
+
+  return (
+    <div className="max-w-3xl space-y-5">
+      {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-4 py-2 rounded-lg">{error}</div>}
+
+      {/* 1.1 เลือกหมวดหมู่ (ช่องทาง) */}
+      <div>
+        <label className="text-xs font-medium text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่ (ช่องทาง LINE OA)</label>
+        <select className={`${inputCls} max-w-xs`} value={channelId} onChange={e => setChannelId(e.target.value)}>
+          {channels.map(ch => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
+        </select>
+      </div>
+
+      {/* 1.2 เลือกประเภท */}
+      <div>
+        <label className="text-xs font-medium text-slate-400 mb-1.5 block">2. เลือกประเภท</label>
+        <div className="flex flex-wrap gap-2 items-center">
+          {loadingTypes && <span className="text-sm text-slate-500">กำลังโหลด...</span>}
+          {!loadingTypes && types.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTypeId(t.id)}
+              className={`group flex items-center gap-1.5 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium border transition-colors ${
+                typeId === t.id
+                  ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal'
+                  : 'border-slate-700 text-slate-300 hover:border-slate-500'
+              }`}
+            >
+              {t.name}
+              <span className="text-xs opacity-60">({t._count?.quickReplies ?? 0})</span>
+              {isAdmin && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); deleteType(t.id); }}
+                  className="opacity-0 group-hover:opacity-100 hover:text-rose-400 w-4 h-4 flex items-center justify-center"
+                >
+                  <X size={12} />
+                </span>
+              )}
+            </button>
+          ))}
+          {!loadingTypes && types.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีประเภท</span>}
+          {isAdmin && (addingType ? (
+            <form onSubmit={addType} className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2.5 py-1.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                placeholder="ชื่อประเภท"
+                value={newTypeName}
+                onChange={e => setNewTypeName(e.target.value)}
+              />
+              <button type="submit" className="text-aurora-teal text-sm font-medium">เพิ่ม</button>
+              <button type="button" onClick={() => { setAddingType(false); setNewTypeName(''); }} className="text-slate-500 text-sm">ยกเลิก</button>
+            </form>
+          ) : (
+            <button onClick={() => setAddingType(true)} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
+              <Plus size={14} /> เพิ่มประเภท
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 1.3-1.5 รายการข้อความลัดในประเภทที่เลือก */}
+      {typeId && (
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-slate-400 block">3. ข้อความลัดในประเภทนี้</label>
+          {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
+          {!loadingReplies && quickReplies.map(qr => (
+            <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
+              {qr.hasImage && (
+                <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
+                <p className="text-sm text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => setEditTarget(qr)} className="text-slate-500 hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
+                  <button onClick={() => deleteQuickReply(qr.id)} className="text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
+                </div>
+              )}
+            </div>
+          ))}
+          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในประเภทนี้</p>}
+
+          {isAdmin && (showAddQr ? (
+            <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
+              <h3 className="font-medium text-slate-100">เพิ่มข้อความลัด</h3>
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">ตั้งชื่อข้อความ</label>
+                <input className={inputCls} placeholder="เช่น ทักทายลูกค้าใหม่" value={qrForm.name} onChange={e => setQrForm(f => ({ ...f, name: e.target.value }))} required />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">รายละเอียดข้อความ</label>
+                <textarea className={inputCls} rows={3} placeholder="ข้อความที่จะส่งให้ลูกค้า" value={qrForm.content} onChange={e => setQrForm(f => ({ ...f, content: e.target.value }))} required />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">แนบรูปภาพ</label>
+                <QuickReplyImageUpload value={qrForm.imageData} onChange={v => setQrForm(f => ({ ...f, imageData: v }))} />
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={savingQr} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
+                <button type="button" onClick={() => setShowAddQr(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+              </div>
+            </form>
+          ) : (
+            <button onClick={() => setShowAddQr(true)} className="flex items-center gap-2 text-sm text-aurora-teal hover:brightness-110 font-medium">
+              <Plus size={18} /> เพิ่มข้อความลัด
+            </button>
+          ))}
+        </div>
+      )}
+
+      {editTarget && (
+        <QuickReplyEditModal item={editTarget} onSave={saveQuickReplyEdit} onClose={() => setEditTarget(null)} />
+      )}
+    </div>
+  );
+}
+
 function useCategories() {
   const { t } = useLanguage();
   return {
     channels: { label: t('settings_channels'), icon: MessageSquare },
     agents: { label: t('settings_agents'), icon: Users },
     tags: { label: t('settings_tags'), icon: TagIcon },
+    'quick-replies': { label: t('settings_quick_replies'), icon: Zap },
   };
 }
 
@@ -660,6 +967,11 @@ export default function Settings() {
             <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">เพิ่มแท็ก</button>
           </form>
         </div>
+      )}
+
+      {/* Quick Replies */}
+      {tab === 'quick-replies' && (
+        <QuickRepliesSettings channels={channels} isAdmin={agent?.role === 'admin'} />
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />
