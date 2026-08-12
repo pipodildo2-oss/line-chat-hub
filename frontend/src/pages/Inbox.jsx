@@ -873,37 +873,37 @@ export default function Inbox() {
 
               {pendingImage && (
                 <div className="px-4 pt-3 flex items-center gap-2">
-                  <div className="relative">
+                  <a href={pendingImage.previewUrl} target="_blank" rel="noopener noreferrer" className="relative block">
                     <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
                     <button
-                      onClick={() => setPendingImage(null)}
+                      onClick={e => { e.preventDefault(); setPendingImage(null); }}
                       className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
                     >
                       <X size={11} />
                     </button>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
+                  </a>
+                  <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
                 </div>
               )}
 
-              <div className="px-4 py-3 flex gap-2">
+              <div className="px-4 py-3 flex items-center gap-2">
                 <button
                   onClick={() => setShowQrPicker(v => !v)}
                   title="ข้อความลัด"
-                  className={`transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                  className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
                 >
                   <Zap size={20} />
                 </button>
                 <button
                   onClick={getSuggestion}
                   title="AI suggest reply"
-                  className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
+                  className="inline-flex items-center justify-center w-5 h-5 text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
                 >
                   <Sparkles size={20} />
                 </button>
                 <label
                   title="แนบรูปภาพ"
-                  className={`transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                  className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
                 >
                   <ImagePlus size={20} />
                   <input

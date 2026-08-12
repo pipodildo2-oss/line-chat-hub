@@ -103,10 +103,24 @@ router.get('/', auth, async (req, res) => {
   const quickReplies = await prisma.quickReply.findMany({
     where,
     include: { category: { select: { id: true, name: true } } },
-    orderBy: { name: 'asc' },
+    orderBy: [{ order: 'asc' }, { name: 'asc' }],
   });
   // Don't ship the full base64 blob in list views — just whether an image exists.
   res.json(quickReplies.map(({ imageData, ...qr }) => ({ ...qr, hasImage: !!imageData })));
+});
+
+// PATCH /api/quick-replies/reorder — admin only. Body: { categoryId, ids: [...] }
+// (ids listed in the desired display order). Sets each item's `order` to its index —
+// this is what controls the order agents see them in the Inbox quick-reply picker.
+router.patch('/reorder', auth, requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
+    await Promise.all(ids.map((id, index) => prisma.quickReply.update({ where: { id }, data: { order: index } })));
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/quick-replies — admin only
@@ -120,8 +134,10 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
       return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
     }
+    // New items go to the end of their category's list by default.
+    const count = await prisma.quickReply.count({ where: { categoryId } });
     const quickReply = await prisma.quickReply.create({
-      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: imageData || null },
+      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: imageData || null, order: count },
     });
     const { imageData: _omit, ...safe } = quickReply;
     res.status(201).json({ ...safe, hasImage: !!quickReply.imageData });

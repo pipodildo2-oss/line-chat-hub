@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -609,6 +609,22 @@ function QuickRepliesSettings({ isAdmin, channels }) {
     setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: Math.max(0, (c._count?.quickReplies || 1) - 1) } } : c));
   }
 
+  // Swaps qr with its neighbor above/below, updates the list order shown here,
+  // and persists the new order so it's what agents see in the Inbox picker too.
+  async function moveQuickReply(id, direction) {
+    const index = quickReplies.findIndex(q => q.id === id);
+    const swapWith = direction === 'up' ? index - 1 : index + 1;
+    if (index === -1 || swapWith < 0 || swapWith >= quickReplies.length) return;
+    const next = [...quickReplies];
+    [next[index], next[swapWith]] = [next[swapWith], next[index]];
+    setQuickReplies(next);
+    try {
+      await axios.patch('/api/quick-replies/reorder', { ids: next.map(q => q.id) });
+    } catch {
+      setQuickReplies(quickReplies); // revert on failure
+    }
+  }
+
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
 
@@ -708,8 +724,26 @@ function QuickRepliesSettings({ isAdmin, channels }) {
         <div className="space-y-3">
           <label className="text-xs font-medium text-slate-400 block">ข้อความลัดในหมวดหมู่นี้</label>
           {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
-          {!loadingReplies && quickReplies.map(qr => (
+          {!loadingReplies && quickReplies.map((qr, i) => (
             <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
+              {isAdmin && (
+                <div className="flex flex-col flex-shrink-0 -my-1">
+                  <button
+                    onClick={() => moveQuickReply(qr.id, 'up')}
+                    disabled={i === 0}
+                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    onClick={() => moveQuickReply(qr.id, 'down')}
+                    disabled={i === quickReplies.length - 1}
+                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              )}
               {qr.hasImage && (
                 <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
               )}

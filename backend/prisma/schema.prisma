@@ -55,6 +55,7 @@ model QuickReply {
   name       String             // internal shortcut name/title agents see in the picker
   content    String             // message text
   imageData  String?            // optional attached image, stored as a base64 data URL
+  order      Int                @default(0) // display position within its category, agent-controlled
   createdAt  DateTime           @default(now())
 
   @@index([categoryId])
