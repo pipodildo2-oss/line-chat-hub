@@ -80,6 +80,40 @@ function ConversationItem({ conv, selected, onClick }) {
   );
 }
 
+// LINE's media content endpoint requires our server's Channel Access Token to fetch —
+// there's no public URL an <img> tag can hit directly. So we fetch it ourselves through
+// our authenticated backend proxy and turn it into a blob URL.
+function ImageMessage({ messageId }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let objectUrl;
+    let cancelled = false;
+    setSrc(null);
+    setFailed(false);
+    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
+      .then(res => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [messageId]);
+
+  if (failed) return <p className="text-sm text-gray-400">[Image]</p>;
+  if (!src) return <div className="w-48 h-48 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
+  return (
+    <a href={src} target="_blank" rel="noopener noreferrer">
+      <img src={src} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+    </a>
+  );
+}
+
 function MessageBubble({ msg }) {
   const isUser = msg.sender === 'user';
   const timeCls = isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70';
@@ -89,6 +123,20 @@ function MessageBubble({ msg }) {
       {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
     </p>
   );
+
+  if (msg.type === 'image' && msg.lineMessageId) {
+    return (
+      <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
+        <div className="max-w-xs lg:max-w-md">
+          <ImageMessage messageId={msg.lineMessageId} />
+          <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
+            {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
+            {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (msg.type === 'sticker') {
     let meta = {};

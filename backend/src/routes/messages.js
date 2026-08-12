@@ -2,10 +2,29 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
-const { sendMessage } = require('../services/line.service');
+const { sendMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 
 const prisma = new PrismaClient();
+
+// GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
+// Placed before the /:conversationId route below since "content" would otherwise be
+// swallowed as a conversationId value.
+router.get('/content/:messageId', auth, async (req, res) => {
+  try {
+    const message = await prisma.message.findFirst({
+      where: { lineMessageId: req.params.messageId },
+      include: { conversation: { include: { channel: true } } },
+    });
+    if (!message) return res.status(404).end();
+    const { stream, contentType } = await getMessageContent(message.conversation.channel, req.params.messageId);
+    res.set('Content-Type', contentType);
+    res.set('Cache-Control', 'private, max-age=86400');
+    stream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/messages/:conversationId
 router.get('/:conversationId', auth, async (req, res) => {

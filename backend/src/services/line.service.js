@@ -130,4 +130,13 @@ async function sendMessage(channel, lineUserId, text) {
   await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
 }
 
-module.exports = { processLineEvent, sendMessage };
+// Downloads image/video/audio content a customer sent us. LINE requires the
+// Channel Access Token to fetch this (no public URL exists), so the frontend
+// can't hit it directly — this streams the bytes through our own backend.
+async function getMessageContent(channel, messageId) {
+  const blobClient = new line.messagingApi.MessagingApiBlobClient({ channelAccessToken: channel.accessToken });
+  const { httpResponse, body } = await blobClient.getMessageContentWithHttpInfo(messageId);
+  return { stream: body, contentType: httpResponse.headers.get('content-type') || 'application/octet-stream' };
+}
+
+module.exports = { processLineEvent, sendMessage, getMessageContent };
