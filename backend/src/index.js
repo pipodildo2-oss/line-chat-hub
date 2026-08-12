@@ -14,6 +14,7 @@ const analyticsRoutes = require('./routes/analytics');
 const agentRoutes = require('./routes/agents');
 const tagRoutes = require('./routes/tags');
 const quickReplyRoutes = require('./routes/quickReplies');
+const channelCategoryRoutes = require('./routes/channelCategories');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
@@ -77,6 +78,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/quick-replies', quickReplyRoutes);
+app.use('/api/channel-categories', channelCategoryRoutes);
 
 // Checks the process is alive AND can actually reach the database — a plain
 // "process is running" check can stay green while the DB connection is dead.

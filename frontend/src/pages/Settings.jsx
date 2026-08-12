@@ -54,7 +54,7 @@ function ChannelListCard({ channel, onManage }) {
   );
 }
 
-function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
+function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete }) {
   const [name, setName] = useState(channel.name);
   const [lineId, setLineId] = useState(channel.lineId || '');
   const [channelSecret, setChannelSecret] = useState(channel.channelSecret || '');
@@ -63,6 +63,13 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
   const [saved, setSaved] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+
+  async function handleCategoryChange(e) {
+    setSavingCategory(true);
+    try { await onSave(channel.id, { categoryId: e.target.value }); }
+    finally { setSavingCategory(false); }
+  }
 
   const webhookUrl = `${window.location.origin}/api/webhooks/line/${channel.id}`;
   const handle = lineId ? `@${lineId.replace(/^@/, '')}` : null;
@@ -159,6 +166,14 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
         <div>
           <label className={labelCls}>ชื่อช่องทาง</label>
           <input className={fieldCls} value={name} onChange={e => setName(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelCls}>หมวดหมู่</label>
+          <select className={fieldCls} value={channel.categoryId || ''} onChange={handleCategoryChange} disabled={savingCategory}>
+            <option value="">ไม่มีหมวดหมู่</option>
+            {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+          </select>
         </div>
 
         <div>
@@ -843,11 +858,56 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // LINE OA channel categories — purely organizational rows on the channels page.
+  const [channelCategories, setChannelCategories] = useState([]);
+  const [showAddChannelCategory, setShowAddChannelCategory] = useState(false);
+  const [channelCategoryName, setChannelCategoryName] = useState('');
+  const [editingChannelCategoryId, setEditingChannelCategoryId] = useState(null);
+  const [editingChannelCategoryName, setEditingChannelCategoryName] = useState('');
+
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data));
     axios.get('/api/agents').then(r => setAgents(r.data));
     axios.get('/api/tags').then(r => setTags(r.data));
+    axios.get('/api/channel-categories').then(r => setChannelCategories(r.data));
   }, []);
+
+  async function addChannelCategory(e) {
+    e.preventDefault();
+    if (!channelCategoryName.trim()) return;
+    setSaving(true); setError('');
+    try {
+      const { data } = await axios.post('/api/channel-categories', { name: channelCategoryName.trim() });
+      setChannelCategories(prev => [...prev, { ...data, _count: { channels: 0 } }]);
+      setChannelCategoryName('');
+      setShowAddChannelCategory(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSaving(false); }
+  }
+
+  function startEditChannelCategory(cat) {
+    setEditingChannelCategoryId(cat.id);
+    setEditingChannelCategoryName(cat.name);
+  }
+
+  async function saveChannelCategoryEdit(id) {
+    if (!editingChannelCategoryName.trim()) return;
+    try {
+      const { data } = await axios.patch(`/api/channel-categories/${id}`, { name: editingChannelCategoryName.trim() });
+      setChannelCategories(prev => prev.map(c => c.id === id ? { ...c, name: data.name } : c));
+      setEditingChannelCategoryId(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
+  async function deleteChannelCategory(id) {
+    if (!confirm('ลบหมวดหมู่นี้? ไลน์ที่อยู่ในหมวดหมู่นี้จะยังอยู่ครบ แค่ย้ายไปเป็น "ยังไม่มีหมวดหมู่"')) return;
+    await axios.delete(`/api/channel-categories/${id}`);
+    setChannelCategories(prev => prev.filter(c => c.id !== id));
+    setChannels(prev => prev.map(c => c.categoryId === id ? { ...c, categoryId: null, category: null } : c));
+  }
 
   async function addChannel(e) {
     e.preventDefault();
@@ -941,24 +1001,113 @@ export default function Settings() {
         manageChannel ? (
           <ChannelConfigure
             channel={manageChannel}
+            categories={channelCategories}
             onBack={() => setManageChannelId(null)}
             onSave={updateChannel}
             onRequestDelete={setDeleteTarget}
           />
         ) : (
-          <div className="space-y-4 max-w-6xl">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {channels.map(ch => (
-                <ChannelListCard key={ch.id} channel={ch} onManage={() => setManageChannelId(ch.id)} />
-              ))}
+          <div className="space-y-6 max-w-6xl">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ไลน์ OA</p>
               <button
-                onClick={() => setShowAddChannel(true)}
-                className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
+                onClick={() => setShowAddChannelCategory(v => !v)}
+                className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
               >
-                <Plus size={26} />
-                <span className="text-sm">เพิ่ม LINE OA</span>
+                <Plus size={12} /> เพิ่มหมวดหมู่
               </button>
             </div>
+
+            {showAddChannelCategory && (
+              <form onSubmit={addChannelCategory} className="flex items-center gap-2 max-w-md">
+                <input
+                  autoFocus
+                  className={inputCls}
+                  placeholder="ชื่อหมวดหมู่ เช่น ทีมขาย A"
+                  value={channelCategoryName}
+                  onChange={e => setChannelCategoryName(e.target.value)}
+                />
+                <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
+                <button type="button" onClick={() => { setShowAddChannelCategory(false); setChannelCategoryName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+              </form>
+            )}
+
+            {channelCategories.length === 0 ? (
+              // No categories created yet — plain flat grid, same as before.
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {channels.map(ch => (
+                  <ChannelListCard key={ch.id} channel={ch} onManage={() => setManageChannelId(ch.id)} />
+                ))}
+                <button
+                  onClick={() => setShowAddChannel(true)}
+                  className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
+                >
+                  <Plus size={26} />
+                  <span className="text-sm">เพิ่ม LINE OA</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {channelCategories.map(cat => {
+                  const catChannels = channels.filter(ch => ch.categoryId === cat.id);
+                  return (
+                    <div key={cat.id}>
+                      <div className="flex items-center gap-2 mb-2 group">
+                        {editingChannelCategoryId === cat.id ? (
+                          <>
+                            <input
+                              autoFocus
+                              className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                              value={editingChannelCategoryName}
+                              onChange={e => setEditingChannelCategoryName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && saveChannelCategoryEdit(cat.id)}
+                            />
+                            <button onClick={() => saveChannelCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
+                            <button onClick={() => setEditingChannelCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
+                            <span className="text-[10px] text-slate-500">{catChannels.length} ไลน์</span>
+                            <button onClick={() => startEditChannelCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
+                            <button onClick={() => deleteChannelCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+                          </>
+                        )}
+                      </div>
+                      {catChannels.length > 0 ? (
+                        <div className="flex flex-wrap gap-4">
+                          {catChannels.map(ch => (
+                            <div key={ch.id} className="w-64 flex-shrink-0">
+                              <ChannelListCard channel={ch} onManage={() => setManageChannelId(ch.id)} />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-600">ยังไม่มีไลน์ในหมวดหมู่นี้ — ไปที่ Manage ของไลน์แล้วเลือกหมวดหมู่นี้</p>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-200 mb-2">ยังไม่มีหมวดหมู่</p>
+                  <div className="flex flex-wrap gap-4">
+                    {channels.filter(ch => !ch.categoryId).map(ch => (
+                      <div key={ch.id} className="w-64 flex-shrink-0">
+                        <ChannelListCard channel={ch} onManage={() => setManageChannelId(ch.id)} />
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setShowAddChannel(true)}
+                      className="w-64 flex-shrink-0 rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
+                    >
+                      <Plus size={26} />
+                      <span className="text-sm">เพิ่ม LINE OA</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {showAddChannel && (
               <form onSubmit={addChannel} className={`${cardCls} space-y-3 max-w-xl`}>

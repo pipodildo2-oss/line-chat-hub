@@ -33,6 +33,21 @@ model LineChannel {
   conversations              Conversation[]
   agents                     AgentChannel[]
   quickReplyCategories       QuickReplyCategory[]
+  categoryId                 String?
+  category                   ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId])
+}
+
+// Purely organizational grouping for LINE OA channels, admin-created by typing a
+// name. Shown as horizontal rows on the channel management page. A channel
+// belongs to at most one category (or none — shown in an "uncategorized" row).
+// Deleting a category doesn't delete its channels (onDelete: SetNull above).
+model ChannelCategory {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  createdAt DateTime      @default(now())
+  channels  LineChannel[]
 }
 
 // "หมวดหมู่" — a free-form group an admin creates by typing a name (e.g. "ทักทายลูกค้า",
