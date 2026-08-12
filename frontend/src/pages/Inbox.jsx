@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil, Zap } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil, Zap, ImagePlus } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -537,6 +537,7 @@ export default function Inbox() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendingImage, setSendingImage] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const bottomRef = useRef(null);
 
@@ -626,6 +627,17 @@ export default function Inbox() {
   async function getSuggestion() {
     const { data } = await axios.get(`/api/messages/${selected.id}/suggest`);
     setSuggestion(data.suggestion || '');
+  }
+
+  async function sendImageAttachment(imageData) {
+    if (!selected || sendingImage) return;
+    setSendingImage(true);
+    try {
+      const { data } = await axios.post(`/api/messages/${selected.id}`, { imageData });
+      setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+    } finally {
+      setSendingImage(false);
+    }
   }
 
   async function sendQuickReply(quickReplyId) {
@@ -845,6 +857,26 @@ export default function Inbox() {
               >
                 <Sparkles size={20} />
               </button>
+              <label
+                title="แนบรูปภาพ"
+                className={`transition-colors flex-shrink-0 cursor-pointer ${sendingImage ? 'text-aurora-tealDeep animate-pulse' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+              >
+                <ImagePlus size={20} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={sendingImage}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => sendImageAttachment(reader.result);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
               <input
                 className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="พิมพ์ข้อความ..."

@@ -128,6 +128,7 @@ model Message {
   type           String       @default("text") // text | image | sticker | audio | video | location
   content        String
   metadata       String?      // JSON string for images, stickers etc
+  imageData      String?      // base64 data URL for images an agent attached & sent (LINE fetches it via a public route)
   read           Boolean      @default(false)
   lineMessageId  String?      @unique // LINE's own message id — used to reject duplicate webhook redeliveries
   createdAt      DateTime     @default(now())
