@@ -83,7 +83,7 @@ function ConversationItem({ conv, selected, onClick }) {
 // LINE's media content endpoint requires our server's Channel Access Token to fetch —
 // there's no public URL an <img> tag can hit directly. So we fetch it ourselves through
 // our authenticated backend proxy and turn it into a blob URL.
-function ImageMessage({ messageId }) {
+function ImageMessage({ messageId, onImageClick }) {
   const [src, setSrc] = useState(null);
   const [failed, setFailed] = useState(false);
 
@@ -108,13 +108,39 @@ function ImageMessage({ messageId }) {
   if (failed) return <p className="text-sm text-gray-400">[Image]</p>;
   if (!src) return <div className="w-48 h-48 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
   return (
-    <a href={src} target="_blank" rel="noopener noreferrer">
+    <button type="button" onClick={() => onImageClick?.(src)} className="block cursor-zoom-in">
       <img src={src} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
-    </a>
+    </button>
   );
 }
 
-function MessageBubble({ msg }) {
+// Full-screen in-app image viewer — used for customer-sent images, agent-sent
+// images, and the not-yet-sent pending attachment, so clicking any of them
+// stays in the current tab instead of opening a new browser tab.
+function Lightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-9 h-9 flex items-center justify-center"
+      >
+        <X size={20} />
+      </button>
+      <img
+        src={src}
+        alt=""
+        className="max-w-full max-h-full rounded-lg object-contain"
+        onClick={e => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
+function MessageBubble({ msg, onImageClick }) {
   const isUser = msg.sender === 'user';
   const timeCls = isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70';
   const timeLabel = (
@@ -128,7 +154,7 @@ function MessageBubble({ msg }) {
     return (
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
-          <ImageMessage messageId={msg.lineMessageId} />
+          <ImageMessage messageId={msg.lineMessageId} onImageClick={onImageClick} />
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
@@ -147,9 +173,9 @@ function MessageBubble({ msg }) {
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
           {meta.url ? (
-            <a href={meta.url} target="_blank" rel="noopener noreferrer">
+            <button type="button" onClick={() => onImageClick?.(meta.url)} className="block cursor-zoom-in">
               <img src={meta.url} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
-            </a>
+            </button>
           ) : <p className="text-sm text-gray-400">[Image]</p>}
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
@@ -518,7 +544,7 @@ function QuickReplyPicker({ channelId, onSend, onClose }) {
 }
 
 export default function Inbox() {
-  const { socket } = useSocket();
+  const { socket, connected } = useSocket();
   const { agent } = useAuth();
   const { t } = useLanguage();
   const [conversations, setConversations] = useState([]);
@@ -540,6 +566,7 @@ export default function Inbox() {
   const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null); // src of the image currently open in the in-app viewer
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -572,6 +599,28 @@ export default function Inbox() {
   }, [filter]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // The list only reorders itself in response to socket events (see 'conversation_updated'
+  // below). If the tab sits idle for a while, the browser can throttle background JS or
+  // the socket can silently drop and reconnect — either way, whatever happened during
+  // that gap never reaches the client, so the list quietly goes stale (shows old order,
+  // missing badges) until something forces a resync. Re-fetch whenever the socket
+  // reconnects or the tab regains focus to close that gap.
+  const prevConnectedRef = useRef(connected);
+  useEffect(() => {
+    if (connected && !prevConnectedRef.current) {
+      loadConversations();
+    }
+    prevConnectedRef.current = connected;
+  }, [connected, loadConversations]);
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') loadConversations();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [loadConversations]);
 
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data));
@@ -845,7 +894,7 @@ export default function Inbox() {
                   </p>
                 </div>
               )}
-              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onImageClick={setLightboxSrc} />)}
               <div ref={bottomRef} />
             </div>
 
@@ -873,15 +922,17 @@ export default function Inbox() {
 
               {pendingImage && (
                 <div className="px-4 pt-3 flex items-center gap-2">
-                  <a href={pendingImage.previewUrl} target="_blank" rel="noopener noreferrer" className="relative block">
-                    <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+                  <div className="relative">
+                    <button type="button" onClick={() => setLightboxSrc(pendingImage.previewUrl)} className="block cursor-zoom-in">
+                      <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+                    </button>
                     <button
-                      onClick={e => { e.preventDefault(); setPendingImage(null); }}
+                      onClick={() => setPendingImage(null)}
                       className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
                     >
                       <X size={11} />
                     </button>
-                  </a>
+                  </div>
                   <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
                 </div>
               )}
@@ -955,6 +1006,7 @@ export default function Inbox() {
           </div>
         </div>
       )}
+      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
