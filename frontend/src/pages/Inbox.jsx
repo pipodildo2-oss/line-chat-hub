@@ -566,7 +566,16 @@ export default function Inbox() {
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 py-3 flex items-center gap-3">
               <Avatar name={selected.displayName} pictureUrl={selected.pictureUrl} />
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium text-gray-900 dark:text-slate-100 truncate">{selected.displayName || selected.lineUserId}</h3>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-medium text-gray-900 dark:text-slate-100 truncate">{selected.displayName || selected.lineUserId}</h3>
+                  <button
+                    onClick={() => setShowDetail(true)}
+                    title="แก้ไขชื่อลูกค้า"
+                    className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
                 <p className="text-xs text-gray-500 dark:text-slate-500">{selected.channel?.name}</p>
               </div>
               <div className="flex items-center gap-2">

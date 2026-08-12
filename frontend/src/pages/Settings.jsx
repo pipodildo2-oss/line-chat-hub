@@ -24,12 +24,14 @@ function CopyButton({ text }) {
 function ChannelListCard({ channel, onManage }) {
   return (
     <div className="relative rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4">
-      <span
-        title='อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'
-        className="absolute top-2 right-2 text-amber-500 p-1 cursor-help"
-      >
-        <AlertTriangle size={15} />
-      </span>
+      {!channel.webhookRedeliveryConfirmed && (
+        <span
+          title='อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'
+          className="absolute top-2 right-2 text-amber-500 p-1 cursor-help"
+        >
+          <AlertTriangle size={15} />
+        </span>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
@@ -60,6 +62,7 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const webhookUrl = `${window.location.origin}/api/webhooks/line/${channel.id}`;
   const handle = lineId ? `@${lineId.replace(/^@/, '')}` : null;
@@ -78,6 +81,13 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
     } finally { setSaving(false); }
   }
 
+  async function handleConfirmRedelivery() {
+    setConfirming(true);
+    try {
+      await onSave(channel.id, { webhookRedeliveryConfirmed: true });
+    } finally { setConfirming(false); }
+  }
+
   return (
     <div className="max-w-xl">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 mb-4">
@@ -86,23 +96,36 @@ function ChannelConfigure({ channel, onBack, onSave, onRequestDelete }) {
       <h2 className="text-lg font-semibold text-slate-100 mb-0.5">ตั้งค่า LINE OA</h2>
       <p className="text-sm text-slate-500 mb-6">จัดการข้อมูลและการตั้งค่าของช่องทางนี้</p>
 
-      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-4">
-        <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
-        <div className="text-xs text-amber-400">
-          <p>
-            อย่าลืมเปิด <span className="font-medium">"Use webhook redelivery"</span> ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด
-            ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร (LINE ไม่มี API ให้เปิด/ปิดสวิตช์นี้จากในระบบนี้ ต้องไปกดในคอนโซลของ LINE เอง)
-          </p>
-          <a
-            href="https://developers.line.biz/console/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 mt-1.5 font-medium hover:brightness-110"
-          >
-            เปิด LINE Developers Console <ExternalLink size={12} />
-          </a>
+      {!channel.webhookRedeliveryConfirmed && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-4">
+          <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-amber-400">
+            <p>
+              อย่าลืมเปิด <span className="font-medium">"Use webhook redelivery"</span> ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด
+              ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร (LINE ไม่มี API ให้เปิด/ปิดสวิตช์นี้จากในระบบนี้ ต้องไปกดในคอนโซลของ LINE เอง —
+              ระบบเลยเช็คสถานะจริงให้ไม่ได้ ต้องกดยืนยันเองด้านล่างหลังเปิดใช้แล้ว)
+            </p>
+            <div className="flex items-center gap-3 mt-2">
+              <a
+                href="https://developers.line.biz/console/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium hover:brightness-110"
+              >
+                เปิด LINE Developers Console <ExternalLink size={12} />
+              </a>
+              <button
+                type="button"
+                onClick={handleConfirmRedelivery}
+                disabled={confirming}
+                className="inline-flex items-center gap-1 font-medium text-aurora-teal hover:brightness-110 disabled:opacity-50"
+              >
+                <Check size={12} /> {confirming ? 'กำลังบันทึก...' : 'ฉันเปิดใช้แล้ว ซ่อนคำเตือนนี้'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="space-y-4">
         {chatLink && (

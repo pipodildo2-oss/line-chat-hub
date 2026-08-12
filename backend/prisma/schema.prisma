@@ -21,16 +21,17 @@ model Agent {
 }
 
 model LineChannel {
-  id            String         @id @default(cuid())
-  name          String
-  channelId     String         @unique
-  channelSecret String
-  accessToken   String
-  lineId        String?        // the public @handle customers use to add the OA as a friend
-  pictureUrl    String?
-  createdAt     DateTime       @default(now())
-  conversations Conversation[]
-  agents        AgentChannel[]
+  id                         String         @id @default(cuid())
+  name                       String
+  channelId                  String         @unique
+  channelSecret              String
+  accessToken                String
+  lineId                     String?        // the public @handle customers use to add the OA as a friend
+  pictureUrl                 String?
+  webhookRedeliveryConfirmed Boolean        @default(false) // agent manually confirms they enabled this in LINE console (no API to check it)
+  createdAt                  DateTime       @default(now())
+  conversations              Conversation[]
+  agents                     AgentChannel[]
 }
 
 // Restricts which LINE OA channels an agent is allowed to see.

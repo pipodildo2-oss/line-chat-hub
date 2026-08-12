@@ -39,10 +39,10 @@ router.post('/', auth, async (req, res) => {
 // PUT /api/channels/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { name, channelSecret, accessToken, lineId } = req.body;
+    const { name, channelSecret, accessToken, lineId, webhookRedeliveryConfirmed } = req.body;
     const channel = await prisma.lineChannel.update({
       where: { id: req.params.id },
-      data: { name, channelSecret, accessToken, lineId },
+      data: { name, channelSecret, accessToken, lineId, webhookRedeliveryConfirmed },
     });
     res.json(channel);
   } catch {
