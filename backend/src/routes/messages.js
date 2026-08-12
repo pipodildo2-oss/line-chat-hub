@@ -123,10 +123,16 @@ router.post('/:conversationId', auth, async (req, res) => {
     }
 
     // Update conversation lastMessageAt
+    const now = new Date();
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { lastMessageAt: new Date() },
+      data: { lastMessageAt: now },
     });
+    // `conversation` was fetched before the update above, so its lastMessageAt is
+    // stale. Patch it locally before broadcasting — otherwise the inbox list
+    // briefly re-sorts using the old timestamp and the conversation appears to
+    // jump backward every time a message is sent.
+    conversation.lastMessageAt = now;
 
     emitToConversation(conversation.id, 'new_message', { message, conversation });
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });
