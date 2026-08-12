@@ -436,28 +436,25 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
   );
 }
 
-// Picker for the quick-reply/canned-message feature. Categories are admin-typed
-// and shared across all LINE OAs — the currently open conversation's channel is
-// just what actually gets used to push the message out when an agent picks one.
+const QR_KIND_TABS = [
+  { key: 'reply', label: 'ตอบกลับ' },
+  { key: 'promotion', label: 'โปรโมชั่น' },
+];
+
+// Picker for the quick-reply/canned-message feature. Agents pick a "ประเภท"
+// (ตอบกลับ / โปรโมชั่น) first, then see the matching messages — categories are
+// just an admin-side organizing label shown as a small tag per item here.
+// The currently open conversation's channel is what actually sends the message.
 function QuickReplyPicker({ onSend, onClose }) {
-  const [categories, setCategories] = useState([]);
-  const [categoryId, setCategoryId] = useState('');
+  const [kind, setKind] = useState('reply');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState('');
 
   useEffect(() => {
-    axios.get('/api/quick-replies/categories').then(r => {
-      setCategories(r.data);
-      if (r.data.length > 0) setCategoryId(r.data[0].id);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!categoryId) { setItems([]); return; }
     setLoading(true);
-    axios.get('/api/quick-replies', { params: { categoryId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
-  }, [categoryId]);
+    axios.get('/api/quick-replies', { params: { kind } }).then(r => setItems(r.data)).finally(() => setLoading(false));
+  }, [kind]);
 
   async function handlePick(item) {
     setSendingId(item.id);
@@ -475,50 +472,46 @@ function QuickReplyPicker({ onSend, onClose }) {
         <p className="text-sm font-medium text-gray-700 dark:text-slate-200">ข้อความลัด</p>
         <button onClick={onClose}><X size={14} className="text-gray-400 dark:text-slate-500" /></button>
       </div>
-      {categories.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-4">ยังไม่มีข้อความลัด — ตั้งค่าได้ในหน้า ตั้งค่า &gt; ข้อความลัด</p>
-      ) : (
-        <>
-          <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-slate-800/60 flex-shrink-0">
-            {categories.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setCategoryId(c.id)}
-                className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0 font-medium transition-colors ${
-                  categoryId === c.id ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
-                }`}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-          <div className="overflow-y-auto flex-1">
-            {loading && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">กำลังโหลด...</p>}
-            {!loading && items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
-            {!loading && items.map(item => (
-              <button
-                key={item.id}
-                onClick={() => handlePick(item)}
-                disabled={!!sendingId}
-                className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800/60 border-b border-gray-50 dark:border-slate-800/40 disabled:opacity-50 flex items-start gap-2"
-              >
-                {item.hasImage && (
-                  <img src={`/api/quick-replies/${item.id}/image`} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                )}
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium text-gray-800 dark:text-slate-100">{item.name}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex-shrink-0">
-                      {item.kind === 'promotion' ? 'โปรโมชั่น' : 'ตอบกลับ'}
-                    </span>
+      <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 dark:border-slate-800/60 flex-shrink-0">
+        {QR_KIND_TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setKind(tab.key)}
+            className={`text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+              kind === tab.key ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="overflow-y-auto flex-1">
+        {loading && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">กำลังโหลด...</p>}
+        {!loading && items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-3 py-3">ยังไม่มีข้อความลัดในประเภทนี้ — ตั้งค่าได้ในหน้า ตั้งค่า &gt; ข้อความลัด</p>}
+        {!loading && items.map(item => (
+          <button
+            key={item.id}
+            onClick={() => handlePick(item)}
+            disabled={!!sendingId}
+            className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800/60 border-b border-gray-50 dark:border-slate-800/40 disabled:opacity-50 flex items-start gap-2"
+          >
+            {item.hasImage && (
+              <img src={`/api/quick-replies/${item.id}/image`} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+            )}
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-gray-800 dark:text-slate-100">{item.name}</p>
+                {item.category?.name && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex-shrink-0">
+                    {item.category.name}
                   </span>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mt-0.5">{item.content}</p>
-                </span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+                )}
+              </span>
+              <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mt-0.5">{item.content}</p>
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

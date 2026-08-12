@@ -88,8 +88,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'categoryId, name and content required' });
     }
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !/^data:image\/(png|jpe?g|gif|webp);base64,/.test(imageData)) {
-      return res.status(400).json({ error: 'รูปภาพต้องเป็นไฟล์ png, jpg, gif หรือ webp' });
+    if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
     }
     const quickReply = await prisma.quickReply.create({
       data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: imageData || null },
@@ -106,8 +106,8 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
     const { name, content, imageData, categoryId, kind } = req.body;
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !/^data:image\/(png|jpe?g|gif|webp);base64,/.test(imageData)) {
-      return res.status(400).json({ error: 'รูปภาพต้องเป็นไฟล์ png, jpg, gif หรือ webp' });
+    if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
     }
     const data = {};
     if (categoryId) data.categoryId = categoryId;
@@ -139,7 +139,7 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
 router.get('/:id/image', async (req, res) => {
   const quickReply = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!quickReply?.imageData) return res.status(404).end();
-  const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(quickReply.imageData);
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(quickReply.imageData);
   if (!match) return res.status(404).end();
   const [, contentType, base64] = match;
   res.set('Content-Type', contentType);

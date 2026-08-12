@@ -409,7 +409,7 @@ function QuickReplyImageUpload({ value, onChange }) {
   return (
     <label className="flex items-center gap-2 text-sm text-slate-400 border border-dashed border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:border-aurora-teal hover:text-aurora-teal w-fit transition-colors">
       <ImagePlus size={15} /> แนบรูปภาพ (ไม่บังคับ)
-      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleFile} />
+      <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
     </label>
   );
 }

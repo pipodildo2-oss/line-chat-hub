@@ -63,7 +63,9 @@ const worker = startWorker(async (channelId, event) => {
 app.use(cors());
 // Raw body for LINE signature verification (must come before express.json)
 app.use('/api/webhooks/line', express.raw({ type: 'application/json' }));
-app.use(express.json());
+// Default body limit (100kb) is too small once quick-reply images are base64-encoded
+// into JSON — raised to cover LINE's own 10MB image message cap plus base64 overhead.
+app.use(express.json({ limit: '15mb' }));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -95,6 +97,19 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
+
+// Body-parser errors (e.g. payload too large, malformed JSON) otherwise reach the
+// client as a bare non-JSON response, so axios can't read err.response.data.error
+// and the UI just shows a generic "something went wrong" with no useful detail.
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'ไฟล์ที่แนบใหญ่เกินไป (สูงสุด 15MB)' });
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'ข้อมูลที่ส่งไม่ถูกต้อง' });
+  }
+  next(err);
+});
 
 // Socket.io
 io.on('connection', (socket) => {
