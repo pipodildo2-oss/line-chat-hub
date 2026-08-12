@@ -497,32 +497,36 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
   );
 }
 
-// 1. เลือกหมวดหมู่ = หมวดที่แอดมินพิมพ์สร้างเอง (ไม่ผูกกับ OA ไหนเป็นการเฉพาะ — ตอนส่งจะเลือกแชท/ไลน์เอง)
+// 1. เลือกหมวดหมู่ = หมวดที่แอดมินพิมพ์สร้างเอง แล้วเลือกได้ว่าจะให้แสดงกับไลน์ OA ไหนบ้าง
+//    (ไม่เลือกไลน์เลย = แสดงกับทุกไลน์)
 // 2. เลือกประเภท = ค่าคงที่ 2 อย่าง ตอบกลับ / โปรโมชั่น
 // 3-5. ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
-function QuickRepliesSettings({ isAdmin }) {
+function QuickRepliesSettings({ isAdmin, channels }) {
   const [categories, setCategories] = useState([]);
   const [categoryId, setCategoryId] = useState('');
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [quickReplies, setQuickReplies] = useState([]);
   const [loadingReplies, setLoadingReplies] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [addingCategory, setAddingCategory] = useState(false);
+  const [categoryForm, setCategoryForm] = useState(null); // { id: null|string, name, channelIds }
+  const [savingCategory, setSavingCategory] = useState(false);
   const [showAddQr, setShowAddQr] = useState(false);
   const [qrForm, setQrForm] = useState({ kind: 'reply', name: '', content: '', imageData: '' });
   const [savingQr, setSavingQr] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  function loadCategories() {
     setLoadingCategories(true);
-    axios.get('/api/quick-replies/categories')
+    return axios.get('/api/quick-replies/categories')
       .then(r => {
         setCategories(r.data);
         if (r.data.length > 0) setCategoryId(prev => prev || r.data[0].id);
+        return r.data;
       })
       .finally(() => setLoadingCategories(false));
-  }, []);
+  }
+
+  useEffect(() => { loadCategories(); }, []);
 
   useEffect(() => {
     if (!categoryId) { setQuickReplies([]); return; }
@@ -532,19 +536,43 @@ function QuickRepliesSettings({ isAdmin }) {
       .finally(() => setLoadingReplies(false));
   }, [categoryId]);
 
-  async function addCategory(e) {
+  function openAddCategory() {
+    setCategoryForm({ id: null, name: '', channelIds: [] });
+  }
+
+  function openEditCategory(cat) {
+    setCategoryForm({ id: cat.id, name: cat.name, channelIds: (cat.channels || []).map(c => c.id) });
+  }
+
+  function toggleFormChannel(id) {
+    setCategoryForm(f => ({
+      ...f,
+      channelIds: f.channelIds.includes(id) ? f.channelIds.filter(x => x !== id) : [...f.channelIds, id],
+    }));
+  }
+
+  async function submitCategoryForm(e) {
     e.preventDefault();
-    if (!newCategoryName.trim()) return;
-    setError('');
+    if (!categoryForm.name.trim()) return;
+    setSavingCategory(true); setError('');
     try {
-      const { data } = await axios.post('/api/quick-replies/categories', { name: newCategoryName.trim() });
-      setCategories(prev => [...prev, data]);
-      setCategoryId(data.id);
-      setNewCategoryName('');
-      setAddingCategory(false);
+      if (categoryForm.id) {
+        await axios.patch(`/api/quick-replies/categories/${categoryForm.id}`, {
+          name: categoryForm.name.trim(),
+          channelIds: categoryForm.channelIds,
+        });
+      } else {
+        const { data } = await axios.post('/api/quick-replies/categories', {
+          name: categoryForm.name.trim(),
+          channelIds: categoryForm.channelIds,
+        });
+        setCategoryId(data.id);
+      }
+      await loadCategories();
+      setCategoryForm(null);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
-    }
+    } finally { setSavingCategory(false); }
   }
 
   async function deleteCategory(id) {
@@ -588,7 +616,7 @@ function QuickRepliesSettings({ isAdmin }) {
     <div className="max-w-3xl space-y-5">
       {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-4 py-2 rounded-lg">{error}</div>}
 
-      {/* 1. เลือกหมวดหมู่ (สร้างเองโดยพิมพ์) */}
+      {/* 1. เลือกหมวดหมู่ (สร้างเองโดยพิมพ์ + เลือกไลน์ OA ที่จะแสดง) */}
       <div>
         <label className="text-xs font-medium text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่</label>
         <div className="flex flex-wrap gap-2 items-center">
@@ -605,36 +633,74 @@ function QuickRepliesSettings({ isAdmin }) {
             >
               {c.name}
               <span className="text-xs opacity-60">({c._count?.quickReplies ?? 0})</span>
+              {c.channels?.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">{c.channels.length} ไลน์</span>
+              )}
               {isAdmin && (
-                <span
-                  role="button"
-                  onClick={(e) => { e.stopPropagation(); deleteCategory(c.id); }}
-                  className="opacity-0 group-hover:opacity-100 hover:text-rose-400 w-4 h-4 flex items-center justify-center"
-                >
-                  <X size={12} />
-                </span>
+                <>
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); openEditCategory(c); }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-slate-100 w-4 h-4 flex items-center justify-center"
+                  >
+                    <Pencil size={11} />
+                  </span>
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); deleteCategory(c.id); }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-rose-400 w-4 h-4 flex items-center justify-center"
+                  >
+                    <X size={12} />
+                  </span>
+                </>
               )}
             </button>
           ))}
           {!loadingCategories && categories.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีหมวดหมู่</span>}
-          {isAdmin && (addingCategory ? (
-            <form onSubmit={addCategory} className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2.5 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-aurora-teal"
-                placeholder="ชื่อหมวดหมู่"
-                value={newCategoryName}
-                onChange={e => setNewCategoryName(e.target.value)}
-              />
-              <button type="submit" className="text-aurora-teal text-sm font-medium">เพิ่ม</button>
-              <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} className="text-slate-500 text-sm">ยกเลิก</button>
-            </form>
-          ) : (
-            <button onClick={() => setAddingCategory(true)} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
+          {isAdmin && !categoryForm && (
+            <button onClick={openAddCategory} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
               <Plus size={14} /> เพิ่มหมวดหมู่
             </button>
-          ))}
+          )}
         </div>
+
+        {isAdmin && categoryForm && (
+          <form onSubmit={submitCategoryForm} className={`${cardCls} space-y-3 mt-3 max-w-sm`}>
+            <h3 className="font-medium text-slate-100 text-sm">{categoryForm.id ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่'}</h3>
+            <div>
+              <label className="text-xs font-medium text-slate-400 mb-1.5 block">ชื่อหมวดหมู่</label>
+              <input
+                autoFocus
+                className={inputCls}
+                placeholder="เช่น ทักทายลูกค้า"
+                value={categoryForm.name}
+                onChange={e => setCategoryForm(f => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-400 mb-1.5 block">เลือกไลน์ OA ที่จะแสดงหมวดหมู่นี้</label>
+              <div className="border border-slate-700 rounded-lg p-2 space-y-1 max-h-36 overflow-y-auto">
+                {channels.map(ch => (
+                  <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-slate-800 cursor-pointer text-slate-200">
+                    <input
+                      type="checkbox"
+                      className="accent-aurora-teal"
+                      checked={categoryForm.channelIds.includes(ch.id)}
+                      onChange={() => toggleFormChannel(ch.id)}
+                    />
+                    {ch.name}
+                  </label>
+                ))}
+                {channels.length === 0 && <p className="text-xs text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = แสดงกับทุกไลน์</p>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={savingCategory} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
+              <button type="button" onClick={() => setCategoryForm(null)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* 2-5. รายการข้อความลัดในหมวดหมู่ที่เลือก */}
@@ -996,7 +1062,7 @@ export default function Settings() {
 
       {/* Quick Replies */}
       {tab === 'quick-replies' && (
-        <QuickRepliesSettings isAdmin={agent?.role === 'admin'} />
+        <QuickRepliesSettings isAdmin={agent?.role === 'admin'} channels={channels} />
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />

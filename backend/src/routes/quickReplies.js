@@ -17,22 +17,37 @@ function requireAdmin(req, res, next) {
 // Free-form, admin-created by typing a name. Not tied to any specific LINE OA —
 // an admin picks which conversation to send a quick reply into at send time.
 
+const CATEGORY_INCLUDE = {
+  _count: { select: { quickReplies: true } },
+  channels: { select: { id: true, name: true } },
+};
+
 // GET /api/quick-replies/categories
 router.get('/categories', auth, async (req, res) => {
   const categories = await prisma.quickReplyCategory.findMany({
-    include: { _count: { select: { quickReplies: true } } },
+    include: CATEGORY_INCLUDE,
     orderBy: { name: 'asc' },
   });
   res.json(categories);
 });
 
 // POST /api/quick-replies/categories — admin only
+// channelIds is optional: which LINE OAs this category (and its quick replies)
+// should show up for. Empty/omitted = unrestricted, shows for every OA.
 router.post('/categories', auth, requireAdmin, async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, channelIds } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'name required' });
-    const category = await prisma.quickReplyCategory.create({ data: { name: name.trim() } });
-    res.status(201).json({ ...category, _count: { quickReplies: 0 } });
+    const category = await prisma.quickReplyCategory.create({
+      data: {
+        name: name.trim(),
+        ...(Array.isArray(channelIds) && channelIds.length > 0
+          ? { channels: { connect: channelIds.map(id => ({ id })) } }
+          : {}),
+      },
+      include: CATEGORY_INCLUDE,
+    });
+    res.status(201).json(category);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
     res.status(500).json({ error: err.message });
@@ -42,10 +57,16 @@ router.post('/categories', auth, requireAdmin, async (req, res) => {
 // PATCH /api/quick-replies/categories/:id — admin only
 router.patch('/categories/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, channelIds } = req.body;
     const category = await prisma.quickReplyCategory.update({
       where: { id: req.params.id },
-      data: { ...(name?.trim() ? { name: name.trim() } : {}) },
+      data: {
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        // `set` fully replaces the linked channels with this list — right semantics
+        // for a checkbox picker (including clearing it back to "all channels").
+        ...(Array.isArray(channelIds) ? { channels: { set: channelIds.map(id => ({ id })) } } : {}),
+      },
+      include: CATEGORY_INCLUDE,
     });
     res.json(category);
   } catch {
@@ -65,12 +86,20 @@ router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
 
 // ---------- Quick Replies ----------
 
-// GET /api/quick-replies?categoryId=...&kind=...
+// GET /api/quick-replies?categoryId=...&kind=...&channelId=...
+// channelId filters to categories that are either unrestricted (no channels linked)
+// or explicitly include that channel — used by the Inbox picker so agents only see
+// quick replies relevant to the LINE OA of the conversation they're replying in.
 router.get('/', auth, async (req, res) => {
-  const { categoryId, kind } = req.query;
+  const { categoryId, kind, channelId } = req.query;
   const where = {};
   if (categoryId) where.categoryId = categoryId;
   if (kind) where.kind = kind;
+  if (channelId) {
+    where.category = {
+      OR: [{ channels: { none: {} } }, { channels: { some: { id: channelId } } }],
+    };
+  }
   const quickReplies = await prisma.quickReply.findMany({
     where,
     include: { category: { select: { id: true, name: true } } },

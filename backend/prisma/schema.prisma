@@ -32,16 +32,19 @@ model LineChannel {
   createdAt                  DateTime       @default(now())
   conversations              Conversation[]
   agents                     AgentChannel[]
+  quickReplyCategories       QuickReplyCategory[]
 }
 
 // "หมวดหมู่" — a free-form group an admin creates by typing a name (e.g. "ทักทายลูกค้า",
-// "ปิดการขาย"). Not tied to any specific LINE OA — admins decide per-send which
-// conversation/channel to use it in, same as respond.io's workspace-level snippets.
+// "ปิดการขาย"). Optionally restricted to specific LINE OAs via `channels` — if a
+// category has zero channels linked, it shows for every OA (same "empty = unrestricted"
+// convention as AgentChannel below).
 model QuickReplyCategory {
-  id           String       @id @default(cuid())
-  name         String       @unique
-  createdAt    DateTime     @default(now())
+  id           String        @id @default(cuid())
+  name         String        @unique
+  createdAt    DateTime      @default(now())
   quickReplies QuickReply[]
+  channels     LineChannel[]
 }
 
 model QuickReply {

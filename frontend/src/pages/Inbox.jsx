@@ -444,8 +444,9 @@ const QR_KIND_TABS = [
 // Picker for the quick-reply/canned-message feature. Agents pick a "ประเภท"
 // (ตอบกลับ / โปรโมชั่น) first, then see the matching messages — categories are
 // just an admin-side organizing label shown as a small tag per item here.
-// The currently open conversation's channel is what actually sends the message.
-function QuickReplyPicker({ onSend, onClose }) {
+// Only categories unrestricted or explicitly enabled for this conversation's
+// channel show up; the conversation's channel is also what sends the message.
+function QuickReplyPicker({ channelId, onSend, onClose }) {
   const [kind, setKind] = useState('reply');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -453,8 +454,8 @@ function QuickReplyPicker({ onSend, onClose }) {
 
   useEffect(() => {
     setLoading(true);
-    axios.get('/api/quick-replies', { params: { kind } }).then(r => setItems(r.data)).finally(() => setLoading(false));
-  }, [kind]);
+    axios.get('/api/quick-replies', { params: { kind, channelId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
+  }, [kind, channelId]);
 
   async function handlePick(item) {
     setSendingId(item.id);
@@ -825,6 +826,7 @@ export default function Inbox() {
             <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 flex gap-2">
               {showQrPicker && (
                 <QuickReplyPicker
+                  channelId={selected.channelId}
                   onSend={sendQuickReply}
                   onClose={() => setShowQrPicker(false)}
                 />
