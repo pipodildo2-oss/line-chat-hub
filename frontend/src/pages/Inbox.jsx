@@ -979,6 +979,17 @@ export default function Inbox() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                  onPaste={e => {
+                    // A pasted screenshot/image arrives as a clipboard item, not text —
+                    // pull the image file out (if any) and attach it the same way a
+                    // drag-drop or file-picker attachment works. Text pastes (Ctrl+V of
+                    // plain text) fall through untouched.
+                    const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'));
+                    if (item) {
+                      e.preventDefault();
+                      attachImageFile(item.getAsFile());
+                    }
+                  }}
                 />
                 <button
                   onClick={() => handleSend()}
