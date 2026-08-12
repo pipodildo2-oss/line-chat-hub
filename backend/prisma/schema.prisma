@@ -71,6 +71,7 @@ model Conversation {
   id          String      @id @default(cuid())
   lineUserId  String
   displayName String?
+  displayNameCustomized Boolean @default(false) // true once an agent manually renames the customer — stops incoming messages from reverting it to LINE's profile name
   pictureUrl  String?
   channelId   String
   channel     LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)

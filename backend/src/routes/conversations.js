@@ -95,7 +95,12 @@ router.patch('/:id', auth, async (req, res) => {
     const data = {};
     if (status) data.status = status;
     if (agentId !== undefined) data.agentId = agentId || null;
-    if (displayName !== undefined) data.displayName = displayName;
+    if (displayName !== undefined) {
+      data.displayName = displayName;
+      // Once an agent sets this by hand, stop letting incoming LINE messages
+      // silently revert it back to the customer's LINE profile name.
+      data.displayNameCustomized = true;
+    }
     if (notes !== undefined) data.notes = notes;
     if (lifecycleStage) data.lifecycleStage = lifecycleStage;
 

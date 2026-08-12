@@ -48,7 +48,7 @@ async function processLineEvent(channel, event) {
     // jump to the top of the inbox as if it just happened.
     const existingConv = await prisma.conversation.findUnique({
       where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
-      select: { lastMessageAt: true },
+      select: { lastMessageAt: true, displayNameCustomized: true },
     });
     const bumpLastMessageAt = !existingConv?.lastMessageAt || sentAt > existingConv.lastMessageAt;
 
@@ -56,7 +56,9 @@ async function processLineEvent(channel, event) {
     const conversation = await prisma.conversation.upsert({
       where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
       update: {
-        displayName,
+        // Don't clobber a name an agent set by hand — only sync LINE's profile
+        // name in if nobody has customized it for this conversation yet.
+        ...(existingConv?.displayNameCustomized ? {} : { displayName }),
         pictureUrl,
         status: 'open',
         ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
