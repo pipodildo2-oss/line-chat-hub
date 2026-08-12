@@ -4,7 +4,16 @@ import axios from 'axios';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
+  // Set the axios auth header synchronously during state init (not in a useEffect).
+  // Effects fire child-before-parent on mount, so on a hard refresh a deep child
+  // (e.g. Inbox's "load conversations" effect) could otherwise run its first API
+  // call before this provider's effect had a chance to attach the header —
+  // causing a silent 401 and an empty inbox until the token got set some other way.
+  const [token, setToken] = useState(() => {
+    const t = localStorage.getItem('token');
+    if (t) axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;
+    return t;
+  });
   const [agent, setAgent] = useState(() => {
     const s = localStorage.getItem('agent');
     return s ? JSON.parse(s) : null;
