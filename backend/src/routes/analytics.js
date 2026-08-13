@@ -4,10 +4,15 @@ const auth = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
-// GET /api/analytics/summary
+// GET /api/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
+// `from`/`to` scope the period-based numbers (new conversations, messages-per-day
+// chart, conversations-by-channel breakdown). totalConversations/open/closed stay
+// as current all-time snapshot counts regardless of the selected range — "currently
+// open" doesn't really mean anything scoped to a past date range.
 router.get('/summary', auth, async (req, res) => {
-  const { days = 7 } = req.query;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { from, to } = req.query;
+  const toDate = to ? new Date(`${to}T23:59:59.999`) : new Date();
+  const fromDate = from ? new Date(`${from}T00:00:00.000`) : new Date(toDate.getTime() - 6 * 24 * 60 * 60 * 1000);
 
   const [
     totalConversations,
@@ -22,18 +27,19 @@ router.get('/summary', auth, async (req, res) => {
     prisma.conversation.count({ where: { status: 'open' } }),
     prisma.conversation.count({ where: { status: 'closed' } }),
     prisma.message.count(),
-    prisma.conversation.count({ where: { createdAt: { gte: since } } }),
+    prisma.conversation.count({ where: { createdAt: { gte: fromDate, lte: toDate } } }),
     prisma.conversation.groupBy({
       by: ['channelId'],
+      where: { createdAt: { gte: fromDate, lte: toDate } },
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
     }),
-    // Messages per day for the last N days (PostgreSQL)
+    // Messages per day within the selected range (PostgreSQL)
     prisma.$queryRawUnsafe(
       `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') as date, COUNT(*)::int as count
-       FROM "Message" WHERE "createdAt" >= $1
+       FROM "Message" WHERE "createdAt" >= $1 AND "createdAt" <= $2
        GROUP BY date_trunc('day', "createdAt") ORDER BY date_trunc('day', "createdAt") ASC`,
-      since
+      fromDate, toDate
     ),
   ]);
 
