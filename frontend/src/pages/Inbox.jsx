@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil, Zap, ImagePlus } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
@@ -134,6 +134,24 @@ function Lightbox({ src, onClose }) {
         className="max-w-full max-h-full rounded-lg object-contain"
         onClick={e => e.stopPropagation()}
       />
+    </div>
+  );
+}
+
+function formatDayLabel(date) {
+  if (isToday(date)) return 'วันนี้';
+  if (isYesterday(date)) return 'เมื่อวาน';
+  return format(date, 'd MMMM yyyy', { locale: th });
+}
+
+// A "วันนี้ / เมื่อวาน / 12 สิงหาคม 2569" divider inserted between messages from
+// different days, so it's obvious at a glance which day a message belongs to.
+function DateDivider({ label }) {
+  return (
+    <div className="flex items-center gap-3 my-3">
+      <div className="flex-1 h-px bg-gray-200 dark:bg-slate-800" />
+      <span className="text-xs text-gray-400 dark:text-slate-500 font-medium whitespace-nowrap">{label}</span>
+      <div className="flex-1 h-px bg-gray-200 dark:bg-slate-800" />
     </div>
   );
 }
@@ -885,7 +903,16 @@ export default function Inbox() {
                   </p>
                 </div>
               )}
-              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onImageClick={setLightboxSrc} />)}
+              {messages.map((msg, i) => {
+                const prev = messages[i - 1];
+                const showDivider = !prev || !isSameDay(new Date(prev.createdAt), new Date(msg.createdAt));
+                return (
+                  <div key={msg.id}>
+                    {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
+                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} />
+                  </div>
+                );
+              })}
               <div ref={bottomRef} />
             </div>
 
