@@ -6,7 +6,7 @@ import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as T
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
+import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
 // source, so `w-${size}` (a runtime template string) never gets generated and the
@@ -45,7 +45,6 @@ function TagChip({ tag, onRemove, small }) {
 function ConversationItem({ conv, selected, onClick }) {
   const lastMsg = conv.messages?.[0];
   const unread = conv._count?.messages || 0;
-  const stage = stageInfo(conv.lifecycleStage);
   return (
     <button
       onClick={onClick}
@@ -71,7 +70,6 @@ function ConversationItem({ conv, selected, onClick }) {
         </div>
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{conv.channel?.name}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${stage.color}`}>{stage.label}</span>
           {conv.agent && <span className="text-[10px] text-aurora-teal dark:text-aurora-teal">→ {conv.agent.name}</span>}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
@@ -240,26 +238,6 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
         </div>
       </div>
       <div>
-        <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">Lifecycle</p>
-        <div className="flex gap-1 flex-wrap">
-          <button
-            onClick={() => setFilter(f => ({ ...f, lifecycleStage: '' }))}
-            className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === '' ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
-          >
-            ทั้งหมด
-          </button>
-          {LIFECYCLE_STAGES.map(s => (
-            <button
-              key={s.key}
-              onClick={() => setFilter(f => ({ ...f, lifecycleStage: s.key }))}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.lifecycleStage === s.key ? s.color + ' font-medium' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
         <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">เรียงตาม</p>
         <div className="flex gap-1 flex-wrap">
           {[
@@ -390,17 +368,6 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
             onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
           />
         </div>
-      </div>
-
-      <div className="p-4 border-b border-gray-100 dark:border-slate-800">
-        <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">Lifecycle stage</label>
-        <select
-          className={`w-full text-xs font-medium border rounded-lg px-2 py-1.5 focus:outline-none ${stageInfo(conv.lifecycleStage).color}`}
-          value={conv.lifecycleStage}
-          onChange={e => onUpdate({ lifecycleStage: e.target.value })}
-        >
-          {LIFECYCLE_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
       </div>
 
       <div className="p-4 border-b border-gray-100 dark:border-slate-800">
@@ -555,7 +522,7 @@ export default function Inbox() {
   const [agents, setAgents] = useState([]);
   const [channels, setChannels] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filter, setFilter] = useState({ status: 'open', channelIds: [], search: '', tagId: '', lifecycleStage: '', agentId: '', sort: 'newest' });
+  const [filter, setFilter] = useState({ status: 'open', channelIds: [], search: '', tagId: '', agentId: '', sort: 'newest' });
   const [showFilters, setShowFilters] = useState(false);
   // Persisted across conversation switches (and page reloads) so the panel stays
   // open/closed the same way no matter which chat you're looking at.
@@ -583,7 +550,6 @@ export default function Inbox() {
     let n = 0;
     if (filter.channelIds.length > 0) n++;
     if (filter.tagId) n++;
-    if (filter.lifecycleStage) n++;
     if (filter.agentId) n++;
     return n;
   }, [filter]);
