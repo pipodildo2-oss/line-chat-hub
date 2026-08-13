@@ -8,6 +8,21 @@ function getClient(accessToken) {
   return new line.messagingApi.MessagingApiClient({ channelAccessToken: accessToken });
 }
 
+// The LINE SDK throws HTTPFetchError with a useless generic message (e.g.
+// "403 - Forbidden") and buries the actual reason — things like "The user
+// hasn't added the LINE Official Account as a friend." or a bad/expired
+// access token — inside a raw JSON string on err.body. Unwrap it so agents
+// see why a send actually failed instead of a silent/generic error.
+function describeLineError(err) {
+  if (err?.body) {
+    try {
+      const parsed = JSON.parse(err.body);
+      if (parsed?.message) return parsed.message;
+    } catch { /* body wasn't JSON — fall through to err.message */ }
+  }
+  return err?.message || 'ส่งข้อความไม่สำเร็จ';
+}
+
 // Processes a single LINE event (used by the queue worker, one job = one event).
 async function processLineEvent(channel, event) {
     if (event.type !== 'message') return;
@@ -129,17 +144,25 @@ async function processLineEvent(channel, event) {
 
 async function sendMessage(channel, lineUserId, text) {
   const client = getClient(channel.accessToken);
-  await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
+  try {
+    await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
+  } catch (err) {
+    throw new Error(describeLineError(err));
+  }
 }
 
 // Used by the quick-reply "attach an image" feature. imageUrl must be a public
 // HTTPS URL — LINE's own servers fetch it directly, so it can't be behind our auth.
 async function sendImageMessage(channel, lineUserId, imageUrl) {
   const client = getClient(channel.accessToken);
-  await client.pushMessage({
-    to: lineUserId,
-    messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl }],
-  });
+  try {
+    await client.pushMessage({
+      to: lineUserId,
+      messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl }],
+    });
+  } catch (err) {
+    throw new Error(describeLineError(err));
+  }
 }
 
 // Downloads image/video/audio content a customer sent us. LINE requires the

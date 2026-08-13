@@ -647,18 +647,24 @@ export default function Inbox() {
     const image = pendingImage;
     if ((!content && !image) || !selected || sending) return;
     setSending(true);
-    setInput('');
-    setPendingImage(null);
-    setSuggestion('');
     try {
+      // Only clear each piece (input / pendingImage) after IT actually succeeds —
+      // clearing both upfront meant a failed send (e.g. LINE rejects the push
+      // because the customer blocked the OA, or the access token is bad) silently
+      // wiped what the agent typed with no error shown and nothing to retry.
       if (image) {
         const { data } = await axios.post(`/api/messages/${selected.id}`, { imageData: image.base64 });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+        setPendingImage(null);
       }
       if (content) {
         const { data } = await axios.post(`/api/messages/${selected.id}`, { content });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+        setInput('');
       }
+      setSuggestion('');
+    } catch (err) {
+      alert(err.response?.data?.error || 'ส่งข้อความไม่สำเร็จ ลองใหม่อีกครั้ง');
     } finally {
       setSending(false);
     }
@@ -670,14 +676,19 @@ export default function Inbox() {
   }
 
   async function sendQuickReply(quickReplyId) {
-    const { data } = await axios.post(`/api/quick-replies/${quickReplyId}/send`, { conversationId: selected.id });
-    setMessages(prev => {
-      let next = prev;
-      for (const m of data.messages) {
-        if (!next.some(x => x.id === m.id)) next = [...next, m];
-      }
-      return next;
-    });
+    try {
+      const { data } = await axios.post(`/api/quick-replies/${quickReplyId}/send`, { conversationId: selected.id });
+      setMessages(prev => {
+        let next = prev;
+        for (const m of data.messages) {
+          if (!next.some(x => x.id === m.id)) next = [...next, m];
+        }
+        return next;
+      });
+    } catch (err) {
+      alert(err.response?.data?.error || 'ส่งข้อความลัดไม่สำเร็จ ลองใหม่อีกครั้ง');
+      throw err; // re-throw so the picker (handlePick) knows not to close itself
+    }
   }
 
   async function assignAgent(agentId) {
