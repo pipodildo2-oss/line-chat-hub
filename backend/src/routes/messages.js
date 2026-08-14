@@ -144,17 +144,22 @@ router.post('/:conversationId', auth, async (req, res) => {
       });
     }
 
-    // Update conversation lastMessageAt
+    // Update conversation lastMessageAt. An outgoing message from us is also the
+    // signal that clears the "first viewed by" claim — it means the customer has
+    // actually been replied to, so the badge should stop pointing at whoever
+    // opened the chat earlier and go back to unclaimed for next time.
     const now = new Date();
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { lastMessageAt: now },
+      data: { lastMessageAt: now, firstViewedByAgentId: null, firstViewedAt: null },
     });
-    // `conversation` was fetched before the update above, so its lastMessageAt is
-    // stale. Patch it locally before broadcasting — otherwise the inbox list
-    // briefly re-sorts using the old timestamp and the conversation appears to
-    // jump backward every time a message is sent.
+    // `conversation` was fetched before the update above, so these fields are
+    // stale on it. Patch them locally before broadcasting — otherwise the inbox
+    // list briefly shows the old values until the next full refetch.
     conversation.lastMessageAt = now;
+    conversation.firstViewedByAgentId = null;
+    conversation.firstViewedByAgent = null;
+    conversation.firstViewedAt = null;
 
     emitToConversation(conversation.id, 'new_message', { message, conversation });
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });

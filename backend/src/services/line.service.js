@@ -77,10 +77,10 @@ async function processLineEvent(channel, event) {
         pictureUrl,
         status: 'open',
         ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
-        // A genuinely new customer message means "who saw this first" resets —
-        // otherwise the list would keep crediting whoever looked at an earlier,
-        // already-handled message instead of this new one.
-        ...(bumpLastMessageAt ? { firstViewedByAgentId: null, firstViewedAt: null } : {}),
+        // Deliberately NOT reset here: firstViewedByAgent should keep showing
+        // who's handling this customer through however many messages they send
+        // in a row. It only clears once WE reply (see messages.js / quickReplies.js
+        // send routes) — that's the signal the conversation was actually handled.
       },
       create: {
         lineUserId,
