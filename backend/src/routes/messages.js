@@ -189,9 +189,17 @@ router.post('/:conversationId', auth, async (req, res) => {
     // replies, which go through a separate route and are pre-approved by an
     // admin). Deliberately fired AFTER the response above so the agent's send
     // isn't held up waiting on an AI call; the Report page picks it up a moment
-    // later via the 'message_flagged' event or its next fetch.
+    // later via the 'message_flagged' event or its next fetch. Recent history is
+    // passed along so the AI can judge tone (arguing with the customer) and
+    // repetition (spam), not just this one message in isolation.
     if (!imageData && content) {
-      checkMessage(content)
+      prisma.message.findMany({
+        where: { conversationId: conversation.id, id: { not: message.id } },
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+        select: { sender: true, content: true },
+      })
+        .then(history => checkMessage(content, history.reverse()))
         .then(async (result) => {
           if (!result) return;
           await prisma.message.update({
