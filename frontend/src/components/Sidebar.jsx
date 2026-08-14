@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -68,6 +68,12 @@ export default function Sidebar() {
               <NavLink to="/dashboard" className={linkCls}>
                 <BarChart2 size={17} />
                 {t('nav_dashboard')}
+              </NavLink>
+            )}
+            {isAdmin && (
+              <NavLink to="/report" className={linkCls}>
+                <ShieldAlert size={17} />
+                {t('nav_report')}
               </NavLink>
             )}
           </div>

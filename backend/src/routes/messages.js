@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
+const { checkMessage } = require('../services/moderation.service');
 
 const prisma = new PrismaClient();
 
@@ -127,6 +128,7 @@ router.post('/:conversationId', auth, async (req, res) => {
           conversationId: conversation.id,
           sender: 'agent',
           senderName: req.agent.name,
+          senderId: req.agent.id,
           type: 'image',
           content: '[Image]',
           imageData,
@@ -147,6 +149,7 @@ router.post('/:conversationId', auth, async (req, res) => {
           conversationId: conversation.id,
           sender: 'agent',
           senderName: req.agent.name,
+          senderId: req.agent.id,
           type: 'text',
           content,
           read: true,
@@ -181,6 +184,33 @@ router.post('/:conversationId', auth, async (req, res) => {
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });
 
     res.status(201).json(message);
+
+    // AI moderation check — freely-typed text only (not images, not canned quick
+    // replies, which go through a separate route and are pre-approved by an
+    // admin). Deliberately fired AFTER the response above so the agent's send
+    // isn't held up waiting on an AI call; the Report page picks it up a moment
+    // later via the 'message_flagged' event or its next fetch.
+    if (!imageData && content) {
+      checkMessage(content)
+        .then(async (result) => {
+          if (!result) return;
+          await prisma.message.update({
+            where: { id: message.id },
+            data: { flagged: true, flagSeverity: result.severity, flagReason: result.reason },
+          });
+          emitToAll('message_flagged', {
+            messageId: message.id,
+            conversationId: conversation.id,
+            severity: result.severity,
+            reason: result.reason,
+            agentId: req.agent.id,
+            agentName: req.agent.name,
+            content,
+            createdAt: message.createdAt,
+          });
+        })
+        .catch((e) => console.warn('Moderation follow-up failed:', e.message));
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

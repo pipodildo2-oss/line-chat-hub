@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -562,6 +563,7 @@ export default function Inbox() {
   const { socket, connected } = useSocket();
   const { agent } = useAuth();
   const { t } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -616,6 +618,18 @@ export default function Inbox() {
   }, [filter]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Deep link from elsewhere in the app (e.g. the Report page's "ไปที่แชท"
+  // button) — /inbox?conv=<id>. The target conversation might not be in the
+  // currently filtered list (e.g. it's closed, or a different channel), so
+  // fetch it directly rather than relying on the list containing it.
+  useEffect(() => {
+    const convId = searchParams.get('conv');
+    if (!convId) return;
+    axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); return next; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The list only reorders itself in response to socket events (see 'conversation_updated'
   // below). If the tab sits idle for a while, the browser can throttle background JS or

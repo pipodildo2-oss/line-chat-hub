@@ -19,6 +19,7 @@ model Agent {
   conversations Conversation[]
   channels      AgentChannel[]
   messageViews  MessageView[]
+  sentMessages  Message[]      @relation("MessageSender")
 }
 
 model LineChannel {
@@ -142,6 +143,9 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         String       // user | agent | bot
   senderName     String?
+  senderId       String?      // Agent.id who sent this (only set for sender: 'agent'). Nullable — existing
+                               // rows from before this field was added stay null; not backfilled.
+  senderAgent    Agent?       @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
   type           String       @default("text") // text | image | sticker | audio | video | location
   content        String
   metadata       String?      // JSON string for images, stickers etc
@@ -151,7 +155,16 @@ model Message {
   createdAt      DateTime     @default(now())
   views          MessageView[]
 
+  // AI moderation result (see moderation.service.js) — only ever checked for
+  // freely-typed agent text messages sent to a customer via the composer, and
+  // only going forward from when this feature shipped (no historical backfill).
+  // Powers the admin-only Report page used for KPI review.
+  flagged        Boolean      @default(false)
+  flagSeverity   String?      // "minor" | "severe" — only set when flagged
+  flagReason     String?      // short Thai explanation from the AI, shown on the Report page
+
   @@index([conversationId, createdAt])
+  @@index([flagged])
 }
 
 // Audit trail for customer messages: which agents opened the conversation while
