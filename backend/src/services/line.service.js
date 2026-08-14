@@ -77,10 +77,6 @@ async function processLineEvent(channel, event) {
         pictureUrl,
         status: 'open',
         ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
-        // Deliberately NOT reset here: firstViewedByAgent should keep showing
-        // who's handling this customer through however many messages they send
-        // in a row. It only clears once WE reply (see messages.js / quickReplies.js
-        // send routes) — that's the signal the conversation was actually handled.
       },
       create: {
         lineUserId,
@@ -90,7 +86,7 @@ async function processLineEvent(channel, event) {
         status: 'open',
         lastMessageAt: sentAt,
       },
-      include: { channel: true, agent: true, firstViewedByAgent: { select: { id: true, name: true } } },
+      include: { channel: true, agent: true },
     });
 
     // Save message

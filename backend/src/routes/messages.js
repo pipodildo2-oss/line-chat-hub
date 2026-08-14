@@ -53,9 +53,18 @@ router.get('/:conversationId', auth, async (req, res) => {
   const where = { conversationId: req.params.conversationId };
   if (cursor) where.createdAt = { lt: new Date(cursor) };
 
+  // Admin-only audit data: which agents have opened this conversation while a
+  // given customer message was the latest one, without replying. Agents never
+  // get this in their API response at all — not just hidden in the UI — so
+  // there's no way for an agent to discover who else has been avoiding a reply.
+  const isAdmin = req.agent.role === 'admin';
+  const select = isAdmin
+    ? { ...MESSAGE_SELECT, views: { select: { agentId: true, agent: { select: { name: true } } } } }
+    : MESSAGE_SELECT;
+
   const messages = await prisma.message.findMany({
     where,
-    select: MESSAGE_SELECT,
+    select,
     orderBy: { createdAt: 'desc' },
     take: Number(limit),
   });
@@ -66,26 +75,28 @@ router.get('/:conversationId', auth, async (req, res) => {
     data: { read: true },
   });
 
-  // "First to open wins" — claim the first-viewer slot if nobody has since the
-  // customer's last message. updateMany's WHERE clause makes this an atomic
-  // compare-and-set at the DB level: if two agents open this conversation at
-  // nearly the same moment, only the request whose UPDATE actually matches a
-  // row (count > 0, because firstViewedByAgentId was still null) is the real
-  // first viewer — the loser's WHERE clause silently matches nothing.
-  const claim = await prisma.conversation.updateMany({
-    where: { id: req.params.conversationId, firstViewedByAgentId: null },
-    data: { firstViewedByAgentId: req.agent.id, firstViewedAt: new Date() },
+  // Audit trail: if the newest message in this conversation is a customer message
+  // (i.e. nobody's replied to it yet), record that this agent viewed it. Tags
+  // accumulate per-message and are permanent — they're only ever removed when
+  // THIS agent goes on to send a reply (see POST below), never by simply viewing
+  // a newer message. upsert avoids duplicate rows if the same agent reopens the
+  // same still-unanswered conversation more than once.
+  const latestMessage = await prisma.message.findFirst({
+    where: { conversationId: req.params.conversationId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, sender: true },
   });
-  if (claim.count > 0) {
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: req.params.conversationId },
-      include: {
-        channel: { select: { id: true, name: true } },
-        agent: { select: { id: true, name: true } },
-        firstViewedByAgent: { select: { id: true, name: true } },
-      },
+  if (latestMessage && latestMessage.sender === 'user') {
+    await prisma.messageView.upsert({
+      where: { messageId_agentId: { messageId: latestMessage.id, agentId: req.agent.id } },
+      create: { messageId: latestMessage.id, agentId: req.agent.id },
+      update: {},
     });
-    if (conversation) emitToAll('conversation_updated', conversation);
+    emitToConversation(req.params.conversationId, 'message_view', {
+      messageId: latestMessage.id,
+      agentId: req.agent.id,
+      agentName: req.agent.name,
+    });
   }
 
   res.json(messages.reverse());
@@ -144,22 +155,35 @@ router.post('/:conversationId', auth, async (req, res) => {
       });
     }
 
-    // Update conversation lastMessageAt. An outgoing message from us is also the
-    // signal that clears the "first viewed by" claim — it means the customer has
-    // actually been replied to, so the badge should stop pointing at whoever
-    // opened the chat earlier and go back to unclaimed for next time.
+    // Update conversation lastMessageAt. Sending a reply also clears THIS agent's
+    // own audit-trail tag on the latest customer message (if they have one) —
+    // replying means they didn't just view-and-ignore it. Other agents' tags on
+    // that same message are left untouched, since they still haven't replied.
     const now = new Date();
+    const latestUserMessage = await prisma.message.findFirst({
+      where: { conversationId: conversation.id, sender: 'user' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { lastMessageAt: now, firstViewedByAgentId: null, firstViewedAt: null },
+      data: { lastMessageAt: now },
     });
-    // `conversation` was fetched before the update above, so these fields are
-    // stale on it. Patch them locally before broadcasting — otherwise the inbox
-    // list briefly shows the old values until the next full refetch.
+    if (latestUserMessage) {
+      const cleared = await prisma.messageView.deleteMany({
+        where: { messageId: latestUserMessage.id, agentId: req.agent.id },
+      });
+      if (cleared.count > 0) {
+        emitToConversation(conversation.id, 'message_view_cleared', {
+          messageId: latestUserMessage.id,
+          agentId: req.agent.id,
+        });
+      }
+    }
+    // `conversation` was fetched before the update above, so lastMessageAt is
+    // stale on it. Patch it locally before broadcasting — otherwise the inbox
+    // list briefly shows the old value until the next full refetch.
     conversation.lastMessageAt = now;
-    conversation.firstViewedByAgentId = null;
-    conversation.firstViewedByAgent = null;
-    conversation.firstViewedAt = null;
 
     emitToConversation(conversation.id, 'new_message', { message, conversation });
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });

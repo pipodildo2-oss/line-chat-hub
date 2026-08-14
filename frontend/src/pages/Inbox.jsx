@@ -79,14 +79,6 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{conv.channel?.name}</span>
           {conv.agent && <span className="text-[10px] text-aurora-teal dark:text-aurora-teal">→ {conv.agent.name}</span>}
-          {/* Who first opened this since the customer's last message — lets agents
-              see at a glance that someone's already on it, even without a formal
-              assignment. Resets automatically once a new message comes in. */}
-          {conv.firstViewedByAgent && (
-            <span className="text-[10px] text-gray-400 dark:text-slate-500" title={`เปิดอ่านครั้งแรกโดย ${conv.firstViewedByAgent.name}`}>
-              👁 {conv.firstViewedByAgent.name}
-            </span>
-          )}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
       </div>
@@ -172,7 +164,23 @@ function DateDivider({ label }) {
   );
 }
 
-function MessageBubble({ msg, onImageClick }) {
+// Admin-only audit trail: names of agents who opened the conversation while this
+// was the newest customer message and did NOT go on to reply. Only ever rendered
+// for customer (sender: 'user') messages — msg.views only arrives from the API at
+// all when the requesting agent is an admin, and isAdmin here is a second,
+// belt-and-suspenders check on the frontend.
+function ViewerTags({ msg, isAdmin }) {
+  if (!isAdmin || msg.sender !== 'user' || !msg.views?.length) return null;
+  const names = msg.views.map(v => v.agent?.name).filter(Boolean);
+  if (names.length === 0) return null;
+  return (
+    <p className="text-[10px] text-amber-500 dark:text-amber-400 mt-1" title="เปิดอ่านแล้วแต่ยังไม่มีการตอบกลับข้อความนี้">
+      👁 เปิดอ่านแล้วไม่ตอบ: {names.join(', ')}
+    </p>
+  );
+}
+
+function MessageBubble({ msg, onImageClick, isAdmin }) {
   const isUser = msg.sender === 'user';
   const timeCls = isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70';
   const timeLabel = (
@@ -191,6 +199,7 @@ function MessageBubble({ msg, onImageClick }) {
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
           </p>
+          <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
       </div>
     );
@@ -213,6 +222,7 @@ function MessageBubble({ msg, onImageClick }) {
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
           </p>
+          <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
       </div>
     );
@@ -232,6 +242,7 @@ function MessageBubble({ msg, onImageClick }) {
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
           </p>
+          <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
       </div>
     );
@@ -239,9 +250,12 @@ function MessageBubble({ msg, onImageClick }) {
 
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
-      <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-purple text-white rounded-tr-sm'}`}>
-        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-        {timeLabel}
+      <div className="max-w-xs lg:max-w-md">
+        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-purple text-white rounded-tr-sm'}`}>
+          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+          {timeLabel}
+        </div>
+        <ViewerTags msg={msg} isAdmin={isAdmin} />
       </div>
     </div>
   );
@@ -675,8 +689,33 @@ export default function Inbox() {
       });
       setSelected(prev => (prev?.id === conv.id ? { ...prev, ...conv } : prev));
     });
-    return () => { socket.off('new_message'); socket.off('conversation_updated'); };
-  }, [socket, selected?.id, filter.sort]);
+    // Admin-only audit trail, live update: someone else (or this agent, in another
+    // tab) just opened the conversation without replying, or just cleared their own
+    // tag by replying. Non-admins never render ViewerTags, but skip touching state
+    // for them anyway — no reason to hold data they shouldn't see.
+    socket.on('message_view', ({ messageId, agentId, agentName }) => {
+      if (agent?.role !== 'admin') return;
+      setMessages(prev => prev.map(m => {
+        if (m.id !== messageId) return m;
+        const views = m.views || [];
+        if (views.some(v => v.agentId === agentId)) return m;
+        return { ...m, views: [...views, { agentId, agent: { name: agentName } }] };
+      }));
+    });
+    socket.on('message_view_cleared', ({ messageId, agentId }) => {
+      if (agent?.role !== 'admin') return;
+      setMessages(prev => prev.map(m => {
+        if (m.id !== messageId || !m.views) return m;
+        return { ...m, views: m.views.filter(v => v.agentId !== agentId) };
+      }));
+    });
+    return () => {
+      socket.off('new_message');
+      socket.off('conversation_updated');
+      socket.off('message_view');
+      socket.off('message_view_cleared');
+    };
+  }, [socket, selected?.id, filter.sort, agent?.role]);
 
   // Typing indicator — deliberately NOT scoped to the currently open conversation
   // (unlike 'new_message'/'join' above), since the whole point is to show "someone's
@@ -953,7 +992,7 @@ export default function Inbox() {
                 return (
                   <div key={msg.id}>
                     {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
-                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} />
+                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} />
                   </div>
                 );
               })}

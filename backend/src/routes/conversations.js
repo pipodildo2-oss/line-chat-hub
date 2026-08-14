@@ -8,7 +8,6 @@ const prisma = new PrismaClient();
 const CONV_INCLUDE = {
   channel: { select: { id: true, name: true } },
   agent: { select: { id: true, name: true } },
-  firstViewedByAgent: { select: { id: true, name: true } },
   tags: { include: { tag: true } },
 };
 

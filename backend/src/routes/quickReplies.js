@@ -239,21 +239,34 @@ router.post('/:id/send', auth, async (req, res) => {
     });
     created.push(textMessage);
 
-    // An outgoing message (even a canned quick reply) clears the "first viewed by"
-    // claim too — it means the customer's been replied to, so the badge should
-    // stop pointing at whoever opened the chat earlier.
+    // An outgoing message (even a canned quick reply) clears this agent's own
+    // audit-trail tag on the latest customer message, if any — same rule as a
+    // normal typed reply (see messages.js POST /:conversationId).
     const now = new Date();
+    const latestUserMessage = await prisma.message.findFirst({
+      where: { conversationId: conversation.id, sender: 'user' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { lastMessageAt: now, firstViewedByAgentId: null, firstViewedAt: null },
+      data: { lastMessageAt: now },
     });
-    // `conversation` was fetched before the update above — patch these fields
-    // locally before broadcasting, otherwise the inbox list briefly shows stale
-    // values (jumping backward in order, or keeping a cleared viewer badge).
+    if (latestUserMessage) {
+      const cleared = await prisma.messageView.deleteMany({
+        where: { messageId: latestUserMessage.id, agentId: req.agent.id },
+      });
+      if (cleared.count > 0) {
+        emitToConversation(conversation.id, 'message_view_cleared', {
+          messageId: latestUserMessage.id,
+          agentId: req.agent.id,
+        });
+      }
+    }
+    // `conversation` was fetched before the update above — patch this field
+    // locally before broadcasting, otherwise the inbox list briefly shows a
+    // stale value (jumping backward in sort order).
     conversation.lastMessageAt = now;
-    conversation.firstViewedByAgentId = null;
-    conversation.firstViewedByAgent = null;
-    conversation.firstViewedAt = null;
 
     for (const message of created) {
       emitToConversation(conversation.id, 'new_message', { message, conversation });
