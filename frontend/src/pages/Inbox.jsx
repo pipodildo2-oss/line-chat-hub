@@ -42,7 +42,7 @@ function TagChip({ tag, onRemove, small }) {
   );
 }
 
-function ConversationItem({ conv, selected, onClick }) {
+function ConversationItem({ conv, selected, onClick, typingAgent }) {
   const lastMsg = conv.messages?.[0];
   const unread = conv._count?.messages || 0;
   return (
@@ -59,9 +59,17 @@ function ConversationItem({ conv, selected, onClick }) {
           </span>
         </div>
         <div className="flex items-center gap-1 mt-0.5">
-          <span className="text-xs text-gray-400 dark:text-slate-500 truncate flex-1">
-            {lastMsg?.sender === 'agent' ? '✓ ' : ''}{lastMsg?.content || ''}
-          </span>
+          {typingAgent ? (
+            // Visible right in the list, without opening the chat — this is what
+            // actually helps avoid two agents replying to the same customer at once.
+            <span className="text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium truncate flex-1 animate-pulse">
+              ✏️ {typingAgent} กำลังพิมพ์...
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-slate-500 truncate flex-1">
+              {lastMsg?.sender === 'agent' ? '✓ ' : ''}{lastMsg?.content || ''}
+            </span>
+          )}
           {unread > 0 && (
             <span className="bg-aurora-green text-aurora-midnight font-semibold text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
               {unread}
@@ -552,6 +560,9 @@ export default function Inbox() {
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null); // src of the image currently open in the in-app viewer
+  const [typingMap, setTypingMap] = useState({}); // { [conversationId]: agentName } — who else is currently typing a reply
+  const typingTimeoutsRef = useRef({});
+  const lastTypingEmitRef = useRef(0);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -658,6 +669,30 @@ export default function Inbox() {
     });
     return () => { socket.off('new_message'); socket.off('conversation_updated'); };
   }, [socket, selected?.id, filter.sort]);
+
+  // Typing indicator — deliberately NOT scoped to the currently open conversation
+  // (unlike 'new_message'/'join' above), since the whole point is to show "someone's
+  // already replying" on the conversation LIST too, so agents can avoid double-replying
+  // to a customer without having to open every chat first. No explicit "stopped typing"
+  // event from the server — each indicator just auto-clears a few seconds after the
+  // last keystroke was seen, which is simpler and survives a dropped connection fine.
+  useEffect(() => {
+    if (!socket) return;
+    function handleAgentTyping({ conversationId, agentName }) {
+      if (!conversationId) return;
+      setTypingMap(prev => ({ ...prev, [conversationId]: agentName }));
+      clearTimeout(typingTimeoutsRef.current[conversationId]);
+      typingTimeoutsRef.current[conversationId] = setTimeout(() => {
+        setTypingMap(prev => {
+          const next = { ...prev };
+          delete next[conversationId];
+          return next;
+        });
+      }, 3000);
+    }
+    socket.on('agent_typing', handleAgentTyping);
+    return () => socket.off('agent_typing', handleAgentTyping);
+  }, [socket]);
 
   // Reads a dropped/picked file into a pending attachment shown in the composer —
   // it isn't sent to the customer until the agent hits Send.
@@ -807,6 +842,7 @@ export default function Inbox() {
               conv={conv}
               selected={selected?.id === conv.id}
               onClick={() => setSelected(conv)}
+              typingAgent={typingMap[conv.id]}
             />
           ))}
         </div>
@@ -926,6 +962,13 @@ export default function Inbox() {
               </div>
             )}
 
+            {/* Typing indicator for the currently open chat */}
+            {typingMap[selected.id] && (
+              <div className="bg-aurora-teal/10 border-t border-aurora-teal/20 px-4 py-1.5 text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium">
+                ✏️ {typingMap[selected.id]} กำลังพิมพ์ข้อความอยู่...
+              </div>
+            )}
+
             {/* Input */}
             <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800">
               {showQrPicker && (
@@ -989,7 +1032,16 @@ export default function Inbox() {
                   className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                   placeholder="พิมพ์ข้อความ..."
                   value={input}
-                  onChange={e => setInput(e.target.value)}
+                  onChange={e => {
+                    setInput(e.target.value);
+                    // Throttled — don't fire a socket event on every keystroke, just
+                    // at most once every 2s while the agent is actively typing.
+                    const now = Date.now();
+                    if (socket && selected && now - lastTypingEmitRef.current > 2000) {
+                      lastTypingEmitRef.current = now;
+                      socket.emit('typing', { conversationId: selected.id, agentName: agent?.name || 'Agent' });
+                    }
+                  }}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   onPaste={e => {
                     // A pasted screenshot/image arrives as a clipboard item, not text —

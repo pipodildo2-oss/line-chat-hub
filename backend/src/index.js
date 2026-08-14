@@ -118,6 +118,14 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   socket.on('join', (conversationId) => socket.join(conversationId));
   socket.on('leave', (conversationId) => socket.leave(conversationId));
+  // Broadcast to every OTHER connected agent (not room-scoped, since an agent's
+  // conversation list shows many conversations at once, not just the open one)
+  // so a typing indicator can show up on the list itself — that's what actually
+  // helps prevent two agents replying to the same customer at once.
+  socket.on('typing', ({ conversationId, agentName }) => {
+    if (!conversationId) return;
+    socket.broadcast.emit('agent_typing', { conversationId, agentName });
+  });
   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });
 
