@@ -79,6 +79,14 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{conv.channel?.name}</span>
           {conv.agent && <span className="text-[10px] text-aurora-teal dark:text-aurora-teal">→ {conv.agent.name}</span>}
+          {/* Who first opened this since the customer's last message — lets agents
+              see at a glance that someone's already on it, even without a formal
+              assignment. Resets automatically once a new message comes in. */}
+          {conv.firstViewedByAgent && (
+            <span className="text-[10px] text-gray-400 dark:text-slate-500" title={`เปิดอ่านครั้งแรกโดย ${conv.firstViewedByAgent.name}`}>
+              👁 {conv.firstViewedByAgent.name}
+            </span>
+          )}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
       </div>

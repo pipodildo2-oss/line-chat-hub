@@ -18,6 +18,7 @@ model Agent {
   createdAt     DateTime       @default(now())
   conversations Conversation[]
   channels      AgentChannel[]
+  firstViewedConversations Conversation[] @relation("FirstViewer")
 }
 
 model LineChannel {
@@ -127,6 +128,15 @@ model Conversation {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   lastMessageAt DateTime?
+  // "First to open wins" — who first opened this conversation since the customer's
+  // latest message. Reset to null whenever a new customer message comes in (see
+  // line.service.js), then claimed by whichever agent's GET /api/messages/:id
+  // request lands first (atomic compare-and-set in messages.js). Shown in the
+  // inbox list so agents can see someone's already looked, without needing a
+  // formal assignment.
+  firstViewedByAgentId String?
+  firstViewedByAgent   Agent?    @relation("FirstViewer", fields: [firstViewedByAgentId], references: [id], onDelete: SetNull)
+  firstViewedAt        DateTime?
 
   @@unique([lineUserId, channelId])
   @@index([channelId])

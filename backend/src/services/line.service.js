@@ -77,6 +77,10 @@ async function processLineEvent(channel, event) {
         pictureUrl,
         status: 'open',
         ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
+        // A genuinely new customer message means "who saw this first" resets —
+        // otherwise the list would keep crediting whoever looked at an earlier,
+        // already-handled message instead of this new one.
+        ...(bumpLastMessageAt ? { firstViewedByAgentId: null, firstViewedAt: null } : {}),
       },
       create: {
         lineUserId,
@@ -86,7 +90,7 @@ async function processLineEvent(channel, event) {
         status: 'open',
         lastMessageAt: sentAt,
       },
-      include: { channel: true, agent: true },
+      include: { channel: true, agent: true, firstViewedByAgent: { select: { id: true, name: true } } },
     });
 
     // Save message

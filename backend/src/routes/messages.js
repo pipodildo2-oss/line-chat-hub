@@ -66,6 +66,28 @@ router.get('/:conversationId', auth, async (req, res) => {
     data: { read: true },
   });
 
+  // "First to open wins" — claim the first-viewer slot if nobody has since the
+  // customer's last message. updateMany's WHERE clause makes this an atomic
+  // compare-and-set at the DB level: if two agents open this conversation at
+  // nearly the same moment, only the request whose UPDATE actually matches a
+  // row (count > 0, because firstViewedByAgentId was still null) is the real
+  // first viewer — the loser's WHERE clause silently matches nothing.
+  const claim = await prisma.conversation.updateMany({
+    where: { id: req.params.conversationId, firstViewedByAgentId: null },
+    data: { firstViewedByAgentId: req.agent.id, firstViewedAt: new Date() },
+  });
+  if (claim.count > 0) {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: req.params.conversationId },
+      include: {
+        channel: { select: { id: true, name: true } },
+        agent: { select: { id: true, name: true } },
+        firstViewedByAgent: { select: { id: true, name: true } },
+      },
+    });
+    if (conversation) emitToAll('conversation_updated', conversation);
+  }
+
   res.json(messages.reverse());
 });
 
