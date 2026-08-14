@@ -240,28 +240,18 @@ router.post('/:id/send', auth, async (req, res) => {
     created.push(textMessage);
 
     // An outgoing message (even a canned quick reply) clears this agent's own
-    // audit-trail tag on the latest customer message, if any — same rule as a
-    // normal typed reply (see messages.js POST /:conversationId).
+    // audit-trail tags across the WHOLE conversation — same rule as a normal
+    // typed reply (see messages.js POST /:conversationId).
     const now = new Date();
-    const latestUserMessage = await prisma.message.findFirst({
-      where: { conversationId: conversation.id, sender: 'user' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { lastMessageAt: now },
     });
-    if (latestUserMessage) {
-      const cleared = await prisma.messageView.deleteMany({
-        where: { messageId: latestUserMessage.id, agentId: req.agent.id },
-      });
-      if (cleared.count > 0) {
-        emitToConversation(conversation.id, 'message_view_cleared', {
-          messageId: latestUserMessage.id,
-          agentId: req.agent.id,
-        });
-      }
+    const cleared = await prisma.messageView.deleteMany({
+      where: { agentId: req.agent.id, message: { conversationId: conversation.id } },
+    });
+    if (cleared.count > 0) {
+      emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
     }
     // `conversation` was fetched before the update above — patch this field
     // locally before broadcasting, otherwise the inbox list briefly shows a

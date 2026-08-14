@@ -156,29 +156,21 @@ router.post('/:conversationId', auth, async (req, res) => {
     }
 
     // Update conversation lastMessageAt. Sending a reply also clears THIS agent's
-    // own audit-trail tag on the latest customer message (if they have one) —
-    // replying means they didn't just view-and-ignore it. Other agents' tags on
-    // that same message are left untouched, since they still haven't replied.
+    // own audit-trail tags on EVERY customer message in this conversation, not
+    // just the newest one — if this agent ends up being the one who actually
+    // replies, they didn't "view it and leave it for someone else," even if a
+    // newer customer message had already arrived between their view and their
+    // reply. Other agents' tags are untouched, since they still haven't replied.
     const now = new Date();
-    const latestUserMessage = await prisma.message.findFirst({
-      where: { conversationId: conversation.id, sender: 'user' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { lastMessageAt: now },
     });
-    if (latestUserMessage) {
-      const cleared = await prisma.messageView.deleteMany({
-        where: { messageId: latestUserMessage.id, agentId: req.agent.id },
-      });
-      if (cleared.count > 0) {
-        emitToConversation(conversation.id, 'message_view_cleared', {
-          messageId: latestUserMessage.id,
-          agentId: req.agent.id,
-        });
-      }
+    const cleared = await prisma.messageView.deleteMany({
+      where: { agentId: req.agent.id, message: { conversationId: conversation.id } },
+    });
+    if (cleared.count > 0) {
+      emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
     }
     // `conversation` was fetched before the update above, so lastMessageAt is
     // stale on it. Patch it locally before broadcasting — otherwise the inbox

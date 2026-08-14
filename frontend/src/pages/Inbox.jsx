@@ -702,11 +702,16 @@ export default function Inbox() {
         return { ...m, views: [...views, { agentId, agent: { name: agentName } }] };
       }));
     });
-    socket.on('message_view_cleared', ({ messageId, agentId }) => {
+    // Fired when an agent sends any reply — clears THAT agent's tag from every
+    // message in this conversation (not just one), since replying means they
+    // didn't leave it for someone else, even if a newer customer message had
+    // already arrived since they viewed it.
+    socket.on('message_view_cleared', ({ agentId }) => {
       if (agent?.role !== 'admin') return;
       setMessages(prev => prev.map(m => {
-        if (m.id !== messageId || !m.views) return m;
-        return { ...m, views: m.views.filter(v => v.agentId !== agentId) };
+        if (!m.views?.length) return m;
+        const filtered = m.views.filter(v => v.agentId !== agentId);
+        return filtered.length === m.views.length ? m : { ...m, views: filtered };
       }));
     });
     return () => {
