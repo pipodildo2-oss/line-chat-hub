@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -889,6 +889,7 @@ export default function Settings() {
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [showAgentPassword, setShowAgentPassword] = useState(false);
+  const [agentSearch, setAgentSearch] = useState('');
   const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
@@ -1167,44 +1168,27 @@ export default function Settings() {
       {/* Agents */}
       {tab === 'agents' && (
         <div className="space-y-6 max-w-2xl">
-          {[
-            { key: 'admins', label: t('section_admins'), rows: agents.filter(a => a.role === 'admin') },
-            { key: 'agents', label: t('section_agents'), rows: agents.filter(a => a.role !== 'admin') },
-          ].map(group => (
-            group.rows.length > 0 && (
-              <div key={group.key}>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">{group.label}</p>
-                <div className="space-y-3">
-                  {group.rows.map(a => (
-                    <div key={a.id} className={`${cardCls} flex items-center gap-3`}>
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white font-medium flex-shrink-0">
-                        {a.name[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-100 text-sm">{a.name}</p>
-                        <p className="text-xs text-slate-500">{a.email} · {a.role}</p>
-                      </div>
-                      {agent?.role === 'admin' && a.id !== agent?.id && (
-                        <button
-                          onClick={() => setEditAgentTarget(a)}
-                          className="flex items-center gap-1.5 text-xs text-slate-400 border border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-slate-500 hover:text-slate-200"
-                        >
-                          <Pencil size={12} /> {t('edit')}
-                        </button>
-                      )}
-                      {a.id !== agent?.id && agent?.role === 'admin' && (
-                        <button onClick={() => deleteAgent(a.id)} className="text-slate-600 hover:text-rose-400">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          ))}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-xs">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500"
+                placeholder="ค้นหาชื่อหรืออีเมล"
+                value={agentSearch}
+                onChange={e => setAgentSearch(e.target.value)}
+              />
+            </div>
+            {agent?.role === 'admin' && (
+              <button
+                onClick={() => setShowAddAgent(v => !v)}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-3.5 py-2 text-sm font-medium hover:brightness-110 transition-all flex-shrink-0"
+              >
+                <Plus size={16} /> เพิ่ม Agent
+              </button>
+            )}
+          </div>
 
-          {agent?.role === 'admin' && (showAddAgent ? (
+          {agent?.role === 'admin' && showAddAgent && (
             <form onSubmit={addAgent} className={`${cardCls} space-y-3`}>
               <h3 className="font-medium text-slate-100">เพิ่ม Agent</h3>
               <input className={inputCls} placeholder="ชื่อ" value={agentForm.name} onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))} required />
@@ -1235,11 +1219,67 @@ export default function Settings() {
                 <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-slate-400 px-4 py-2">ยกเลิก</button>
               </div>
             </form>
-          ) : (
-            <button onClick={() => setShowAddAgent(true)} className="flex items-center gap-2 text-sm text-aurora-teal hover:brightness-110 font-medium">
-              <Plus size={18} /> เพิ่ม Agent
-            </button>
-          ))}
+          )}
+
+          {[
+            { key: 'admins', label: t('section_admins'), rows: agents.filter(a => a.role === 'admin') },
+            { key: 'agents', label: t('section_agents'), rows: agents.filter(a => a.role !== 'admin') },
+          ].map(group => {
+            const q = agentSearch.trim().toLowerCase();
+            const visibleRows = q
+              ? group.rows.filter(a => a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q))
+              : group.rows;
+            return group.rows.length > 0 && (
+              <div key={group.key}>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2.5">
+                  {group.label} <span className="text-slate-600 font-normal normal-case tracking-normal">· {group.rows.length}</span>
+                </p>
+                {visibleRows.length === 0 ? (
+                  <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+                ) : (
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 divide-y divide-slate-800 overflow-hidden">
+                    {visibleRows.map(a => (
+                      <div key={a.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 transition-colors">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                          {a.name[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
+                            {a.id === agent?.id && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-medium flex-shrink-0">คุณ</span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
+                              {a.role === 'admin' ? 'Admin' : 'Agent'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
+                        </div>
+                        {agent?.role === 'admin' && a.id !== agent?.id && (
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                            <button
+                              onClick={() => setEditAgentTarget(a)}
+                              title={t('edit')}
+                              className="p-2 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => deleteAgent(a.id)}
+                              title="ลบ"
+                              className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
