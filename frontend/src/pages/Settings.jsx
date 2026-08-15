@@ -339,7 +339,7 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
         </div>
       </div>
       <div className="flex items-center gap-1.5 mt-3">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/20 text-violet-300' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
           {a.role === 'admin' ? 'Admin' : 'Agent'}
         </span>
         {isMe && (
@@ -1094,6 +1094,23 @@ export default function Settings() {
     setAgents(prev => prev.map(a => a.categoryId === id ? { ...a, categoryId: null, category: null } : a));
   }
 
+  // Swaps a category with its neighbor above/below and persists the new order —
+  // controls which category row shows above/below which on the Team page.
+  // Mirrors moveQuickReply above.
+  async function moveAgentCategory(id, direction) {
+    const index = agentCategories.findIndex(c => c.id === id);
+    const swapWith = direction === 'up' ? index - 1 : index + 1;
+    if (index === -1 || swapWith < 0 || swapWith >= agentCategories.length) return;
+    const next = [...agentCategories];
+    [next[index], next[swapWith]] = [next[swapWith], next[index]];
+    setAgentCategories(next);
+    try {
+      await axios.patch('/api/agent-categories/reorder', { ids: next.map(c => c.id) });
+    } catch {
+      setAgentCategories(agentCategories); // revert on failure
+    }
+  }
+
   async function addTag(e) {
     e.preventDefault();
     setSaving(true); setError('');
@@ -1268,7 +1285,7 @@ export default function Settings() {
             </div>
             <div className="rounded-xl border border-aurora-purple/25 bg-aurora-purple/10 px-4 py-2.5 min-w-[88px]">
               <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
-              <p className="text-[11px] text-aurora-purple font-medium mt-0.5">แอดมิน</p>
+              <p className="text-[11px] text-violet-300 font-medium mt-0.5">แอดมิน</p>
             </div>
             <div className="rounded-xl border border-aurora-teal/25 bg-aurora-teal/10 px-4 py-2.5 min-w-[88px]">
               <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
@@ -1411,7 +1428,7 @@ export default function Settings() {
                   </div>
                 ) : (
                   <div className="space-y-8">
-                    {agentCategories.map(cat => {
+                    {agentCategories.map((cat, i) => {
                       const allInCat = nonAdmins.filter(a => a.categoryId === cat.id);
                       const catAgents = allInCat.filter(matches);
                       return (
@@ -1431,6 +1448,24 @@ export default function Settings() {
                               </>
                             ) : (
                               <>
+                                {agent?.role === 'admin' && (
+                                  <div className="flex flex-col -my-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => moveAgentCategory(cat.id, 'up')}
+                                      disabled={i === 0}
+                                      className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 leading-none"
+                                    >
+                                      <ChevronUp size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => moveAgentCategory(cat.id, 'down')}
+                                      disabled={i === agentCategories.length - 1}
+                                      className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 leading-none"
+                                    >
+                                      <ChevronDown size={14} />
+                                    </button>
+                                  </div>
+                                )}
                                 <p className={headingCls}>{cat.name}</p>
                                 <span className="text-sm text-slate-500 font-medium">· {allInCat.length} คน</span>
                                 {agent?.role === 'admin' && (

@@ -18,9 +18,24 @@ function requireAdmin(req, res, next) {
 router.get('/', auth, async (req, res) => {
   const categories = await prisma.agentCategory.findMany({
     include: { _count: { select: { agents: true } } },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
   });
   res.json(categories);
+});
+
+// PATCH /api/agent-categories/reorder — admin only. Body: { ids: [...] } listed
+// in the desired display order. Sets each category's `order` to its index —
+// mirrors the quick-reply reorder pattern in quickReplies.js exactly. Declared
+// before PATCH /:id so "reorder" isn't swallowed as an :id value.
+router.patch('/reorder', auth, requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
+    await Promise.all(ids.map((id, index) => prisma.agentCategory.update({ where: { id }, data: { order: index } })));
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/agent-categories — admin only

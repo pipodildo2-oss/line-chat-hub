@@ -36,6 +36,7 @@ model Agent {
 model AgentCategory {
   id        String   @id @default(cuid())
   name      String   @unique
+  order     Int      @default(0) // display position, admin-controlled via up/down reorder buttons
   createdAt DateTime @default(now())
   agents    Agent[]
 }
