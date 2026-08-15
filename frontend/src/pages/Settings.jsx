@@ -242,9 +242,9 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
           <button
             onClick={handleToggleActive}
             disabled={togglingActive}
-            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-slate-700'}`}
+            className={`relative inline-flex overflow-hidden w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-slate-700'}`}
           >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            <span className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
           <span className="text-sm text-slate-300">
             {isActive ? 'เปิดใช้งานอยู่' : 'ปิดใช้งานอยู่'}

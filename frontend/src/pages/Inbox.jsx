@@ -430,9 +430,9 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
           <span className="text-xs font-medium text-gray-500 dark:text-slate-400">ลูกค้าบล็อคเราอยู่</span>
           <button
             onClick={() => onUpdate({ blocked: !conv.blocked })}
-            className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${conv.blocked ? 'bg-rose-500' : 'bg-gray-200 dark:bg-slate-700'}`}
+            className={`relative inline-flex overflow-hidden w-9 h-5 rounded-full transition-colors flex-shrink-0 ${conv.blocked ? 'bg-rose-500' : 'bg-gray-200 dark:bg-slate-700'}`}
           >
-            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${conv.blocked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${conv.blocked ? 'translate-x-4' : 'translate-x-0'}`} />
           </button>
         </div>
       )}
