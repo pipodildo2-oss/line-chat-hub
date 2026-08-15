@@ -51,4 +51,52 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
   res.json({ messages, totalFlagged, severeCount, minorCount });
 });
 
+// GET /api/reports/unanswered?channelId=&agentId=
+// Admin-only — a live worklist, not a historical report. The team's rule is
+// that an agent should always send the last message in any conversation, so
+// this lists every open/pending conversation whose most recent message is
+// instead from the customer, i.e. it slipped through without a reply.
+// Closed conversations are excluded: an incoming LINE message always flips
+// status back to 'open' (see line.service.js), so a closed conversation can
+// never actually have the customer's message as its latest one.
+router.get('/unanswered', auth, requireAdmin, async (req, res) => {
+  const { channelId, agentId } = req.query;
+  const where = { status: { in: ['open', 'pending'] } };
+  if (channelId) where.channelId = channelId;
+  if (agentId === 'unassigned') where.agentId = null;
+  else if (agentId) where.agentId = agentId;
+
+  // Prisma can't filter on "the last item of a relation" at the DB level, so
+  // fetch each conversation's single latest message (cheap — same take:1
+  // pattern already used by GET /api/conversations) and filter by sender in
+  // JS afterward. Capped at 1000 open/pending conversations, which is far
+  // more headroom than this kind of single-team inbox should ever carry at once.
+  const conversations = await prisma.conversation.findMany({
+    where,
+    include: {
+      channel: { select: { id: true, name: true } },
+      agent: { select: { id: true, name: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { sender: true, content: true, type: true, createdAt: true } },
+    },
+    orderBy: { lastMessageAt: 'asc' }, // oldest-waiting first — most urgent on top
+    take: 1000,
+  });
+
+  const unanswered = conversations
+    .filter(c => c.messages[0]?.sender === 'user')
+    .map(c => ({
+      id: c.id,
+      displayName: c.displayName,
+      lineUserId: c.lineUserId,
+      pictureUrl: c.pictureUrl,
+      status: c.status,
+      channel: c.channel,
+      agent: c.agent,
+      lastMessage: c.messages[0],
+      waitingSince: c.messages[0].createdAt,
+    }));
+
+  res.json({ conversations: unanswered, total: unanswered.length });
+});
+
 module.exports = router;

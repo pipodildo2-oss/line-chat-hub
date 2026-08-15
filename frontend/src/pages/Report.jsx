@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink } from 'lucide-react';
-import { startOfMonth, endOfMonth, subMonths, subDays, format } from 'date-fns';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning } from 'lucide-react';
+import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
 
@@ -45,11 +45,141 @@ const SEVERITY_BADGE = {
 };
 const SEVERITY_LABEL = { severe: 'รุนแรง', minor: 'เล็กน้อย' };
 
+// Business rule: an agent should always send the last message in any
+// conversation. This section is a live worklist (not a historical report) of
+// every open/pending chat that currently breaks that rule — the customer's
+// message is sitting there unanswered. Re-check it any time to catch chats
+// that slipped through.
+function UnansweredSection({ channels, agents }) {
+  const navigate = useNavigate();
+  const { socket } = useSocket();
+  const [data, setData] = useState(null);
+  const [channelId, setChannelId] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const lastReloadRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const params = {};
+    if (channelId) params.channelId = channelId;
+    if (agentId) params.agentId = agentId;
+    const { data } = await axios.get('/api/reports/unanswered', { params });
+    setData(data);
+  }, [channelId, agentId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Any message send, incoming customer message, or status change touches
+  // 'conversation_updated' — rather than trying to reconstruct "is this now
+  // the last message and who sent it" from a partial payload, just reload the
+  // list. Throttled so a burst of activity doesn't hammer the endpoint.
+  useEffect(() => {
+    if (!socket) return;
+    function handleUpdate() {
+      const now = Date.now();
+      if (now - lastReloadRef.current < 3000) return;
+      lastReloadRef.current = now;
+      load();
+    }
+    socket.on('conversation_updated', handleUpdate);
+    return () => socket.off('conversation_updated', handleUpdate);
+  }, [socket, load]);
+
+  return (
+    <div className="mt-10">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+          <MessageSquareWarning size={18} className="text-amber-500" />
+          แชทที่ยังไม่ได้ตอบกลับ
+        </h2>
+      </div>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+        แชทที่ข้อความล่าสุดยังเป็นของลูกค้าอยู่ (พนักงานควรเป็นคนตอบล่าสุดเสมอ) — เรียงจากรอนานสุดก่อน
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <select
+          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={channelId}
+          onChange={e => setChannelId(e.target.value)}
+        >
+          <option value="">ทุกช่องทาง</option>
+          {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select
+          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={agentId}
+          onChange={e => setAgentId(e.target.value)}
+        >
+          <option value="">พนักงานทั้งหมด</option>
+          <option value="unassigned">ยังไม่ได้ assign</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        {data && (
+          <span className="text-sm text-gray-500 dark:text-slate-400 ml-1">
+            พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{data.total}</span> แชท
+          </span>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        {!data ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : data.conversations.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ไม่มีแชทตกหล่น — พนักงานตอบครบทุกแชทแล้ว 🎉</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                <th className="px-4 py-2.5 font-medium">รอมาแล้ว</th>
+                <th className="px-4 py-2.5 font-medium">ลูกค้า / ช่องทาง</th>
+                <th className="px-4 py-2.5 font-medium">ข้อความล่าสุดของลูกค้า</th>
+                <th className="px-4 py-2.5 font-medium">Assign</th>
+                <th className="px-4 py-2.5 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.conversations.map(c => (
+                <tr key={c.id} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 align-top">
+                  <td className="px-4 py-2.5 text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
+                    {formatDistanceToNow(new Date(c.waitingSince), { locale: th, addSuffix: false })}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                    <p className="truncate max-w-[160px] text-gray-800 dark:text-slate-200">{c.displayName || c.lineUserId}</p>
+                    <p className="text-[11px] text-gray-400 dark:text-slate-500">{c.channel?.name}</p>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-800 dark:text-slate-200 max-w-xs">
+                    <p className="line-clamp-2 whitespace-pre-wrap break-words">
+                      {c.lastMessage.type === 'text' ? c.lastMessage.content : `[${c.lastMessage.type}]`}
+                    </p>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                    {c.agent?.name || <span className="text-gray-400 dark:text-slate-500">ยังไม่ได้ assign</span>}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <button
+                      onClick={() => navigate(`/inbox?conv=${c.id}`)}
+                      title="ไปที่แชท"
+                      className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal"
+                    >
+                      <ExternalLink size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Report() {
   const navigate = useNavigate();
   const { socket } = useSocket();
   const [data, setData] = useState(null);
   const [agents, setAgents] = useState([]);
+  const [channels, setChannels] = useState([]);
   const [preset, setPreset] = useState('thisMonth');
   const [[from, to], setDateRange] = useState(PRESETS[2].range());
   const [severity, setSeverity] = useState('');
@@ -74,7 +204,10 @@ export default function Report() {
   }, [from, to, severity, agentId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
+    axios.get('/api/channels').then(r => setChannels(r.data)).catch(() => {});
+  }, []);
 
   // Live-append when a new message gets flagged elsewhere in the app, so the
   // report doesn't feel stale while an admin is sitting on this page. Only
@@ -126,8 +259,10 @@ export default function Report() {
 
   return (
     <div className="p-6 overflow-y-auto h-full">
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4">รายงาน</h1>
+
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">รายงานคำพูดไม่เหมาะสม</h1>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">คำพูดไม่เหมาะสม</h2>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
         AI ตรวจข้อความที่พนักงานพิมพ์ส่งลูกค้าแบบอัตโนมัติ (เฉพาะข้อความใหม่นับจากนี้) — ใช้สำหรับตรวจสอบและประเมิน KPI
@@ -255,6 +390,8 @@ export default function Report() {
           </table>
         )}
       </div>
+
+      <UnansweredSection channels={channels} agents={agents} />
     </div>
   );
 }
