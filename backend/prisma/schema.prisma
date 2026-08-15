@@ -20,6 +20,24 @@ model Agent {
   channels      AgentChannel[]
   messageViews  MessageView[]
   sentMessages  Message[]      @relation("MessageSender")
+  // Purely organizational grouping (e.g. by team/department), same pattern as
+  // LineChannel.categoryId below — admin creates a category by typing a name,
+  // then assigns each teammate to at most one. Independent of `role`, which
+  // still controls actual permissions.
+  categoryId    String?
+  category      AgentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId])
+}
+
+// "หมวดหมู่ทีมงาน" — mirrors ChannelCategory exactly, but for grouping teammates
+// on the Settings > Team page instead of LINE OA channels. Deleting a category
+// doesn't delete its members (onDelete: SetNull above).
+model AgentCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  agents    Agent[]
 }
 
 model LineChannel {

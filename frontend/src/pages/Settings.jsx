@@ -316,9 +316,44 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
   );
 }
 
-function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
+function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
+  return (
+    <div className="group relative rounded-xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 hover:bg-slate-800/30 transition-colors">
+      {canManage && (
+        <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEdit} title="แก้ไข" className="p-1.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors">
+            <Pencil size={13} />
+          </button>
+          <button onClick={onDelete} title="ลบ" className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-slate-950/60">
+          {a.name[0].toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1 pr-9">
+          <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
+          <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 mt-3">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
+          {a.role === 'admin' ? 'Admin' : 'Agent'}
+        </span>
+        {isMe && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">คุณ</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t }) {
   const [role, setRole] = useState(agentItem.role);
   const [selectedIds, setSelectedIds] = useState(agentItem.channelIds || []);
+  const [categoryId, setCategoryId] = useState(agentItem.categoryId || '');
   const [newPassword, setNewPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -336,7 +371,7 @@ function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
   async function handleSave() {
     setSaving(true); setError('');
     try {
-      await onSave(agentItem.id, { role, channelIds: selectedIds });
+      await onSave(agentItem.id, { role, channelIds: selectedIds, categoryId: categoryId || null });
       onClose();
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -379,6 +414,14 @@ function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
           </div>
 
           <div>
+            <label className={labelCls}>หมวดหมู่ทีมงาน</label>
+            <select className={fieldCls} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+              <option value="">ไม่มีหมวดหมู่</option>
+              {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+            </select>
+          </div>
+
+          <div>
             <label className={labelCls}>{t('channel_visibility')}</label>
             <div className="border border-slate-700 rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto">
               {channels.map(ch => (
@@ -402,6 +445,8 @@ function AgentEditModal({ agentItem, channels, onSave, onClose, t }) {
                   placeholder={t('new_password')}
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  name="reset-agent-password"
                 />
                 <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                   {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -903,11 +948,20 @@ export default function Settings() {
   const [editingChannelCategoryId, setEditingChannelCategoryId] = useState(null);
   const [editingChannelCategoryName, setEditingChannelCategoryName] = useState('');
 
+  // Team ("หมวดหมู่ทีมงาน") categories — purely organizational grouping for
+  // teammates, exact mirror of the channel categories state above.
+  const [agentCategories, setAgentCategories] = useState([]);
+  const [showAddAgentCategory, setShowAddAgentCategory] = useState(false);
+  const [agentCategoryName, setAgentCategoryName] = useState('');
+  const [editingAgentCategoryId, setEditingAgentCategoryId] = useState(null);
+  const [editingAgentCategoryName, setEditingAgentCategoryName] = useState('');
+
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data));
     axios.get('/api/agents').then(r => setAgents(r.data));
     axios.get('/api/tags').then(r => setTags(r.data));
     axios.get('/api/channel-categories').then(r => setChannelCategories(r.data));
+    axios.get('/api/agent-categories').then(r => setAgentCategories(r.data));
   }, []);
 
   async function addChannelCategory(e) {
@@ -992,13 +1046,52 @@ export default function Settings() {
     setAgents(prev => prev.filter(a => a.id !== id));
   }
 
-  async function saveAgentEdit(agentId, { role, channelIds }) {
+  async function saveAgentEdit(agentId, { role, channelIds, categoryId }) {
     const original = agents.find(a => a.id === agentId);
-    if (role !== original?.role) {
-      await axios.patch(`/api/agents/${agentId}`, { role });
+    let updated = {};
+    if (role !== original?.role || categoryId !== original?.categoryId) {
+      const { data } = await axios.patch(`/api/agents/${agentId}`, { role, categoryId });
+      updated = data;
     }
     await axios.put(`/api/agents/${agentId}/channels`, { channelIds });
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, role, channelIds } : a));
+    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, role, channelIds, ...updated } : a));
+  }
+
+  async function addAgentCategory(e) {
+    e.preventDefault();
+    if (!agentCategoryName.trim()) return;
+    setSaving(true); setError('');
+    try {
+      const { data } = await axios.post('/api/agent-categories', { name: agentCategoryName.trim() });
+      setAgentCategories(prev => [...prev, { ...data, _count: { agents: 0 } }]);
+      setAgentCategoryName('');
+      setShowAddAgentCategory(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSaving(false); }
+  }
+
+  function startEditAgentCategory(cat) {
+    setEditingAgentCategoryId(cat.id);
+    setEditingAgentCategoryName(cat.name);
+  }
+
+  async function saveAgentCategoryEdit(id) {
+    if (!editingAgentCategoryName.trim()) return;
+    try {
+      const { data } = await axios.patch(`/api/agent-categories/${id}`, { name: editingAgentCategoryName.trim() });
+      setAgentCategories(prev => prev.map(c => c.id === id ? { ...c, name: data.name } : c));
+      setEditingAgentCategoryId(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
+  async function deleteAgentCategory(id) {
+    if (!confirm('ลบหมวดหมู่นี้? คนในหมวดหมู่นี้จะยังอยู่ครบ แค่ย้ายไปเป็น "ยังไม่มีหมวดหมู่"')) return;
+    await axios.delete(`/api/agent-categories/${id}`);
+    setAgentCategories(prev => prev.filter(c => c.id !== id));
+    setAgents(prev => prev.map(a => a.categoryId === id ? { ...a, categoryId: null, category: null } : a));
   }
 
   async function addTag(e) {
@@ -1189,6 +1282,9 @@ export default function Settings() {
                 placeholder="ค้นหาชื่อหรืออีเมล"
                 value={agentSearch}
                 onChange={e => setAgentSearch(e.target.value)}
+                autoComplete="off"
+                name="team-member-search"
+                type="search"
               />
             </div>
             {agent?.role === 'admin' && (
@@ -1214,6 +1310,8 @@ export default function Settings() {
                   value={agentForm.password}
                   onChange={e => setAgentForm(f => ({ ...f, password: e.target.value }))}
                   required
+                  autoComplete="new-password"
+                  name="new-agent-password"
                 />
                 <button
                   type="button"
@@ -1234,67 +1332,121 @@ export default function Settings() {
             </form>
           )}
 
-          {[
-            { key: 'admins', label: t('section_admins'), rows: agents.filter(a => a.role === 'admin') },
-            { key: 'agents', label: t('section_agents'), rows: agents.filter(a => a.role !== 'admin') },
-          ].map(group => {
+          {agent?.role === 'admin' && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ทีมงาน</p>
+              <button
+                onClick={() => setShowAddAgentCategory(v => !v)}
+                className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
+              >
+                <Plus size={12} /> เพิ่มหมวดหมู่
+              </button>
+            </div>
+          )}
+
+          {showAddAgentCategory && (
+            <form onSubmit={addAgentCategory} className="flex items-center gap-2 max-w-md">
+              <input
+                autoFocus
+                className={inputCls}
+                placeholder="ชื่อหมวดหมู่ เช่น ทีมขาย A"
+                value={agentCategoryName}
+                onChange={e => setAgentCategoryName(e.target.value)}
+              />
+              <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
+              <button type="button" onClick={() => { setShowAddAgentCategory(false); setAgentCategoryName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+            </form>
+          )}
+
+          {(() => {
             const q = agentSearch.trim().toLowerCase();
-            const visibleRows = q
-              ? group.rows.filter(a => a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q))
-              : group.rows;
-            return group.rows.length > 0 && (
-              <div key={group.key}>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
-                  {group.label} <span className="text-slate-600 font-normal normal-case tracking-normal">· {group.rows.length}</span>
-                </p>
-                {visibleRows.length === 0 ? (
-                  <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {visibleRows.map(a => (
-                      <div key={a.id} className="group relative rounded-xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 hover:bg-slate-800/30 transition-colors">
-                        {agent?.role === 'admin' && a.id !== agent?.id && (
-                          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => setEditAgentTarget(a)}
-                              title={t('edit')}
-                              className="p-1.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              onClick={() => deleteAgent(a.id)}
-                              title="ลบ"
-                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
+            const matches = a => !q || a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q);
+            const canManage = a => agent?.role === 'admin' && a.id !== agent?.id;
+            const card = a => (
+              <AgentCard
+                key={a.id}
+                a={a}
+                canManage={canManage(a)}
+                isMe={a.id === agent?.id}
+                onEdit={() => setEditAgentTarget(a)}
+                onDelete={() => deleteAgent(a.id)}
+              />
+            );
+
+            if (agentCategories.length === 0) {
+              // No categories created yet — plain flat grid, same as before.
+              const visible = agents.filter(matches);
+              return visible.length === 0 ? (
+                <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {visible.map(card)}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6">
+                {agentCategories.map(cat => {
+                  const allInCat = agents.filter(a => a.categoryId === cat.id);
+                  const catAgents = allInCat.filter(matches);
+                  return (
+                    <div key={cat.id}>
+                      <div className="flex items-center gap-2 mb-3 group">
+                        {editingAgentCategoryId === cat.id ? (
+                          <>
+                            <input
+                              autoFocus
+                              className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                              value={editingAgentCategoryName}
+                              onChange={e => setEditingAgentCategoryName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && saveAgentCategoryEdit(cat.id)}
+                            />
+                            <button onClick={() => saveAgentCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
+                            <button onClick={() => setEditingAgentCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
+                            <span className="text-[10px] text-slate-500">{allInCat.length} คน</span>
+                            {agent?.role === 'admin' && (
+                              <>
+                                <button onClick={() => startEditAgentCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
+                                <button onClick={() => deleteAgentCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+                              </>
+                            )}
+                          </>
                         )}
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-slate-950/60">
-                            {a.name[0].toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1 pr-9">
-                            <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-3">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
-                            {a.role === 'admin' ? 'Admin' : 'Agent'}
-                          </span>
-                          {a.id === agent?.id && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">คุณ</span>
-                          )}
-                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      {catAgents.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {catAgents.map(card)}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-600">
+                          {q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}" ในหมวดหมู่นี้` : 'ยังไม่มีใครอยู่ในหมวดหมู่นี้ — ไปที่แก้ไขของแต่ละคนแล้วเลือกหมวดหมู่นี้'}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-200 mb-3">ยังไม่มีหมวดหมู่</p>
+                  {(() => {
+                    const uncategorized = agents.filter(a => !a.categoryId && matches(a));
+                    return uncategorized.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {uncategorized.map(card)}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
+                    );
+                  })()}
+                </div>
               </div>
             );
-          })}
+          })()}
         </div>
       )}
 
@@ -1345,6 +1497,7 @@ export default function Settings() {
         <AgentEditModal
           agentItem={editAgentTarget}
           channels={channels}
+          categories={agentCategories}
           onSave={saveAgentEdit}
           onClose={() => setEditAgentTarget(null)}
           t={t}

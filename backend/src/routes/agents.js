@@ -11,6 +11,8 @@ router.get('/', auth, async (req, res) => {
     select: {
       id: true, name: true, email: true, role: true, status: true, createdAt: true,
       channels: { select: { channelId: true } },
+      categoryId: true,
+      category: { select: { id: true, name: true } },
     },
   });
   res.json(agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined })));
@@ -79,13 +81,16 @@ router.patch('/me/password', auth, async (req, res) => {
 router.patch('/:id', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
-    const { role } = req.body;
+    const { role, categoryId } = req.body;
     const data = {};
     if (role !== undefined) data.role = role;
+    // categoryId can be explicitly cleared back to "uncategorized" (null) —
+    // same undefined-vs-null pattern as LineChannel.categoryId in channels.js.
+    if (categoryId !== undefined) data.categoryId = categoryId || null;
     const updated = await prisma.agent.update({
       where: { id: req.params.id },
       data,
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, categoryId: true, category: { select: { id: true, name: true } } },
     });
     res.json(updated);
   } catch (err) {
