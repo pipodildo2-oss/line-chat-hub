@@ -124,6 +124,14 @@ model Conversation {
   status      String      @default("open") // open | pending | closed
   lifecycleStage String   @default("new") // new | contacted | qualified | negotiation | won | lost
   notes       String?
+  // LINE gives us NO error when pushing a message to a user who has blocked
+  // the OA (200 OK, message just silently never arrives) — the 'unfollow'
+  // webhook event is the only real signal, so this flag is set from there
+  // (see line.service.js). Also manually toggleable from the customer panel,
+  // since a block that happened before this feature existed can't be detected
+  // retroactively — there's no API to query current block status.
+  blocked     Boolean     @default(false)
+  blockedAt   DateTime?
   messages    Message[]
   tags        ConversationTag[]
   createdAt   DateTime    @default(now())

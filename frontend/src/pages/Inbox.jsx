@@ -80,6 +80,11 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{conv.channel?.name}</span>
           {conv.agent && <span className="text-[10px] text-aurora-teal dark:text-aurora-teal">→ {conv.agent.name}</span>}
+          {conv.blocked && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-500 dark:text-rose-400 font-medium" title="ลูกค้าบล็อคเราอยู่">
+              🚫 บล็อค
+            </span>
+          )}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
       </div>
@@ -404,7 +409,28 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       <div className="p-4 flex flex-col items-center border-b border-gray-100 dark:border-slate-800">
         <Avatar name={conv.displayName} pictureUrl={conv.pictureUrl} size={16} />
         <p className="text-xs text-gray-400 dark:text-slate-500 mt-2">{conv.channel?.name}</p>
+        {conv.blocked && (
+          <span className="mt-2 text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 dark:text-rose-400 font-medium">
+            🚫 ลูกค้าบล็อคเราอยู่
+          </span>
+        )}
       </div>
+
+      {/* Manual override — LINE gives no API to check current block status, only
+          the 'unfollow'/'follow' webhook events going forward, so a block that
+          happened before this feature shipped (or a rare missed webhook) can't
+          be auto-detected. Admin can correct it by hand here. */}
+      {isAdmin && (
+        <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">ลูกค้าบล็อคเราอยู่</span>
+          <button
+            onClick={() => onUpdate({ blocked: !conv.blocked })}
+            className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${conv.blocked ? 'bg-rose-500' : 'bg-gray-200 dark:bg-slate-700'}`}
+          >
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${conv.blocked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+      )}
 
       <div className="p-4 border-b border-gray-100 dark:border-slate-800">
         <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 flex items-center gap-1"><Pencil size={11}/> ชื่อลูกค้า</label>
@@ -955,7 +981,14 @@ export default function Inbox() {
                     <Pencil size={13} />
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-slate-500">{selected.channel?.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs text-gray-500 dark:text-slate-500">{selected.channel?.name}</p>
+                  {selected.blocked && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-500 dark:text-rose-400 font-medium">
+                      🚫 ลูกค้าบล็อคเราอยู่
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <UserCheck size={16} className="text-gray-400 dark:text-slate-500" />
@@ -1040,7 +1073,17 @@ export default function Inbox() {
               </div>
             )}
 
-            {/* Input */}
+            {/* Input — replaced entirely with a notice when the customer has
+                blocked our LINE OA, since LINE returns 200 OK with no error
+                for a push to a blocked user (the message just silently never
+                arrives), there's no point letting anyone try to type here. */}
+            {selected.blocked ? (
+              <div className="bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-900/50 px-4 py-4 text-center">
+                <p className="text-sm text-rose-600 dark:text-rose-400 font-medium">
+                  🚫 ลูกค้าคนนี้บล็อคเราไปแล้ว ไม่สามารถส่งข้อความได้
+                </p>
+              </div>
+            ) : (
             <div className="relative bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800">
               {showQrPicker && (
                 <div className="relative px-4">
@@ -1135,6 +1178,7 @@ export default function Inbox() {
                 </button>
               </div>
             </div>
+            )}
           </div>
 
           {showDetail && (

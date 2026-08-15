@@ -23,8 +23,42 @@ function describeLineError(err) {
   return err?.message || 'ส่งข้อความไม่สำเร็จ';
 }
 
+// Flips the blocked flag on a conversation (if we have one for this user on
+// this channel) and broadcasts the change so an open Inbox tab updates live.
+// Used by both the 'unfollow' and 'follow' handlers below. A plain updateMany
+// (not upsert) — if the customer blocked us before ever messaging us, there's
+// no conversation row to flag yet, and that's fine, there's nothing to warn
+// agents about since they were never in a chat with them anyway.
+async function setBlockedFlag(channel, lineUserId, blocked) {
+  const result = await prisma.conversation.updateMany({
+    where: { lineUserId, channelId: channel.id },
+    data: { blocked, blockedAt: blocked ? new Date() : null },
+  });
+  if (result.count > 0) {
+    const conversation = await prisma.conversation.findUnique({
+      where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
+      include: { channel: true, agent: true },
+    });
+    if (conversation) emitToAll('conversation_updated', conversation);
+  }
+}
+
 // Processes a single LINE event (used by the queue worker, one job = one event).
 async function processLineEvent(channel, event) {
+    // The customer just blocked our LINE OA. LINE's push-message API stays
+    // silent about this (200 OK, message just never arrives) — this webhook
+    // event is the only signal we ever get, so track it here.
+    if (event.type === 'unfollow') {
+      if (event.source?.userId) await setBlockedFlag(channel, event.source.userId, true);
+      return;
+    }
+    // Re-added as a friend, or unblocked — LINE uses the same 'follow' event
+    // type for both (see follow.isUnblocked, which the docs note isn't fully
+    // reliable), so just clear the flag either way.
+    if (event.type === 'follow') {
+      if (event.source?.userId) await setBlockedFlag(channel, event.source.userId, false);
+      return;
+    }
     if (event.type !== 'message') return;
 
     // LINE's webhook delivery is "at least once" — it can redeliver the same event
@@ -76,6 +110,11 @@ async function processLineEvent(channel, event) {
         ...(existingConv?.displayNameCustomized ? {} : { displayName }),
         pictureUrl,
         status: 'open',
+        // If they're messaging us, they're obviously not blocking us — covers
+        // the edge case where an 'unfollow'-then-'follow' pair happened but a
+        // 'follow' webhook delivery got lost somehow.
+        blocked: false,
+        blockedAt: null,
         ...(bumpLastMessageAt ? { lastMessageAt: sentAt } : {}),
       },
       create: {

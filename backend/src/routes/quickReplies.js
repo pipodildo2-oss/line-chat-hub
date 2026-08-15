@@ -206,6 +206,9 @@ router.post('/:id/send', auth, async (req, res) => {
     ]);
     if (!quickReply) return res.status(404).json({ error: 'Quick reply not found' });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    if (conversation.blocked) {
+      return res.status(409).json({ error: 'ลูกค้าคนนี้บล็อคเราอยู่ ไม่สามารถส่งข้อความได้' });
+    }
 
     const created = [];
 

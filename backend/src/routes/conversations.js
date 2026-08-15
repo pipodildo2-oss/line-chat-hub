@@ -91,7 +91,7 @@ router.get('/:id', auth, async (req, res) => {
 // PATCH /api/conversations/:id
 router.patch('/:id', auth, async (req, res) => {
   try {
-    const { status, agentId, displayName, notes, lifecycleStage } = req.body;
+    const { status, agentId, displayName, notes, lifecycleStage, blocked } = req.body;
     const data = {};
     if (status) data.status = status;
     if (agentId !== undefined) data.agentId = agentId || null;
@@ -103,6 +103,15 @@ router.patch('/:id', auth, async (req, res) => {
     }
     if (notes !== undefined) data.notes = notes;
     if (lifecycleStage) data.lifecycleStage = lifecycleStage;
+    // Manual override for the "customer blocked us" flag — needed because a
+    // block that happened before this feature existed (or if a webhook event
+    // was somehow missed) can't be detected after the fact; there's no LINE
+    // API to query current block status, only the 'unfollow'/'follow' webhook
+    // events going forward (see line.service.js).
+    if (blocked !== undefined) {
+      data.blocked = !!blocked;
+      data.blockedAt = blocked ? new Date() : null;
+    }
 
     const conversation = await prisma.conversation.update({
       where: { id: req.params.id },

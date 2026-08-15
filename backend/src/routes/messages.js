@@ -126,6 +126,13 @@ router.post('/:conversationId', auth, async (req, res) => {
       include: { channel: true },
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    // LINE returns 200 OK with no error when pushing to a blocked user — the
+    // message just silently never arrives. Refuse it here instead, since the
+    // frontend composer is also disabled for a blocked conversation; this is
+    // the server-side backstop for any client that's out of sync.
+    if (conversation.blocked) {
+      return res.status(409).json({ error: 'ลูกค้าคนนี้บล็อคเราอยู่ ไม่สามารถส่งข้อความได้' });
+    }
 
     let message;
     if (imageData) {
