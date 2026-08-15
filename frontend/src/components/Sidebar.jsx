@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -64,18 +64,6 @@ export default function Sidebar() {
               <MessageSquare size={17} />
               {t('nav_inbox')}
             </NavLink>
-            {isAdmin && (
-              <NavLink to="/dashboard" className={linkCls}>
-                <BarChart2 size={17} />
-                {t('nav_dashboard')}
-              </NavLink>
-            )}
-            {isAdmin && (
-              <NavLink to="/report" className={linkCls}>
-                <ShieldAlert size={17} />
-                {t('nav_report')}
-              </NavLink>
-            )}
           </div>
         </div>
 
@@ -83,6 +71,18 @@ export default function Sidebar() {
           <div>
             <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t('nav_group_manage')}</p>
             <div className="space-y-0.5">
+              <NavLink to="/dashboard" className={linkCls}>
+                <BarChart2 size={17} />
+                {t('nav_dashboard')}
+              </NavLink>
+              <NavLink to="/report" className={linkCls}>
+                <ShieldAlert size={17} />
+                {t('nav_report')}
+              </NavLink>
+              <NavLink to="/customers" className={linkCls}>
+                <Contact size={17} />
+                {t('nav_customers')}
+              </NavLink>
               <button
                 onClick={() => setSettingsOpen(v => !v)}
                 className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${

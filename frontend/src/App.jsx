@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Inbox from './pages/Inbox';
 import Dashboard from './pages/Dashboard';
 import Report from './pages/Report';
+import Customers from './pages/Customers';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="inbox" element={<Inbox />} />
               <Route path="dashboard" element={<AdminRoute><Dashboard /></AdminRoute>} />
               <Route path="report" element={<AdminRoute><Report /></AdminRoute>} />
+              <Route path="customers" element={<AdminRoute><Customers /></AdminRoute>} />
               <Route path="settings" element={<AdminRoute><Navigate to="/settings/channels" replace /></AdminRoute>} />
               <Route path="settings/:tab" element={<AdminRoute><Settings /></AdminRoute>} />
             </Route>
