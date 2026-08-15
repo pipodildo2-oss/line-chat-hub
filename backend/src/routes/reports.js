@@ -51,11 +51,15 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
   res.json({ messages, totalFlagged, severeCount, minorCount });
 });
 
+const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a customer message the team hasn't had a fair chance to answer yet
+
 // GET /api/reports/unanswered?channelId=&agentId=
 // Admin-only — a live worklist, not a historical report. The team's rule is
 // that an agent should always send the last message in any conversation, so
 // this lists every open/pending conversation whose most recent message is
-// instead from the customer, i.e. it slipped through without a reply.
+// instead from the customer AND has been sitting unanswered for at least 10
+// minutes (a customer message from 30 seconds ago isn't "slipped through"
+// yet, it just hasn't been gotten to).
 // Closed conversations are excluded: an incoming LINE message always flips
 // status back to 'open' (see line.service.js), so a closed conversation can
 // never actually have the customer's message as its latest one.
@@ -82,8 +86,9 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
     take: 1000,
   });
 
+  const cutoff = new Date(Date.now() - UNANSWERED_GRACE_MS);
   const unanswered = conversations
-    .filter(c => c.messages[0]?.sender === 'user')
+    .filter(c => c.messages[0]?.sender === 'user' && c.messages[0].createdAt <= cutoff)
     .map(c => ({
       id: c.id,
       displayName: c.displayName,

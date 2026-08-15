@@ -84,6 +84,15 @@ function UnansweredSection({ channels, agents }) {
     return () => socket.off('conversation_updated', handleUpdate);
   }, [socket, load]);
 
+  // A conversation can also "age into" this list purely from time passing —
+  // a customer message sent 9 minutes ago becomes unanswered-worthy at the
+  // 10-minute mark with no new socket event to trigger a refresh. Poll on a
+  // plain interval to catch that.
+  useEffect(() => {
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
   return (
     <div className="mt-10">
       <div className="flex items-center justify-between mb-1">
@@ -93,7 +102,7 @@ function UnansweredSection({ channels, agents }) {
         </h2>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-        แชทที่ข้อความล่าสุดยังเป็นของลูกค้าอยู่ (พนักงานควรเป็นคนตอบล่าสุดเสมอ) — เรียงจากรอนานสุดก่อน
+        แชทที่ข้อความล่าสุดยังเป็นของลูกค้าอยู่และรอมาแล้วอย่างน้อย 10 นาที (พนักงานควรเป็นคนตอบล่าสุดเสมอ) — เรียงจากรอนานสุดก่อน
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
