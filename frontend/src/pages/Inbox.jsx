@@ -664,11 +664,16 @@ export default function Inbox() {
     axios.get(`/api/messages/${selected.id}`).then(r => {
       setMessages(r.data);
       // That GET call also marks this conversation's unread messages as read
-      // on the server, but the unread badge count in the conversation list
-      // lives in local state and never got told — clear it here so it
-      // disappears the moment you open the chat instead of staying stuck
-      // until the next full list refetch.
-      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, _count: { ...c._count, messages: 0 } } : c));
+      // on the server (for agents), but the unread badge count in the
+      // conversation list lives in local state and never got told — clear it
+      // here so it disappears the moment you open the chat instead of staying
+      // stuck until the next full list refetch. Admins are reviewers, not the
+      // one handling the chat — the backend deliberately does NOT mark it read
+      // when an admin opens it, so the local badge must stay too, otherwise it
+      // would look "handled" to everyone else even though nobody replied.
+      if (agent?.role !== 'admin') {
+        setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, _count: { ...c._count, messages: 0 } } : c));
+      }
     });
     setSuggestion('');
     socket?.emit('join', selected.id);

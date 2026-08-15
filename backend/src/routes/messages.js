@@ -70,34 +70,42 @@ router.get('/:conversationId', auth, async (req, res) => {
     take: Number(limit),
   });
 
-  // Mark as read
-  await prisma.message.updateMany({
-    where: { conversationId: req.params.conversationId, sender: 'user', read: false },
-    data: { read: true },
-  });
+  // Admins are reviewers checking on agents' work, not the ones handling the
+  // conversation — so an admin opening a chat should NOT mark it read (the
+  // unread badge should keep showing it as new for whoever actually owns it)
+  // and should NOT get tagged in the "viewed but didn't reply" audit trail
+  // below (that trail exists to catch AGENTS avoiding a reply, not admins
+  // browsing to check on them).
+  if (!isAdmin) {
+    // Mark as read
+    await prisma.message.updateMany({
+      where: { conversationId: req.params.conversationId, sender: 'user', read: false },
+      data: { read: true },
+    });
 
-  // Audit trail: if the newest message in this conversation is a customer message
-  // (i.e. nobody's replied to it yet), record that this agent viewed it. Tags
-  // accumulate per-message and are permanent — they're only ever removed when
-  // THIS agent goes on to send a reply (see POST below), never by simply viewing
-  // a newer message. upsert avoids duplicate rows if the same agent reopens the
-  // same still-unanswered conversation more than once.
-  const latestMessage = await prisma.message.findFirst({
-    where: { conversationId: req.params.conversationId },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, sender: true },
-  });
-  if (latestMessage && latestMessage.sender === 'user') {
-    await prisma.messageView.upsert({
-      where: { messageId_agentId: { messageId: latestMessage.id, agentId: req.agent.id } },
-      create: { messageId: latestMessage.id, agentId: req.agent.id },
-      update: {},
+    // Audit trail: if the newest message in this conversation is a customer
+    // message (i.e. nobody's replied to it yet), record that this agent viewed
+    // it. Tags accumulate per-message and are permanent — they're only ever
+    // removed when THIS agent goes on to send a reply (see POST below), never
+    // by simply viewing a newer message. upsert avoids duplicate rows if the
+    // same agent reopens the same still-unanswered conversation more than once.
+    const latestMessage = await prisma.message.findFirst({
+      where: { conversationId: req.params.conversationId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, sender: true },
     });
-    emitToConversation(req.params.conversationId, 'message_view', {
-      messageId: latestMessage.id,
-      agentId: req.agent.id,
-      agentName: req.agent.name,
-    });
+    if (latestMessage && latestMessage.sender === 'user') {
+      await prisma.messageView.upsert({
+        where: { messageId_agentId: { messageId: latestMessage.id, agentId: req.agent.id } },
+        create: { messageId: latestMessage.id, agentId: req.agent.id },
+        update: {},
+      });
+      emitToConversation(req.params.conversationId, 'message_view', {
+        messageId: latestMessage.id,
+        agentId: req.agent.id,
+        agentName: req.agent.name,
+      });
+    }
   }
 
   res.json(messages.reverse());
