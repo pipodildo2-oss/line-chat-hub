@@ -1167,9 +1167,22 @@ export default function Settings() {
 
       {/* Agents */}
       {tab === 'agents' && (
-        <div className="space-y-6 max-w-2xl">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-xs">
+        <div className="max-w-5xl space-y-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-semibold text-slate-100 leading-tight">{agents.length}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">ทั้งหมด</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-semibold text-aurora-purple leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">แอดมิน</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-semibold text-aurora-teal leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">พนักงาน</p>
+            </div>
+            <div className="flex-1" />
+            <div className="relative w-full sm:w-56">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               <input
                 className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500"
@@ -1189,7 +1202,7 @@ export default function Settings() {
           </div>
 
           {agent?.role === 'admin' && showAddAgent && (
-            <form onSubmit={addAgent} className={`${cardCls} space-y-3`}>
+            <form onSubmit={addAgent} className={`${cardCls} space-y-3 max-w-md`}>
               <h3 className="font-medium text-slate-100">เพิ่ม Agent</h3>
               <input className={inputCls} placeholder="ชื่อ" value={agentForm.name} onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))} required />
               <input type="email" className={inputCls} placeholder="Email" value={agentForm.email} onChange={e => setAgentForm(f => ({ ...f, email: e.target.value }))} required />
@@ -1231,48 +1244,50 @@ export default function Settings() {
               : group.rows;
             return group.rows.length > 0 && (
               <div key={group.key}>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
                   {group.label} <span className="text-slate-600 font-normal normal-case tracking-normal">· {group.rows.length}</span>
                 </p>
                 {visibleRows.length === 0 ? (
                   <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
                 ) : (
-                  <div className="rounded-xl border border-slate-800 bg-slate-900 divide-y divide-slate-800 overflow-hidden">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                     {visibleRows.map(a => (
-                      <div key={a.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 transition-colors">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-                          {a.name[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
-                            {a.id === agent?.id && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-medium flex-shrink-0">คุณ</span>
-                            )}
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
-                              {a.role === 'admin' ? 'Admin' : 'Agent'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
-                        </div>
+                      <div key={a.id} className="group relative rounded-xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 hover:bg-slate-800/30 transition-colors">
                         {agent?.role === 'admin' && a.id !== agent?.id && (
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => setEditAgentTarget(a)}
                               title={t('edit')}
-                              className="p-2 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
                             >
-                              <Pencil size={14} />
+                              <Pencil size={13} />
                             </button>
                             <button
                               onClick={() => deleteAgent(a.id)}
                               title="ลบ"
-                              className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         )}
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-slate-950/60">
+                            {a.name[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1 pr-9">
+                            <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-3">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-aurora-purple' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
+                            {a.role === 'admin' ? 'Admin' : 'Agent'}
+                          </span>
+                          {a.id === agent?.id && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">คุณ</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
