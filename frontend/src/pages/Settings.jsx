@@ -1266,13 +1266,13 @@ export default function Settings() {
               <p className="text-xl font-semibold text-slate-100 leading-tight">{agents.length}</p>
               <p className="text-[11px] text-slate-500 mt-0.5">ทั้งหมด</p>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
-              <p className="text-xl font-semibold text-aurora-purple leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">แอดมิน</p>
+            <div className="rounded-xl border border-aurora-purple/25 bg-aurora-purple/10 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
+              <p className="text-[11px] text-aurora-purple font-medium mt-0.5">แอดมิน</p>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
-              <p className="text-xl font-semibold text-aurora-teal leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">พนักงาน</p>
+            <div className="rounded-xl border border-aurora-teal/25 bg-aurora-teal/10 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
+              <p className="text-[11px] text-aurora-teal font-medium mt-0.5">พนักงาน</p>
             </div>
             <div className="flex-1" />
             <div className="relative w-full sm:w-56">
@@ -1384,7 +1384,7 @@ export default function Settings() {
             return (
               <div className="space-y-8">
                 <div>
-                  <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length}</span></p>
+                  <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length} คน</span></p>
                   {admins.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                       {admins.map(card)}
@@ -1397,7 +1397,7 @@ export default function Settings() {
                 {agentCategories.length === 0 ? (
                   // No categories created yet — plain flat grid of non-admin agents.
                   <div>
-                    <p className={`${headingCls} mb-3`}>พนักงาน <span className="text-slate-500 font-medium text-sm">· {nonAdmins.length}</span></p>
+                    <p className={`${headingCls} mb-3`}>พนักงาน <span className="text-slate-500 font-medium text-sm">· {nonAdmins.length} คน</span></p>
                     {(() => {
                       const visible = nonAdmins.filter(matches);
                       return visible.length === 0 ? (
