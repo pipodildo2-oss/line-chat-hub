@@ -22,8 +22,9 @@ function CopyButton({ text }) {
 }
 
 function ChannelListCard({ channel, onManage }) {
+  const isActive = channel.active !== false;
   return (
-    <div className="relative rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4">
+    <div className={`relative rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4 ${!isActive ? 'opacity-60' : ''}`}>
       {!channel.webhookRedeliveryConfirmed && (
         <span
           title='อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'
@@ -34,7 +35,14 @@ function ChannelListCard({ channel, onManage }) {
       )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
+            {!isActive && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-medium flex-shrink-0" title="หยุดรับ-ส่งข้อความชั่วคราว แชทเดิมยังอยู่ครบ">
+                ปิดใช้งาน
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-500 truncate mt-0.5">LINE (ID: {channel.lineId || '—'})</p>
         </div>
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white flex-shrink-0">
@@ -64,6 +72,14 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
   const [showQr, setShowQr] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [togglingActive, setTogglingActive] = useState(false);
+  const isActive = channel.active !== false;
+
+  async function handleToggleActive() {
+    setTogglingActive(true);
+    try { await onSave(channel.id, { active: !isActive }); }
+    finally { setTogglingActive(false); }
+  }
 
   async function handleCategoryChange(e) {
     setSavingCategory(true);
@@ -217,11 +233,30 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
       </div>
 
       <div className="mt-8 pt-6 border-t border-slate-800">
+        <h3 className="font-semibold text-slate-100 mb-1">ปิดใช้งานช่องทาง</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          หยุดรับ-ส่งข้อความผ่านช่องทางนี้ชั่วคราว แต่แชทและข้อความเดิมทั้งหมดยังอยู่ครบ กดเปิดใช้งานกลับมาได้ทุกเมื่อ
+          — ใช้ตัวนี้แทนการลบ ถ้าไม่แน่ใจหรือแค่อยากพักช่องทางไว้ก่อน
+        </p>
+        <button
+          onClick={handleToggleActive}
+          disabled={togglingActive}
+          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-slate-700'}`}
+        >
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+        <span className="ml-3 text-sm text-slate-300 align-middle">
+          {isActive ? 'เปิดใช้งานอยู่' : 'ปิดใช้งานอยู่'}
+        </span>
+      </div>
+
+      <div className="mt-8 pt-6 border-t border-slate-800">
         <h3 className="font-semibold text-slate-100 mb-3">Danger Zone</h3>
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
           <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-xs text-amber-400">
-            ถ้าลบช่องทางนี้ การสนทนาและข้อความทั้งหมดที่เชื่อมกับช่องทางนี้จะถูกลบถาวรไปด้วย และจะไม่สามารถรับ-ส่งข้อความผ่านช่องทางนี้ได้อีก
+            ลบช่องทางนี้จะ<span className="font-semibold">ลบถาวร</span> การสนทนาและข้อความทั้งหมดที่เชื่อมกับช่องทางนี้ออกจากฐานข้อมูลทันที กู้คืนไม่ได้ไม่ว่าจะเชื่อมต่อไลน์ OA
+            เดิมกลับมาใหม่ก็ตาม (ระบบจะมองเป็นช่องทางใหม่ที่ไม่มีประวัติแชท) ถ้าแค่ต้องการหยุดใช้งานชั่วคราว ให้ใช้สวิตช์ปิดใช้งานด้านบนแทน
           </p>
         </div>
         <button

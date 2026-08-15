@@ -133,6 +133,11 @@ router.post('/:conversationId', auth, async (req, res) => {
     if (conversation.blocked) {
       return res.status(409).json({ error: 'ลูกค้าคนนี้บล็อคเราอยู่ ไม่สามารถส่งข้อความได้' });
     }
+    // Channel soft-disabled ("ปิดใช้งาน") from Settings — same server-side
+    // backstop pattern as the blocked check above.
+    if (!conversation.channel.active) {
+      return res.status(409).json({ error: 'ช่องทางนี้ถูกปิดใช้งานอยู่ ไม่สามารถส่งข้อความได้' });
+    }
 
     let message;
     if (imageData) {

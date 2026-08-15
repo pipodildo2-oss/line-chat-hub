@@ -31,6 +31,13 @@ model LineChannel {
   lineId                     String?        // the public @handle customers use to add the OA as a friend
   pictureUrl                 String?
   webhookRedeliveryConfirmed Boolean        @default(false) // agent manually confirms they enabled this in LINE console (no API to check it)
+  // "ปิดใช้งาน" (soft-disable) — stops new incoming webhook events from being
+  // processed and blocks sending new messages through this channel, but keeps
+  // every existing conversation/message/tag intact and reversible by flipping
+  // this back to true. Deliberately separate from the hard DELETE below (which
+  // cascades and permanently destroys all of it) — this is the safe default
+  // action for "we're done with this LINE OA for now."
+  active                     Boolean        @default(true)
   createdAt                  DateTime       @default(now())
   conversations              Conversation[]
   agents                     AgentChannel[]

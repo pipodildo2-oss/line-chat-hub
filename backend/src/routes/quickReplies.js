@@ -209,6 +209,9 @@ router.post('/:id/send', auth, async (req, res) => {
     if (conversation.blocked) {
       return res.status(409).json({ error: 'ลูกค้าคนนี้บล็อคเราอยู่ ไม่สามารถส่งข้อความได้' });
     }
+    if (!conversation.channel.active) {
+      return res.status(409).json({ error: 'ช่องทางนี้ถูกปิดใช้งานอยู่ ไม่สามารถส่งข้อความได้' });
+    }
 
     const created = [];
 

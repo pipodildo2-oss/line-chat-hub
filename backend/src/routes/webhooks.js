@@ -15,6 +15,9 @@ router.post('/line/:channelId', async (req, res) => {
       where: { id: req.params.channelId },
     });
     if (!channel) return;
+    // Soft-disabled channel — don't ingest new messages while paused, even
+    // though the LINE OA itself is still live and could deliver events.
+    if (!channel.active) return;
 
     // Verify signature
     const signature = req.headers['x-line-signature'];

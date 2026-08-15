@@ -43,7 +43,7 @@ router.post('/', auth, async (req, res) => {
 // PUT /api/channels/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { name, channelSecret, accessToken, lineId, webhookRedeliveryConfirmed, categoryId } = req.body;
+    const { name, channelSecret, accessToken, lineId, webhookRedeliveryConfirmed, categoryId, active } = req.body;
     const channel = await prisma.lineChannel.update({
       where: { id: req.params.id },
       data: {
@@ -52,6 +52,9 @@ router.put('/:id', auth, async (req, res) => {
         // so it needs its own undefined-vs-null check rather than falling
         // through with the other fields above.
         ...(categoryId !== undefined ? { categoryId: categoryId || null } : {}),
+        // "ปิดใช้งาน" toggle — see schema.prisma for why this exists separately
+        // from DELETE below.
+        ...(active !== undefined ? { active: !!active } : {}),
       },
       include: { category: { select: { id: true, name: true } } },
     });

@@ -6,7 +6,7 @@ const { emitToAll } = require('../services/socket.service');
 const prisma = new PrismaClient();
 
 const CONV_INCLUDE = {
-  channel: { select: { id: true, name: true } },
+  channel: { select: { id: true, name: true, active: true } },
   agent: { select: { id: true, name: true } },
   tags: { include: { tag: true } },
 };

@@ -85,6 +85,11 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
               🚫 บล็อค
             </span>
           )}
+          {conv.channel?.active === false && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 font-medium" title="ช่องทางนี้ถูกปิดใช้งานอยู่">
+              ⏸ ปิดใช้งาน
+            </span>
+          )}
           {conv.tags?.slice(0, 2).map(({ tag }) => <TagChip key={tag.id} tag={tag} small />)}
         </div>
       </div>
@@ -988,6 +993,11 @@ export default function Inbox() {
                       🚫 ลูกค้าบล็อคเราอยู่
                     </span>
                   )}
+                  {selected.channel?.active === false && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 font-medium">
+                      ⏸ ช่องทางนี้ถูกปิดใช้งานอยู่
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1081,6 +1091,12 @@ export default function Inbox() {
               <div className="bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-900/50 px-4 py-4 text-center">
                 <p className="text-sm text-rose-600 dark:text-rose-400 font-medium">
                   🚫 ลูกค้าคนนี้บล็อคเราไปแล้ว ไม่สามารถส่งข้อความได้
+                </p>
+              </div>
+            ) : selected.channel?.active === false ? (
+              <div className="bg-gray-50 dark:bg-slate-800/50 border-t border-gray-200 dark:border-slate-800 px-4 py-4 text-center">
+                <p className="text-sm text-gray-500 dark:text-slate-400 font-medium">
+                  ⏸ ช่องทางนี้ถูกปิดใช้งานอยู่ ไม่สามารถส่งข้อความได้ — เปิดใช้งานได้ในหน้า Settings
                 </p>
               </div>
             ) : (
