@@ -56,16 +56,19 @@ const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a custo
 // GET /api/reports/unanswered?channelId=&agentId=
 // Admin-only — a live worklist, not a historical report. The team's rule is
 // that an agent should always send the last message in any conversation, so
-// this lists every open/pending conversation whose most recent message is
+// this lists every open/closed conversation whose most recent message is
 // instead from the customer AND has been sitting unanswered for at least 10
 // minutes (a customer message from 30 seconds ago isn't "slipped through"
-// yet, it just hasn't been gotten to).
-// Closed conversations are excluded: an incoming LINE message always flips
-// status back to 'open' (see line.service.js), so a closed conversation can
-// never actually have the customer's message as its latest one.
+// yet, it just hasn't been gotten to). "Pending" is deliberately excluded —
+// that bucket is for chats intentionally on hold, not ones that slipped
+// through, so it shouldn't show up on this worklist.
+// In practice, matching "closed" conversations should be rare-to-never: an
+// incoming LINE message always flips status back to 'open' (see
+// line.service.js), so a closed conversation can only end up here if that
+// didn't happen — kept in the filter as a safety net rather than assumed away.
 router.get('/unanswered', auth, requireAdmin, async (req, res) => {
   const { channelId, agentId } = req.query;
-  const where = { status: { in: ['open', 'pending'] } };
+  const where = { status: { in: ['open', 'closed'] } };
   if (channelId) where.channelId = channelId;
   if (agentId === 'unassigned') where.agentId = null;
   else if (agentId) where.agentId = agentId;
