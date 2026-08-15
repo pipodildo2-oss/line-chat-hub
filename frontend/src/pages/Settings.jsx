@@ -1372,78 +1372,104 @@ export default function Settings() {
                 onDelete={() => deleteAgent(a.id)}
               />
             );
+            // Section headings need to actually read as headings — bumped up from
+            // the body-text size they were sharing with the card names before.
+            const headingCls = 'text-base font-bold text-white';
 
-            if (agentCategories.length === 0) {
-              // No categories created yet — plain flat grid, same as before.
-              const visible = agents.filter(matches);
-              return visible.length === 0 ? (
-                <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {visible.map(card)}
-                </div>
-              );
-            }
+            // Admins are never sorted into categories — they always stay pinned
+            // in their own section up top, same as before this feature existed.
+            const admins = agents.filter(a => a.role === 'admin' && matches(a));
+            const nonAdmins = agents.filter(a => a.role !== 'admin');
 
             return (
-              <div className="space-y-6">
-                {agentCategories.map(cat => {
-                  const allInCat = agents.filter(a => a.categoryId === cat.id);
-                  const catAgents = allInCat.filter(matches);
-                  return (
-                    <div key={cat.id}>
-                      <div className="flex items-center gap-2 mb-3 group">
-                        {editingAgentCategoryId === cat.id ? (
-                          <>
-                            <input
-                              autoFocus
-                              className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
-                              value={editingAgentCategoryName}
-                              onChange={e => setEditingAgentCategoryName(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && saveAgentCategoryEdit(cat.id)}
-                            />
-                            <button onClick={() => saveAgentCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
-                            <button onClick={() => setEditingAgentCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
-                            <span className="text-[10px] text-slate-500">{allInCat.length} คน</span>
-                            {agent?.role === 'admin' && (
+              <div className="space-y-8">
+                <div>
+                  <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length}</span></p>
+                  {admins.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {admins.map(card)}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+                  )}
+                </div>
+
+                {agentCategories.length === 0 ? (
+                  // No categories created yet — plain flat grid of non-admin agents.
+                  <div>
+                    <p className={`${headingCls} mb-3`}>พนักงาน <span className="text-slate-500 font-medium text-sm">· {nonAdmins.length}</span></p>
+                    {(() => {
+                      const visible = nonAdmins.filter(matches);
+                      return visible.length === 0 ? (
+                        <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {visible.map(card)}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {agentCategories.map(cat => {
+                      const allInCat = nonAdmins.filter(a => a.categoryId === cat.id);
+                      const catAgents = allInCat.filter(matches);
+                      return (
+                        <div key={cat.id}>
+                          <div className="flex items-center gap-2.5 mb-3 group">
+                            {editingAgentCategoryId === cat.id ? (
                               <>
-                                <button onClick={() => startEditAgentCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
-                                <button onClick={() => deleteAgentCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+                                <input
+                                  autoFocus
+                                  className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                                  value={editingAgentCategoryName}
+                                  onChange={e => setEditingAgentCategoryName(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && saveAgentCategoryEdit(cat.id)}
+                                />
+                                <button onClick={() => saveAgentCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
+                                <button onClick={() => setEditingAgentCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                              </>
+                            ) : (
+                              <>
+                                <p className={headingCls}>{cat.name}</p>
+                                <span className="text-sm text-slate-500 font-medium">· {allInCat.length} คน</span>
+                                {agent?.role === 'admin' && (
+                                  <>
+                                    <button onClick={() => startEditAgentCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={13} /></button>
+                                    <button onClick={() => deleteAgentCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
+                                  </>
+                                )}
                               </>
                             )}
-                          </>
-                        )}
-                      </div>
-                      {catAgents.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                          {catAgents.map(card)}
+                          </div>
+                          {catAgents.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                              {catAgents.map(card)}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-600">
+                              {q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}" ในหมวดหมู่นี้` : 'ยังไม่มีใครอยู่ในหมวดหมู่นี้ — ไปที่แก้ไขของแต่ละคนแล้วเลือกหมวดหมู่นี้'}
+                            </p>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-xs text-slate-600">
-                          {q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}" ในหมวดหมู่นี้` : 'ยังไม่มีใครอยู่ในหมวดหมู่นี้ — ไปที่แก้ไขของแต่ละคนแล้วเลือกหมวดหมู่นี้'}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
 
-                <div>
-                  <p className="text-sm font-semibold text-slate-200 mb-3">ยังไม่มีหมวดหมู่</p>
-                  {(() => {
-                    const uncategorized = agents.filter(a => !a.categoryId && matches(a));
-                    return uncategorized.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {uncategorized.map(card)}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
-                    );
-                  })()}
-                </div>
+                    <div>
+                      <p className={`${headingCls} mb-3`}>ยังไม่มีหมวดหมู่</p>
+                      {(() => {
+                        const uncategorized = nonAdmins.filter(a => !a.categoryId && matches(a));
+                        return uncategorized.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {uncategorized.map(card)}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
