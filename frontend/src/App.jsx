@@ -42,7 +42,8 @@ export default function App() {
               <Route index element={<Navigate to="/inbox" replace />} />
               <Route path="inbox" element={<Inbox />} />
               <Route path="dashboard" element={<AdminRoute><Dashboard /></AdminRoute>} />
-              <Route path="report" element={<AdminRoute><Report /></AdminRoute>} />
+              <Route path="report" element={<AdminRoute><Navigate to="/report/audit" replace /></AdminRoute>} />
+              <Route path="report/:tab" element={<AdminRoute><Report /></AdminRoute>} />
               <Route path="customers" element={<AdminRoute><Customers /></AdminRoute>} />
               <Route path="settings" element={<AdminRoute><Navigate to="/settings/channels" replace /></AdminRoute>} />
               <Route path="settings/:tab" element={<AdminRoute><Settings /></AdminRoute>} />

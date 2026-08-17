@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -16,6 +16,8 @@ export default function Sidebar() {
   const isAdmin = agent?.role === 'admin';
   const onSettings = location.pathname.startsWith('/settings');
   const [settingsOpen, setSettingsOpen] = useState(onSettings);
+  const onReport = location.pathname.startsWith('/report');
+  const [reportOpen, setReportOpen] = useState(onReport);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -34,6 +36,11 @@ export default function Sidebar() {
     { to: '/settings/agents', icon: Users, label: t('settings_agents') },
     { to: '/settings/tags', icon: Tag, label: t('settings_tags') },
     { to: '/settings/quick-replies', icon: Zap, label: t('settings_quick_replies') },
+  ];
+
+  const reportChildren = [
+    { to: '/report/audit', icon: Search, label: 'ตรวจสอบ' },
+    { to: '/report/agents', icon: Users, label: 'พนักงาน' },
   ];
 
   const linkCls = ({ isActive }) =>
@@ -75,10 +82,26 @@ export default function Sidebar() {
                 <BarChart2 size={17} />
                 {t('nav_dashboard')}
               </NavLink>
-              <NavLink to="/report" className={linkCls}>
+              <button
+                onClick={() => setReportOpen(v => !v)}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  onReport ? 'text-aurora-teal' : 'text-slate-400 hover:bg-slate-800'
+                }`}
+              >
                 <ShieldAlert size={17} />
-                {t('nav_report')}
-              </NavLink>
+                <span className="flex-1 text-left">{t('nav_report')}</span>
+                <ChevronDown size={15} className={`transition-transform ${reportOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {reportOpen && (
+                <div className="pl-4 space-y-0.5 pt-0.5">
+                  {reportChildren.map(({ to, icon: Icon, label }) => (
+                    <NavLink key={to} to={to} className={linkCls}>
+                      <Icon size={14} />
+                      <span className="text-[13px]">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
               <NavLink to="/customers" className={linkCls}>
                 <Contact size={17} />
                 {t('nav_customers')}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -373,13 +373,7 @@ function AgentConductSection({ from, to, navigate }) {
   }, [from, to]);
 
   return (
-    <div className="mt-10">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-          <Users size={18} className="text-aurora-tealDeep dark:text-aurora-teal" />
-          พนักงาน
-        </h2>
-      </div>
+    <div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
         ภาพรวมพฤติกรรมพนักงานแต่ละคน — เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง กดที่แถวเพื่อดูรายละเอียดรายบุคคล
         {data && (
@@ -468,7 +462,10 @@ function AgentConductSection({ from, to, navigate }) {
   );
 }
 
-export default function Report() {
+// "ตรวจสอบ" tab — คำพูดไม่เหมาะสม (flagged messages) + แชทที่ยังไม่ได้ตอบกลับ
+// (unanswered chats). Split out from the old single-page Report so it sits
+// under its own sidebar item, same pattern as Settings' sub-nav.
+function AuditReport() {
   const navigate = useNavigate();
   const { socket } = useSocket();
   const [data, setData] = useState(null);
@@ -553,7 +550,7 @@ export default function Report() {
 
   return (
     <div className="p-6 overflow-y-auto h-full">
-      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4">รายงาน</h1>
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4">ตรวจสอบ</h1>
 
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">คำพูดไม่เหมาะสม</h2>
@@ -686,8 +683,75 @@ export default function Report() {
       </div>
 
       <UnansweredSection channels={channels} agents={agents} />
+    </div>
+  );
+}
+
+// "พนักงาน" tab — the per-agent conduct scorecard, its own page with its own
+// date-range picker (same PRESETS pattern as AuditReport, kept independent
+// since these are now two separate routes rather than sections on one page).
+function AgentConductPage() {
+  const navigate = useNavigate();
+  const [preset, setPreset] = useState('thisMonth');
+  const [[from, to], setDateRange] = useState(PRESETS[2].range());
+
+  function pickPreset(p) {
+    setPreset(p.key);
+    setDateRange(p.range());
+  }
+
+  function pickCustomDate(which, value) {
+    setPreset(null);
+    setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]);
+  }
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+        <Users size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
+        พนักงาน
+      </h1>
+
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
+          <input
+            type="date"
+            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+            value={from}
+            max={to}
+            onChange={e => pickCustomDate('from', e.target.value)}
+          />
+          <span>ถึง</span>
+          <input
+            type="date"
+            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+            value={to}
+            min={from}
+            onChange={e => pickCustomDate('to', e.target.value)}
+          />
+        </div>
+      </div>
 
       <AgentConductSection from={from} to={to} navigate={navigate} />
     </div>
   );
+}
+
+// Sidebar routes here as /report/:tab (see Sidebar.jsx's "รายงาน" dropdown) —
+// "agents" renders the employee scorecard, anything else (including no tab,
+// which App.jsx redirects to /report/audit) renders the audit page.
+export default function Report() {
+  const { tab } = useParams();
+  return tab === 'agents' ? <AgentConductPage /> : <AuditReport />;
 }
