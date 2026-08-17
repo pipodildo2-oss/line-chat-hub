@@ -67,9 +67,16 @@ const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a custo
 // line.service.js), so a closed conversation can only end up here if that
 // didn't happen — kept in the filter as a safety net rather than assumed away.
 router.get('/unanswered', auth, requireAdmin, async (req, res) => {
-  const { channelId, agentId, channelActive } = req.query;
+  const { channelId, channelIds, agentId, channelActive } = req.query;
   const where = { status: { in: ['open', 'closed'] } };
-  if (channelId) where.channelId = channelId;
+  // Supports both a single channelId (legacy) and a multi-select channelIds
+  // list (comma-separated) — same pattern as conversations.js's GET /.
+  if (channelIds) {
+    const ids = String(channelIds).split(',').filter(Boolean);
+    if (ids.length > 0) where.channelId = { in: ids };
+  } else if (channelId) {
+    where.channelId = channelId;
+  }
   if (agentId === 'unassigned') where.agentId = null;
   else if (agentId) where.agentId = agentId;
   // Filters on the related LineChannel's soft-disable flag (see channels.js /

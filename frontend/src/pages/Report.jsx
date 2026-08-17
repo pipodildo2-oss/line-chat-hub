@@ -54,7 +54,12 @@ function UnansweredSection({ channels, agents }) {
   const navigate = useNavigate();
   const { socket } = useSocket();
   const [data, setData] = useState(null);
-  const [channelId, setChannelId] = useState('');
+  // Multi-select (checkbox dropdown), not a single-choice <select> — matches
+  // the channel picker pattern already used in Inbox's FilterPanel, so admins
+  // can narrow this worklist to any specific combination of channels, not just
+  // one at a time. Empty array = all channels.
+  const [channelIds, setChannelIds] = useState([]);
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
   const [agentId, setAgentId] = useState('');
   // Defaults to "active only" — the working assumption is that unanswered
   // chats on a paused channel aren't the urgent kind (see channels.js/schema.prisma
@@ -64,12 +69,12 @@ function UnansweredSection({ channels, agents }) {
 
   const load = useCallback(async () => {
     const params = {};
-    if (channelId) params.channelId = channelId;
+    if (channelIds.length > 0) params.channelIds = channelIds.join(',');
     if (agentId) params.agentId = agentId;
     if (channelActive) params.channelActive = channelActive;
     const { data } = await axios.get('/api/reports/unanswered', { params });
     setData(data);
-  }, [channelId, agentId, channelActive]);
+  }, [channelIds, agentId, channelActive]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -111,14 +116,47 @@ function UnansweredSection({ channels, agents }) {
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <select
-          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
-          value={channelId}
-          onChange={e => setChannelId(e.target.value)}
-        >
-          <option value="">ทุกช่องทาง</option>
-          {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowChannelPicker(v => !v)}
+            className={`flex items-center gap-1.5 text-sm border rounded-lg px-2 py-1.5 focus:outline-none ${channelIds.length > 0 ? 'border-aurora-teal text-aurora-tealDeep dark:text-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200'}`}
+          >
+            <span>
+              {channelIds.length === 0
+                ? 'ทุกช่องทาง'
+                : channelIds.length === 1
+                  ? channels.find(c => c.id === channelIds[0])?.name || 'เลือก 1 ช่องทาง'
+                  : `เลือก ${channelIds.length} ช่องทาง`}
+            </span>
+            <span className="text-gray-400 dark:text-slate-500 text-xs">{showChannelPicker ? '▲' : '▼'}</span>
+          </button>
+          {showChannelPicker && (
+            <div className="absolute top-full left-0 mt-1 w-56 border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-56 overflow-y-auto bg-white dark:bg-slate-700 shadow-lg z-30">
+              <label className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200 font-medium border-b border-gray-100 dark:border-slate-600 mb-0.5 pb-1.5">
+                <input
+                  type="checkbox"
+                  className="accent-aurora-teal"
+                  checked={channelIds.length === 0}
+                  onChange={() => setChannelIds([])}
+                />
+                ทั้งหมด
+              </label>
+              {channels.map(c => (
+                <label key={c.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="accent-aurora-teal"
+                    checked={channelIds.includes(c.id)}
+                    onChange={() => setChannelIds(ids => ids.includes(c.id) ? ids.filter(x => x !== c.id) : [...ids, c.id])}
+                  />
+                  {c.name}
+                </label>
+              ))}
+              {channels.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+            </div>
+          )}
+        </div>
         <select
           className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
           value={agentId}
