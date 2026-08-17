@@ -56,15 +56,20 @@ function UnansweredSection({ channels, agents }) {
   const [data, setData] = useState(null);
   const [channelId, setChannelId] = useState('');
   const [agentId, setAgentId] = useState('');
+  // Defaults to "active only" — the working assumption is that unanswered
+  // chats on a paused channel aren't the urgent kind (see channels.js/schema.prisma
+  // for the soft-disable flag). "ทั้งหมด" is still one select away if needed.
+  const [channelActive, setChannelActive] = useState('true');
   const lastReloadRef = useRef(0);
 
   const load = useCallback(async () => {
     const params = {};
     if (channelId) params.channelId = channelId;
     if (agentId) params.agentId = agentId;
+    if (channelActive) params.channelActive = channelActive;
     const { data } = await axios.get('/api/reports/unanswered', { params });
     setData(data);
-  }, [channelId, agentId]);
+  }, [channelId, agentId, channelActive]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -122,6 +127,15 @@ function UnansweredSection({ channels, agents }) {
           <option value="">พนักงานทั้งหมด</option>
           <option value="unassigned">ยังไม่ได้ assign</option>
           {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select
+          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={channelActive}
+          onChange={e => setChannelActive(e.target.value)}
+        >
+          <option value="">ทุกสถานะช่องทาง</option>
+          <option value="true">ไลน์ที่เปิดใช้งานอยู่</option>
+          <option value="false">ไลน์ที่ปิดใช้งานอยู่</option>
         </select>
         {data && (
           <span className="text-sm text-gray-500 dark:text-slate-400 ml-1">

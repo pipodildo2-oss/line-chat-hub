@@ -67,11 +67,15 @@ const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a custo
 // line.service.js), so a closed conversation can only end up here if that
 // didn't happen — kept in the filter as a safety net rather than assumed away.
 router.get('/unanswered', auth, requireAdmin, async (req, res) => {
-  const { channelId, agentId } = req.query;
+  const { channelId, agentId, channelActive } = req.query;
   const where = { status: { in: ['open', 'closed'] } };
   if (channelId) where.channelId = channelId;
   if (agentId === 'unassigned') where.agentId = null;
   else if (agentId) where.agentId = agentId;
+  // Filters on the related LineChannel's soft-disable flag (see channels.js /
+  // schema.prisma) — lets an admin isolate unanswered chats on channels that
+  // are still actively taking messages vs. ones currently paused.
+  if (channelActive !== undefined) where.channel = { active: channelActive === 'true' };
 
   // Prisma can't filter on "the last item of a relation" at the DB level, so
   // fetch each conversation's single latest message (cheap — same take:1
