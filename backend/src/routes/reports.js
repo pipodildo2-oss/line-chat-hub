@@ -141,7 +141,12 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
   }
 
   const [agents, flaggedGroups, viewGroups] = await Promise.all([
-    prisma.agent.findMany({ select: { id: true, name: true, email: true, role: true } }),
+    // categoryId/category included so the frontend can group this same data
+    // by team ("รายทีม") without a second round-trip — see "หมวดหมู่ทีมงาน" in
+    // Settings (AgentCategory) for what this grouping is.
+    prisma.agent.findMany({
+      select: { id: true, name: true, email: true, role: true, categoryId: true, category: { select: { id: true, name: true } } },
+    }),
     prisma.message.groupBy({ by: ['senderId', 'flagSeverity'], where: flaggedWhere, _count: { _all: true } }),
     prisma.messageView.groupBy({ by: ['agentId'], _count: { _all: true } }),
   ]);
@@ -162,6 +167,8 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
       name: a.name,
       email: a.email,
       role: a.role,
+      categoryId: a.categoryId,
+      categoryName: a.category?.name || null,
       flaggedTotal: flaggedByAgent[a.id]?.total || 0,
       flaggedSevere: flaggedByAgent[a.id]?.severe || 0,
       flaggedMinor: flaggedByAgent[a.id]?.minor || 0,

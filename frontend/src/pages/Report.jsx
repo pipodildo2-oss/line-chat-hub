@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X } from 'lucide-react';
@@ -364,18 +364,126 @@ function AgentConductModal({ agentId, from, to, onClose, navigate }) {
 // Rolls up two existing signals — the "viewed but didn't reply" audit trail
 // and AI-flagged messages — into one per-agent scorecard, sortable worst-first,
 // with a click-through to the full detail for anyone the numbers look off for.
+function ConductRow({ a, onClick }) {
+  return (
+    <tr onClick={onClick} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer">
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <AgentAvatar name={a.name} />
+          <div className="min-w-0">
+            <p className="text-gray-800 dark:text-slate-200 truncate max-w-[160px]">{a.name}</p>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate max-w-[160px]">{a.email}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-2.5">
+        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-violet-500 dark:text-violet-300' : 'bg-aurora-teal/15 text-aurora-tealDeep dark:text-aurora-teal'}`}>
+          {ROLE_LABEL[a.role] || a.role}
+        </span>
+      </td>
+      <td className="px-4 py-2.5">
+        {a.viewedNoReplyCount > 0 ? (
+          <span className="font-semibold text-amber-600 dark:text-amber-400">{a.viewedNoReplyCount} ครั้ง</span>
+        ) : (
+          <span className="text-gray-400 dark:text-slate-500">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
+        {a.flaggedTotal > 0 ? (
+          <span className="flex items-center gap-1.5">
+            {a.flaggedSevere > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-rose-500/15 text-rose-500 dark:text-rose-400">{a.flaggedSevere} รุนแรง</span>
+            )}
+            {a.flaggedMinor > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400">{a.flaggedMinor} เล็กน้อย</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-slate-500">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <span className="text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium">ดูรายละเอียด →</span>
+      </td>
+    </tr>
+  );
+}
+
+const CONDUCT_THEAD = (
+  <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
+    <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+      <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+      <th className="px-4 py-2.5 font-medium">ยศ</th>
+      <th className="px-4 py-2.5 font-medium">เปิดอ่านไม่ตอบ</th>
+      <th className="px-4 py-2.5 font-medium">ข้อความไม่เหมาะสม</th>
+      <th className="px-4 py-2.5 font-medium"></th>
+    </tr>
+  </thead>
+);
+
+// Rolls up two existing signals — the "viewed but didn't reply" audit trail
+// and AI-flagged messages — into one per-agent scorecard, sortable worst-first,
+// with a click-through to the full detail for anyone the numbers look off for.
+// Boxed to a fixed height (~6 rows, scrollable) rather than growing with the
+// team, and offers a "รายทีม" grouping (by AgentCategory — see Settings'
+// "หมวดหมู่ทีมงาน") alongside the default flat "รายบุคคล" list.
 function AgentConductSection({ from, to, navigate }) {
   const [data, setData] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
+  const [groupBy, setGroupBy] = useState('individual'); // 'individual' | 'team'
+  const [expandedTeams, setExpandedTeams] = useState(() => new Set());
 
   useEffect(() => {
     axios.get('/api/reports/agent-conduct', { params: { from, to } }).then(r => setData(r.data));
   }, [from, to]);
 
+  const teamGroups = useMemo(() => {
+    if (!data) return [];
+    const map = new Map();
+    for (const a of data.agents) {
+      const key = a.categoryId || '__none__';
+      if (!map.has(key)) {
+        map.set(key, { key, name: a.categoryName || 'ไม่มีหมวดหมู่', members: [], viewedNoReplyCount: 0, flaggedTotal: 0, flaggedSevere: 0, flaggedMinor: 0 });
+      }
+      const g = map.get(key);
+      g.members.push(a);
+      g.viewedNoReplyCount += a.viewedNoReplyCount;
+      g.flaggedTotal += a.flaggedTotal;
+      g.flaggedSevere += a.flaggedSevere;
+      g.flaggedMinor += a.flaggedMinor;
+    }
+    return [...map.values()].sort((x, y) => (y.viewedNoReplyCount - x.viewedNoReplyCount) || (y.flaggedTotal - x.flaggedTotal));
+  }, [data]);
+
+  function toggleTeam(key) {
+    setExpandedTeams(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
   return (
     <div>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+          <Eye size={18} className="text-amber-500" />
+          อ่านไม่ตอบ
+        </h2>
+        <div className="flex gap-1.5">
+          {[{ key: 'individual', label: 'รายบุคคล' }, { key: 'team', label: 'รายทีม' }].map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setGroupBy(opt.key)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${groupBy === opt.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-        ภาพรวมพฤติกรรมพนักงานแต่ละคน — เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง กดที่แถวเพื่อดูรายละเอียดรายบุคคล
+        เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง — {groupBy === 'individual' ? 'กดที่แถวเพื่อดูรายละเอียดรายบุคคล' : 'กดที่ทีมเพื่อดูสมาชิกในทีม'}
         {data && (
           <span> · ตอนนี้มี <span className="font-semibold text-amber-600 dark:text-amber-400">{data.totalViewedNoReply}</span> เคสเปิดอ่านค้างไม่ตอบทั้งทีม</span>
         )}
@@ -386,66 +494,61 @@ function AgentConductSection({ from, to, navigate }) {
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
         ) : data.agents.length === 0 ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
+        ) : groupBy === 'individual' ? (
+          // Fixed height ≈ 6 rows, scrolls for the rest — keeps this box from
+          // pushing everything else on the page down as the team grows.
+          <div className="max-h-[460px] overflow-y-auto">
+            <table className="w-full text-sm">
+              {CONDUCT_THEAD}
+              <tbody>
+                {data.agents.map(a => (
+                  <ConductRow key={a.id} a={a} onClick={() => setSelectedAgentId(a.id)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
-                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">ยศ</th>
-                <th className="px-4 py-2.5 font-medium">เปิดอ่านไม่ตอบ</th>
-                <th className="px-4 py-2.5 font-medium">ข้อความไม่เหมาะสม</th>
-                <th className="px-4 py-2.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.agents.map(a => (
-                <tr
-                  key={a.id}
-                  onClick={() => setSelectedAgentId(a.id)}
-                  className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer"
-                >
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <AgentAvatar name={a.name} />
-                      <div className="min-w-0">
-                        <p className="text-gray-800 dark:text-slate-200 truncate max-w-[160px]">{a.name}</p>
-                        <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate max-w-[160px]">{a.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-violet-500 dark:text-violet-300' : 'bg-aurora-teal/15 text-aurora-tealDeep dark:text-aurora-teal'}`}>
-                      {ROLE_LABEL[a.role] || a.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {a.viewedNoReplyCount > 0 ? (
-                      <span className="font-semibold text-amber-600 dark:text-amber-400">{a.viewedNoReplyCount} ครั้ง</span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-slate-500">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {a.flaggedTotal > 0 ? (
-                      <span className="flex items-center gap-1.5">
-                        {a.flaggedSevere > 0 && (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-rose-500/15 text-rose-500 dark:text-rose-400">{a.flaggedSevere} รุนแรง</span>
-                        )}
-                        {a.flaggedMinor > 0 && (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400">{a.flaggedMinor} เล็กน้อย</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-slate-500">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className="text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium">ดูรายละเอียด →</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="max-h-[460px] overflow-y-auto">
+            <table className="w-full text-sm">
+              {CONDUCT_THEAD}
+              <tbody>
+                {teamGroups.map(g => (
+                  <Fragment key={g.key}>
+                    <tr
+                      onClick={() => toggleTeam(g.key)}
+                      className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer"
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-gray-400 dark:text-slate-500 transition-transform ${expandedTeams.has(g.key) ? 'rotate-90' : ''}`}>▸</span>
+                          <span className="font-semibold text-gray-800 dark:text-slate-200">{g.name}</span>
+                          <span className="text-[11px] text-gray-400 dark:text-slate-500">({g.members.length} คน)</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5"></td>
+                      <td className="px-4 py-2.5">
+                        {g.viewedNoReplyCount > 0 ? (
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">{g.viewedNoReplyCount} ครั้ง</span>
+                        ) : <span className="text-gray-400 dark:text-slate-500">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {g.flaggedTotal > 0 ? (
+                          <span className="flex items-center gap-1.5">
+                            {g.flaggedSevere > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-rose-500/15 text-rose-500 dark:text-rose-400">{g.flaggedSevere} รุนแรง</span>}
+                            {g.flaggedMinor > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400">{g.flaggedMinor} เล็กน้อย</span>}
+                          </span>
+                        ) : <span className="text-gray-400 dark:text-slate-500">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5"></td>
+                    </tr>
+                    {expandedTeams.has(g.key) && g.members.map(a => (
+                      <ConductRow key={a.id} a={a} onClick={() => setSelectedAgentId(a.id)} />
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
