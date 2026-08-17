@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -429,18 +429,31 @@ const CONDUCT_THEAD = (
 // "หมวดหมู่ทีมงาน") alongside the default flat "รายบุคคล" list.
 function AgentConductSection({ from, to, navigate }) {
   const [data, setData] = useState(null);
+  const [categories, setCategories] = useState([]);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [groupBy, setGroupBy] = useState('individual'); // 'individual' | 'team'
   const [expandedTeams, setExpandedTeams] = useState(() => new Set());
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [filterAgentIds, setFilterAgentIds] = useState([]); // active only when groupBy === 'individual'
+  const [filterTeamKeys, setFilterTeamKeys] = useState([]); // active only when groupBy === 'team'
 
   useEffect(() => {
     axios.get('/api/reports/agent-conduct', { params: { from, to } }).then(r => setData(r.data));
   }, [from, to]);
 
+  useEffect(() => {
+    axios.get('/api/agent-categories').then(r => setCategories(r.data)).catch(() => {});
+  }, []);
+
+  // Admins are reviewers, not the ones this scorecard is meant to check up
+  // on — they're excluded from view entirely rather than shown with a row
+  // full of dashes (they never accumulate either stat by design; see
+  // messages.js POST /:conversationId, which only tags non-admin viewers).
+  const employees = useMemo(() => (data?.agents || []).filter(a => a.role !== 'admin'), [data]);
+
   const teamGroups = useMemo(() => {
-    if (!data) return [];
     const map = new Map();
-    for (const a of data.agents) {
+    for (const a of employees) {
       const key = a.categoryId || '__none__';
       if (!map.has(key)) {
         map.set(key, { key, name: a.categoryName || 'ไม่มีหมวดหมู่', members: [], viewedNoReplyCount: 0, flaggedTotal: 0, flaggedSevere: 0, flaggedMinor: 0 });
@@ -453,7 +466,13 @@ function AgentConductSection({ from, to, navigate }) {
       g.flaggedMinor += a.flaggedMinor;
     }
     return [...map.values()].sort((x, y) => (y.viewedNoReplyCount - x.viewedNoReplyCount) || (y.flaggedTotal - x.flaggedTotal));
-  }, [data]);
+  }, [employees]);
+
+  // Empty selection = show everyone — same "no selection = all" convention
+  // used by every other checkbox filter in this app (channel pickers, etc.).
+  const visibleEmployees = filterAgentIds.length > 0 ? employees.filter(a => filterAgentIds.includes(a.id)) : employees;
+  const visibleTeamGroups = filterTeamKeys.length > 0 ? teamGroups.filter(g => filterTeamKeys.includes(g.key)) : teamGroups;
+  const activeFilterCount = groupBy === 'individual' ? filterAgentIds.length : filterTeamKeys.length;
 
   function toggleTeam(key) {
     setExpandedTeams(prev => {
@@ -463,6 +482,13 @@ function AgentConductSection({ from, to, navigate }) {
     });
   }
 
+  function toggleFilterAgent(id) {
+    setFilterAgentIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  }
+  function toggleFilterTeam(key) {
+    setFilterTeamKeys(keys => keys.includes(key) ? keys.filter(x => x !== key) : [...keys, key]);
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -470,16 +496,94 @@ function AgentConductSection({ from, to, navigate }) {
           <Eye size={18} className="text-amber-500" />
           อ่านไม่ตอบ
         </h2>
-        <div className="flex gap-1.5">
-          {[{ key: 'individual', label: 'รายบุคคล' }, { key: 'team', label: 'รายทีม' }].map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => setGroupBy(opt.key)}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${groupBy === opt.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowFilterPanel(v => !v)}
+            className={`flex items-center gap-1.5 text-sm border rounded-lg px-3 py-1.5 focus:outline-none ${activeFilterCount > 0 ? 'border-aurora-teal text-aurora-tealDeep dark:text-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200'}`}
+          >
+            <Filter size={14} />
+            ตัวกรอง
+            {activeFilterCount > 0 && (
+              <span className="text-[11px] bg-aurora-teal text-white rounded-full w-4 h-4 flex items-center justify-center">{activeFilterCount}</span>
+            )}
+          </button>
+          {showFilterPanel && (
+            <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-lg z-30 p-3 space-y-3">
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">มุมมอง</p>
+                <div className="flex gap-1.5">
+                  {[{ key: 'individual', label: 'รายบุคคล' }, { key: 'team', label: 'รายทีม' }].map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setGroupBy(opt.key)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${groupBy === opt.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">พนักงาน</p>
+                <div className={`border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-36 overflow-y-auto ${groupBy !== 'individual' ? 'opacity-40 pointer-events-none bg-gray-50 dark:bg-slate-800' : 'bg-white dark:bg-slate-700'}`}>
+                  {employees.map(a => (
+                    <label key={a.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="accent-aurora-teal"
+                        checked={filterAgentIds.includes(a.id)}
+                        onChange={() => toggleFilterAgent(a.id)}
+                        disabled={groupBy !== 'individual'}
+                      />
+                      {a.name}
+                    </label>
+                  ))}
+                  {employees.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีพนักงาน</p>}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">ทีม</p>
+                <div className={`border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-36 overflow-y-auto ${groupBy !== 'team' ? 'opacity-40 pointer-events-none bg-gray-50 dark:bg-slate-800' : 'bg-white dark:bg-slate-700'}`}>
+                  {categories.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="accent-aurora-teal"
+                        checked={filterTeamKeys.includes(c.id)}
+                        onChange={() => toggleFilterTeam(c.id)}
+                        disabled={groupBy !== 'team'}
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      className="accent-aurora-teal"
+                      checked={filterTeamKeys.includes('__none__')}
+                      onChange={() => toggleFilterTeam('__none__')}
+                      disabled={groupBy !== 'team'}
+                    />
+                    ไม่มีหมวดหมู่
+                  </label>
+                </div>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterAgentIds([]); setFilterTeamKeys([]); }}
+                  className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                >
+                  ล้างตัวกรอง
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
@@ -492,7 +596,7 @@ function AgentConductSection({ from, to, navigate }) {
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
         {!data ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
-        ) : data.agents.length === 0 ? (
+        ) : employees.length === 0 ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
         ) : groupBy === 'individual' ? (
           // Fixed height ≈ 6 rows, scrolls for the rest — keeps this box from
@@ -501,7 +605,9 @@ function AgentConductSection({ from, to, navigate }) {
             <table className="w-full text-sm">
               {CONDUCT_THEAD}
               <tbody>
-                {data.agents.map(a => (
+                {visibleEmployees.length === 0 ? (
+                  <tr><td colSpan={5} className="text-center text-gray-400 dark:text-slate-500 text-sm py-6">ไม่พบพนักงานตามตัวกรองที่เลือก</td></tr>
+                ) : visibleEmployees.map(a => (
                   <ConductRow key={a.id} a={a} onClick={() => setSelectedAgentId(a.id)} />
                 ))}
               </tbody>
@@ -512,7 +618,10 @@ function AgentConductSection({ from, to, navigate }) {
             <table className="w-full text-sm">
               {CONDUCT_THEAD}
               <tbody>
-                {teamGroups.map(g => (
+                {visibleTeamGroups.length === 0 && (
+                  <tr><td colSpan={5} className="text-center text-gray-400 dark:text-slate-500 text-sm py-6">ไม่พบทีมตามตัวกรองที่เลือก</td></tr>
+                )}
+                {visibleTeamGroups.map(g => (
                   <Fragment key={g.key}>
                     <tr
                       onClick={() => toggleTeam(g.key)}
