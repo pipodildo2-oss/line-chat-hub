@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
+const { saveBase64Image, isStoredPath } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -136,8 +137,11 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     }
     // New items go to the end of their category's list by default.
     const count = await prisma.quickReply.count({ where: { categoryId } });
+    // Write the image to disk instead of storing the base64 blob in Postgres
+    // (see imageStorage.js).
+    const storedImage = imageData ? (saveBase64Image(imageData) || imageData) : null;
     const quickReply = await prisma.quickReply.create({
-      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: imageData || null, order: count },
+      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: storedImage, order: count },
     });
     const { imageData: _omit, ...safe } = quickReply;
     res.status(201).json({ ...safe, hasImage: !!quickReply.imageData });
@@ -159,7 +163,9 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     if (kind) data.kind = kind;
     if (name?.trim()) data.name = name.trim();
     if (content?.trim()) data.content = content.trim();
-    if (imageData !== undefined) data.imageData = imageData || null; // allow explicit removal with ""
+    // Allow explicit removal with "". New images get written to disk instead of
+    // stored as a base64 blob (see imageStorage.js).
+    if (imageData !== undefined) data.imageData = imageData ? (saveBase64Image(imageData) || imageData) : null;
     const quickReply = await prisma.quickReply.update({ where: { id: req.params.id }, data });
     const { imageData: _omit, ...safe } = quickReply;
     res.json({ ...safe, hasImage: !!quickReply.imageData });
@@ -181,9 +187,13 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
 // GET /api/quick-replies/:id/image — intentionally NOT behind `auth`.
 // LINE's own servers fetch this URL directly (as originalContentUrl/previewImageUrl)
 // when we push an image quick-reply, so it must be publicly reachable.
+// New rows store a short "/uploads/..." path (see imageStorage.js) and redirect
+// there; rows created before that change still have the full base64 blob, so
+// those are decoded and streamed inline as before.
 router.get('/:id/image', async (req, res) => {
   const quickReply = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!quickReply?.imageData) return res.status(404).end();
+  if (isStoredPath(quickReply.imageData)) return res.redirect(quickReply.imageData);
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(quickReply.imageData);
   if (!match) return res.status(404).end();
   const [, contentType, base64] = match;

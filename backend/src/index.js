@@ -17,6 +17,7 @@ const quickReplyRoutes = require('./routes/quickReplies');
 const channelCategoryRoutes = require('./routes/channelCategories');
 const agentCategoryRoutes = require('./routes/agentCategories');
 const reportRoutes = require('./routes/reports');
+const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
@@ -83,6 +84,12 @@ app.use('/api/quick-replies', quickReplyRoutes);
 app.use('/api/channel-categories', channelCategoryRoutes);
 app.use('/api/agent-categories', agentCategoryRoutes);
 app.use('/api/reports', reportRoutes);
+
+// Serves agent-attached chat images and quick-reply images saved by
+// imageStorage.saveBase64Image (see backend/src/lib/imageStorage.js). Must be
+// registered before the SPA catch-all below, and intentionally has no `auth`
+// middleware — LINE's own servers fetch these URLs directly.
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1d' }));
 
 // Checks the process is alive AND can actually reach the database — a plain
 // "process is running" check can stay green while the DB connection is dead.

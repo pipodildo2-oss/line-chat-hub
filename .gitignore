@@ -11,3 +11,4 @@ frontend/dist-new*/
 .fuse_hidden*
 !backend/dist/
 !backend/dist/**
+backend/uploads/

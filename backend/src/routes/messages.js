@@ -5,6 +5,7 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
+const { saveBase64Image, isStoredPath } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -37,9 +38,13 @@ router.get('/content/:messageId', auth, async (req, res) => {
 // GET /api/messages/image/:id — serves an image an AGENT attached and sent.
 // Intentionally NOT behind `auth`: LINE's own servers fetch this URL directly
 // (as originalContentUrl/previewImageUrl) when we push the image message.
+// New rows store a short "/uploads/..." path (see imageStorage.js) and redirect
+// there; rows created before that change still have the full base64 blob in
+// imageData, so those are decoded and streamed inline as before.
 router.get('/image/:id', async (req, res) => {
   const message = await prisma.message.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!message?.imageData) return res.status(404).end();
+  if (isStoredPath(message.imageData)) return res.redirect(message.imageData);
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(message.imageData);
   if (!match) return res.status(404).end();
   const [, contentType, base64] = match;
@@ -141,6 +146,10 @@ router.post('/:conversationId', auth, async (req, res) => {
 
     let message;
     if (imageData) {
+      // Write the attached image to disk instead of storing the base64 blob in
+      // Postgres (see imageStorage.js) — falls back to the raw data URL only if
+      // for some reason it couldn't be decoded, so a send never silently fails.
+      const storedPath = saveBase64Image(imageData) || imageData;
       // Create the row first so we have an id to build the public image URL from,
       // push it to LINE, then patch metadata.url in — mirrors the quick-reply image flow.
       message = await prisma.message.create({
@@ -151,7 +160,7 @@ router.post('/:conversationId', auth, async (req, res) => {
           senderId: req.agent.id,
           type: 'image',
           content: '[Image]',
-          imageData,
+          imageData: storedPath,
           read: true,
         },
       });
