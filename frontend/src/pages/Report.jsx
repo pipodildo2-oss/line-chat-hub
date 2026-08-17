@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -235,6 +235,239 @@ function UnansweredSection({ channels, agents }) {
   );
 }
 
+const ROLE_LABEL = { admin: 'Admin', agent: 'พนักงาน' };
+
+function AgentAvatar({ name }) {
+  return (
+    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+      {name?.[0]?.toUpperCase() || '?'}
+    </div>
+  );
+}
+
+// Drill-down for a single agent: everything behind their two summary numbers
+// on AgentConductSection's table — the actual flagged messages (within the
+// report's date range) and the conversations they currently have an open
+// "viewed but didn't reply" tag on (always live/current, not date-bounded —
+// see the /agent-conduct backend route for why).
+function AgentConductModal({ agentId, from, to, onClose, navigate }) {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get(`/api/reports/agent-conduct/${agentId}`, { params: { from, to } })
+      .then(r => { if (!cancelled) setData(r.data); });
+    return () => { cancelled = true; };
+  }, [agentId, from, to]);
+
+  function goTo(conversationId) {
+    onClose();
+    navigate(`/inbox?conv=${conversationId}`);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <AgentAvatar name={data?.agent?.name} />
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900 dark:text-slate-100 truncate">{data?.agent?.name || 'กำลังโหลด...'}</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 truncate">{data?.agent?.email}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 flex-shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-4 space-y-6">
+          {!data ? (
+            <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">กำลังโหลด...</p>
+          ) : (
+            <>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5 mb-2">
+                  <Eye size={14} className="text-amber-500" />
+                  เปิดอ่านแล้วยังไม่ตอบ ({data.viewedNoReply.length})
+                </h3>
+                {data.viewedNoReply.length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-slate-500">ไม่มีรายการค้างอยู่ 🎉</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {data.viewedNoReply.map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => goTo(v.message.conversation.id)}
+                        className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-lg border border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-gray-800 dark:text-slate-200 truncate">
+                            {v.message.conversation?.displayName || v.message.conversation?.lineUserId || '—'}
+                            <span className="text-gray-400 dark:text-slate-500 font-normal"> · {v.message.conversation?.channel?.name}</span>
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-slate-400 truncate">
+                            {v.message.type === 'text' ? v.message.content : `[${v.message.type}]`}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-gray-400 dark:text-slate-500 whitespace-nowrap">
+                          เปิดดู {formatDistanceToNow(new Date(v.viewedAt), { locale: th, addSuffix: true })}
+                        </span>
+                        <ExternalLink size={14} className="text-gray-400 dark:text-slate-500 flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5 mb-2">
+                  <AlertTriangle size={14} className="text-rose-500" />
+                  ข้อความไม่เหมาะสม ({data.flaggedMessages.length})
+                </h3>
+                {data.flaggedMessages.length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-slate-500">ไม่มีข้อความที่ถูกตีในช่วงเวลานี้</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {data.flaggedMessages.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => m.conversation && goTo(m.conversation.id)}
+                        className="w-full flex items-start gap-3 text-left px-3 py-2 rounded-lg border border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                      >
+                        <span className={`mt-0.5 text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${SEVERITY_BADGE[m.flagSeverity] || 'bg-gray-100 text-gray-500'}`}>
+                          {SEVERITY_LABEL[m.flagSeverity] || m.flagSeverity}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-gray-800 dark:text-slate-200 line-clamp-2 whitespace-pre-wrap break-words">{m.content}</p>
+                          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 truncate">
+                            {m.conversation?.displayName || m.conversation?.lineUserId} · {m.conversation?.channel?.name} · {format(new Date(m.createdAt), 'd MMM yy HH:mm', { locale: th })}
+                          </p>
+                          {m.flagReason && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{m.flagReason}</p>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Rolls up two existing signals — the "viewed but didn't reply" audit trail
+// and AI-flagged messages — into one per-agent scorecard, sortable worst-first,
+// with a click-through to the full detail for anyone the numbers look off for.
+function AgentConductSection({ from, to, navigate }) {
+  const [data, setData] = useState(null);
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
+
+  useEffect(() => {
+    axios.get('/api/reports/agent-conduct', { params: { from, to } }).then(r => setData(r.data));
+  }, [from, to]);
+
+  return (
+    <div className="mt-10">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+          <Users size={18} className="text-aurora-tealDeep dark:text-aurora-teal" />
+          พนักงาน
+        </h2>
+      </div>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+        ภาพรวมพฤติกรรมพนักงานแต่ละคน — เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง กดที่แถวเพื่อดูรายละเอียดรายบุคคล
+        {data && (
+          <span> · ตอนนี้มี <span className="font-semibold text-amber-600 dark:text-amber-400">{data.totalViewedNoReply}</span> เคสเปิดอ่านค้างไม่ตอบทั้งทีม</span>
+        )}
+      </p>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        {!data ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : data.agents.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                <th className="px-4 py-2.5 font-medium">ยศ</th>
+                <th className="px-4 py-2.5 font-medium">เปิดอ่านไม่ตอบ</th>
+                <th className="px-4 py-2.5 font-medium">ข้อความไม่เหมาะสม</th>
+                <th className="px-4 py-2.5 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.agents.map(a => (
+                <tr
+                  key={a.id}
+                  onClick={() => setSelectedAgentId(a.id)}
+                  className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer"
+                >
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <AgentAvatar name={a.name} />
+                      <div className="min-w-0">
+                        <p className="text-gray-800 dark:text-slate-200 truncate max-w-[160px]">{a.name}</p>
+                        <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate max-w-[160px]">{a.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-violet-500 dark:text-violet-300' : 'bg-aurora-teal/15 text-aurora-tealDeep dark:text-aurora-teal'}`}>
+                      {ROLE_LABEL[a.role] || a.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {a.viewedNoReplyCount > 0 ? (
+                      <span className="font-semibold text-amber-600 dark:text-amber-400">{a.viewedNoReplyCount} ครั้ง</span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-slate-500">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {a.flaggedTotal > 0 ? (
+                      <span className="flex items-center gap-1.5">
+                        {a.flaggedSevere > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-rose-500/15 text-rose-500 dark:text-rose-400">{a.flaggedSevere} รุนแรง</span>
+                        )}
+                        {a.flaggedMinor > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400">{a.flaggedMinor} เล็กน้อย</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-slate-500">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span className="text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium">ดูรายละเอียด →</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {selectedAgentId && (
+        <AgentConductModal
+          agentId={selectedAgentId}
+          from={from}
+          to={to}
+          onClose={() => setSelectedAgentId(null)}
+          navigate={navigate}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function Report() {
   const navigate = useNavigate();
   const { socket } = useSocket();
@@ -453,6 +686,8 @@ export default function Report() {
       </div>
 
       <UnansweredSection channels={channels} agents={agents} />
+
+      <AgentConductSection from={from} to={to} navigate={navigate} />
     </div>
   );
 }

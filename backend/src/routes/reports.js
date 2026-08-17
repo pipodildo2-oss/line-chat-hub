@@ -118,4 +118,107 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
   res.json({ conversations: unanswered, total: unanswered.length });
 });
 
+// ---------- Employee conduct ("พนักงาน") ----------
+// Rolls up two existing signals into one per-agent view instead of leaving
+// them scattered: (1) flagged messages (moderation.service.js result on
+// content this agent typed — see /flagged-messages above) and (2) the
+// "viewed a customer message but didn't reply" audit trail (MessageView —
+// see schema.prisma and messages.js POST /:conversationId, which deletes an
+// agent's own MessageView rows the moment they DO reply). A MessageView row
+// still existing means that agent opened the chat, saw an unanswered customer
+// message, and has not sent a reply in that conversation since — it's a live
+// signal, not a historical log, so unlike flagged messages it isn't bounded
+// by from/to.
+
+// GET /api/reports/agent-conduct?from=&to= — overview, one row per agent.
+router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
+  const { from, to } = req.query;
+  const flaggedWhere = { flagged: true, senderId: { not: null } };
+  if (from || to) {
+    flaggedWhere.createdAt = {};
+    if (from) flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`);
+    if (to) flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`);
+  }
+
+  const [agents, flaggedGroups, viewGroups] = await Promise.all([
+    prisma.agent.findMany({ select: { id: true, name: true, email: true, role: true } }),
+    prisma.message.groupBy({ by: ['senderId', 'flagSeverity'], where: flaggedWhere, _count: { _all: true } }),
+    prisma.messageView.groupBy({ by: ['agentId'], _count: { _all: true } }),
+  ]);
+
+  const flaggedByAgent = {}; // agentId -> { total, severe, minor }
+  for (const g of flaggedGroups) {
+    const bucket = (flaggedByAgent[g.senderId] ||= { total: 0, severe: 0, minor: 0 });
+    bucket.total += g._count._all;
+    if (g.flagSeverity === 'severe') bucket.severe += g._count._all;
+    if (g.flagSeverity === 'minor') bucket.minor += g._count._all;
+  }
+  const viewedByAgent = {}; // agentId -> count
+  for (const g of viewGroups) viewedByAgent[g.agentId] = g._count._all;
+
+  const summary = agents
+    .map(a => ({
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      role: a.role,
+      flaggedTotal: flaggedByAgent[a.id]?.total || 0,
+      flaggedSevere: flaggedByAgent[a.id]?.severe || 0,
+      flaggedMinor: flaggedByAgent[a.id]?.minor || 0,
+      viewedNoReplyCount: viewedByAgent[a.id] || 0,
+    }))
+    // Worst-first: whoever currently has the most open "viewed but didn't
+    // reply" items floats to the top, tie-broken by flagged message count —
+    // this is meant as a triage list, not an alphabetical directory.
+    .sort((x, y) => (y.viewedNoReplyCount - x.viewedNoReplyCount) || (y.flaggedTotal - x.flaggedTotal));
+
+  res.json({
+    agents: summary,
+    totalViewedNoReply: summary.reduce((s, a) => s + a.viewedNoReplyCount, 0),
+  });
+});
+
+// GET /api/reports/agent-conduct/:agentId?from=&to= — drill-down for one agent.
+router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
+  const { agentId } = req.params;
+  const { from, to } = req.query;
+
+  const flaggedWhere = { flagged: true, senderId: agentId };
+  if (from || to) {
+    flaggedWhere.createdAt = {};
+    if (from) flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`);
+    if (to) flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`);
+  }
+
+  const [agent, flaggedMessages, viewedNoReply] = await Promise.all([
+    prisma.agent.findUnique({ where: { id: agentId }, select: { id: true, name: true, email: true, role: true } }),
+    prisma.message.findMany({
+      where: flaggedWhere,
+      select: {
+        id: true, content: true, flagSeverity: true, flagReason: true, createdAt: true,
+        conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { id: true, name: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+    prisma.messageView.findMany({
+      where: { agentId },
+      select: {
+        id: true, viewedAt: true,
+        message: {
+          select: {
+            id: true, content: true, type: true, createdAt: true,
+            conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { id: true, name: true } } } },
+          },
+        },
+      },
+      orderBy: { viewedAt: 'desc' },
+      take: 200,
+    }),
+  ]);
+
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  res.json({ agent, flaggedMessages, viewedNoReply });
+});
+
 module.exports = router;
