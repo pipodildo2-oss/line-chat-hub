@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
+const { deleteStoredImage } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -64,10 +65,19 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-// DELETE /api/channels/:id
+// DELETE /api/channels/:id — hard delete, cascades to all this channel's
+// conversations/messages in Postgres. That cascade does NOT touch the actual
+// image files those messages point to on disk (see imageStorage.js) — without
+// this cleanup, deleting a channel would silently leak its images forever,
+// which defeats the whole point of having moved them off Postgres to save space.
 router.delete('/:id', auth, async (req, res) => {
   try {
+    const messagesWithImages = await prisma.message.findMany({
+      where: { conversation: { channelId: req.params.id }, imageData: { not: null } },
+      select: { imageData: true },
+    });
     await prisma.lineChannel.delete({ where: { id: req.params.id } });
+    messagesWithImages.forEach(m => deleteStoredImage(m.imageData));
     res.json({ success: true });
   } catch {
     res.status(404).json({ error: 'Channel not found' });

@@ -5,7 +5,7 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
-const { saveBase64Image, isStoredPath } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -39,12 +39,18 @@ router.get('/content/:messageId', auth, async (req, res) => {
 // Intentionally NOT behind `auth`: LINE's own servers fetch this URL directly
 // (as originalContentUrl/previewImageUrl) when we push the image message.
 // New rows store a short "/uploads/..." path (see imageStorage.js) and redirect
-// there; rows created before that change still have the full base64 blob in
-// imageData, so those are decoded and streamed inline as before.
+// there — pass ?preview=1 to redirect to the smaller thumbnail instead (used
+// for previewImageUrl, which LINE caps at 1MB separately from the 10MB cap on
+// the full image). Rows created before this change still have the full base64
+// blob in imageData (no thumbnail exists), so those are decoded and streamed
+// inline as before regardless of ?preview.
 router.get('/image/:id', async (req, res) => {
   const message = await prisma.message.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!message?.imageData) return res.status(404).end();
-  if (isStoredPath(message.imageData)) return res.redirect(message.imageData);
+  if (isStoredPath(message.imageData)) {
+    const target = req.query.preview ? thumbPathFor(message.imageData) : message.imageData;
+    return res.redirect(target);
+  }
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(message.imageData);
   if (!match) return res.status(404).end();
   const [, contentType, base64] = match;
@@ -146,10 +152,11 @@ router.post('/:conversationId', auth, async (req, res) => {
 
     let message;
     if (imageData) {
-      // Write the attached image to disk instead of storing the base64 blob in
-      // Postgres (see imageStorage.js) — falls back to the raw data URL only if
-      // for some reason it couldn't be decoded, so a send never silently fails.
-      const storedPath = saveBase64Image(imageData) || imageData;
+      // Write the attached image to disk (compressed + resized, with a separate
+      // small thumbnail) instead of storing the base64 blob in Postgres — see
+      // imageStorage.js. Falls back to the raw data URL only if it couldn't be
+      // decoded, so a send never silently fails.
+      const storedPath = (await saveBase64Image(imageData)) || imageData;
       // Create the row first so we have an id to build the public image URL from,
       // push it to LINE, then patch metadata.url in — mirrors the quick-reply image flow.
       message = await prisma.message.create({
@@ -165,7 +172,11 @@ router.post('/:conversationId', auth, async (req, res) => {
         },
       });
       const imageUrl = `${req.protocol}://${req.get('host')}/api/messages/image/${message.id}`;
-      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl);
+      // /image/:id redirects to the thumbnail's own static path when one exists
+      // (see the route above), so this still resolves to the right file — it
+      // just goes through one extra redirect hop instead of a direct static URL.
+      const previewUrl = `${req.protocol}://${req.get('host')}/api/messages/image/${message.id}?preview=1`;
+      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
       message = await prisma.message.update({
         where: { id: message.id },
         data: { metadata: JSON.stringify({ url: imageUrl }) },

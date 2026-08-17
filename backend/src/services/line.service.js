@@ -190,14 +190,20 @@ async function sendMessage(channel, lineUserId, text) {
   }
 }
 
-// Used by the quick-reply "attach an image" feature. imageUrl must be a public
-// HTTPS URL — LINE's own servers fetch it directly, so it can't be behind our auth.
-async function sendImageMessage(channel, lineUserId, imageUrl) {
+// Used by the composer's "attach an image" feature and quick-reply images.
+// imageUrl/previewUrl must be public HTTPS URLs — LINE's own servers fetch
+// them directly, so they can't be behind our auth. LINE caps previewImageUrl
+// at 1MB separately from originalContentUrl's 10MB cap, so callers should pass
+// a dedicated (smaller) thumbnail as previewUrl where one exists — reusing the
+// full image for both silently breaks the preview for anything over 1MB.
+// previewUrl defaults to imageUrl for backward compatibility with callers/rows
+// that only have a single image (e.g. legacy base64 rows with no thumbnail).
+async function sendImageMessage(channel, lineUserId, imageUrl, previewUrl = imageUrl) {
   const client = getClient(channel.accessToken);
   try {
     await client.pushMessage({
       to: lineUserId,
-      messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl }],
+      messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: previewUrl }],
     });
   } catch (err) {
     throw new Error(describeLineError(err));

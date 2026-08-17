@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
-const { saveBase64Image, isStoredPath } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -78,7 +78,14 @@ router.patch('/categories/:id', auth, requireAdmin, async (req, res) => {
 // DELETE /api/quick-replies/categories/:id — admin only (cascades to its quick replies)
 router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
   try {
+    // The cascade delete below removes the QuickReply rows, but not their image
+    // files on disk — grab those first so they can be cleaned up afterward.
+    const withImages = await prisma.quickReply.findMany({
+      where: { categoryId: req.params.id, imageData: { not: null } },
+      select: { imageData: true },
+    });
     await prisma.quickReplyCategory.delete({ where: { id: req.params.id } });
+    withImages.forEach(qr => deleteStoredImage(qr.imageData));
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -139,7 +146,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     const count = await prisma.quickReply.count({ where: { categoryId } });
     // Write the image to disk instead of storing the base64 blob in Postgres
     // (see imageStorage.js).
-    const storedImage = imageData ? (saveBase64Image(imageData) || imageData) : null;
+    const storedImage = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
     const quickReply = await prisma.quickReply.create({
       data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: storedImage, order: count },
     });
@@ -165,8 +172,16 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     if (content?.trim()) data.content = content.trim();
     // Allow explicit removal with "". New images get written to disk instead of
     // stored as a base64 blob (see imageStorage.js).
-    if (imageData !== undefined) data.imageData = imageData ? (saveBase64Image(imageData) || imageData) : null;
+    let previousImage = null;
+    if (imageData !== undefined) {
+      // Fetch the current file (if any) BEFORE overwriting, so it can be cleaned
+      // up off disk after the update succeeds — otherwise every re-upload leaves
+      // an orphaned file behind, permanently wasting space.
+      previousImage = (await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } }))?.imageData;
+      data.imageData = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    }
     const quickReply = await prisma.quickReply.update({ where: { id: req.params.id }, data });
+    if (previousImage && previousImage !== quickReply.imageData) deleteStoredImage(previousImage);
     const { imageData: _omit, ...safe } = quickReply;
     res.json({ ...safe, hasImage: !!quickReply.imageData });
   } catch {
@@ -177,7 +192,10 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
 // DELETE /api/quick-replies/:id — admin only
 router.delete('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    await prisma.quickReply.delete({ where: { id: req.params.id } });
+    const quickReply = await prisma.quickReply.delete({ where: { id: req.params.id } });
+    // Clean up the associated image file off disk — Prisma only removes the DB
+    // row, so without this the file would sit orphaned in the uploads volume forever.
+    if (quickReply.imageData) deleteStoredImage(quickReply.imageData);
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -188,12 +206,18 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
 // LINE's own servers fetch this URL directly (as originalContentUrl/previewImageUrl)
 // when we push an image quick-reply, so it must be publicly reachable.
 // New rows store a short "/uploads/..." path (see imageStorage.js) and redirect
-// there; rows created before that change still have the full base64 blob, so
-// those are decoded and streamed inline as before.
+// there — pass ?preview=1 to redirect to the smaller thumbnail instead (see
+// messages.js's /image/:id for why: LINE caps previewImageUrl at 1MB
+// separately from the 10MB cap on the full image). Rows created before this
+// change still have the full base64 blob (no thumbnail exists), so those are
+// decoded and streamed inline as before regardless of ?preview.
 router.get('/:id/image', async (req, res) => {
   const quickReply = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!quickReply?.imageData) return res.status(404).end();
-  if (isStoredPath(quickReply.imageData)) return res.redirect(quickReply.imageData);
+  if (isStoredPath(quickReply.imageData)) {
+    const target = req.query.preview ? thumbPathFor(quickReply.imageData) : quickReply.imageData;
+    return res.redirect(target);
+  }
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(quickReply.imageData);
   if (!match) return res.status(404).end();
   const [, contentType, base64] = match;
@@ -227,7 +251,8 @@ router.post('/:id/send', auth, async (req, res) => {
 
     if (quickReply.imageData) {
       const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image`;
-      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl);
+      const previewUrl = `${imageUrl}?preview=1`;
+      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
       const imgMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
