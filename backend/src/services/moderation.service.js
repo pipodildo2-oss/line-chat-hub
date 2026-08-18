@@ -49,12 +49,21 @@ async function checkMessage(text, history = []) {
   const minorHit = findMatch(normalized, MINOR_WORDS);
   if (minorHit) return { severity: 'minor', reason: 'พบคำพูดไม่สุภาพ/ก้าวร้าวเล็กน้อยในข้อความ' };
 
-  // Simple spam check: this exact message (normalized) already appears among
-  // the employee's own recent messages in this conversation — no AI needed
-  // to catch "sent the identical thing 2+ times in a row".
-  const repeatCount = history.filter(m => m.sender === 'agent' && normalize(m.content) === normalized).length;
-  if (normalized.length >= 3 && repeatCount >= 1) {
-    return { severity: 'minor', reason: 'ส่งข้อความซ้ำ/สแปม' };
+  // Spam check: the SAME message sent back-to-back 3+ times in a row.
+  // "history" is oldest-first, so walk backward from the most recent entry
+  // and count matches — stop at the first message that breaks the streak
+  // (wrong sender or different content). This deliberately does NOT count
+  // the same message reused at different, non-consecutive points in the
+  // conversation (e.g. the same canned "please wait" line sent hours apart)
+  // as spam — only an actual uninterrupted burst of repeats counts.
+  let consecutiveRepeats = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.sender === 'agent' && normalize(m.content) === normalized) consecutiveRepeats++;
+    else break;
+  }
+  if (normalized.length >= 3 && consecutiveRepeats + 1 >= 3) {
+    return { severity: 'minor', reason: 'ส่งข้อความเดิมซ้ำติดกันตั้งแต่ 3 ครั้งขึ้นไป (สแปม)' };
   }
 
   return null;
