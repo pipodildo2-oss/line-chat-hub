@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, MessageCircle, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -53,11 +53,9 @@ export default function Sidebar() {
     <aside className="w-56 bg-aurora-midnight border-r border-slate-800 flex flex-col flex-shrink-0">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center shadow-sm flex-shrink-0">
-          <MessageCircle size={17} className="text-white" strokeWidth={2.2} />
-        </div>
+        <img src="/logo.png" alt="Aurora" className="w-9 h-9 rounded-lg shadow-sm flex-shrink-0" />
         <div className="min-w-0">
-          <p className="font-brand font-semibold text-sm text-slate-100 leading-tight truncate">LINE Chat Hub</p>
+          <p className="font-brand font-semibold text-base text-slate-100 leading-tight truncate">Aurora</p>
           <p className="text-[11px] text-slate-500 truncate">By BBB888</p>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Lock, Mail, ArrowRight } from 'lucide-react';
+import { Lock, Mail, ArrowRight } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
@@ -45,12 +45,10 @@ export default function Login() {
       <div className="relative w-full max-w-sm mx-4">
         <div className="backdrop-blur-xl bg-white/[0.04] border border-white/10 rounded-2xl shadow-2xl shadow-black/40 p-8">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center shadow-lg shadow-aurora-teal/20">
-              <MessageCircle size={22} className="text-white" strokeWidth={2.2} />
-            </div>
+            <img src="/logo.png" alt="Aurora" className="w-11 h-11 rounded-xl shadow-lg shadow-aurora-teal/20" />
             <div>
-              <h1 className="font-semibold text-white text-lg leading-tight tracking-tight">LINE Chat Hub</h1>
-              <p className="text-white/40 text-xs">Multi-channel inbox</p>
+              <h1 className="font-brand font-semibold text-white text-xl leading-tight tracking-tight">Aurora</h1>
+              <p className="text-white/40 text-xs">By BBB888</p>
             </div>
           </div>
 
@@ -95,7 +93,7 @@ export default function Login() {
             </button>
           </form>
         </div>
-        <p className="text-center text-white/20 text-xs mt-5">LINE Chat Hub — Unified messaging workspace</p>
+        <p className="text-center text-white/20 text-xs mt-5">Aurora — Unified messaging workspace</p>
       </div>
     </div>
   );
