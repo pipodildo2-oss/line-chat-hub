@@ -6,7 +6,7 @@ import { startOfMonth, endOfMonth, subMonths, subDays, format } from 'date-fns';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
-function StatCard({ icon: Icon, label, value, color }) {
+function StatCard({ icon: Icon, label, value, color, caption }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-gray-200 dark:border-slate-800 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
@@ -15,6 +15,7 @@ function StatCard({ icon: Icon, label, value, color }) {
       <div>
         <p className="text-gray-500 dark:text-slate-400 text-sm">{label}</p>
         <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{value ?? '—'}</p>
+        {caption && <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">{caption}</p>}
       </div>
     </div>
   );
@@ -108,18 +109,23 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — the first 3 are live snapshots of current status (a chat is
+          either open or closed right now; there's no history log to look up
+          "how many were open as of a past date"), so they intentionally don't
+          move with the date picker above. Only "การสนทนาใหม่" and everything
+          below (chart, by-channel) are scoped to the selected range — the
+          caption/label text spells this out so it doesn't read as a bug. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={MessageSquare} label={t('dashboard_total_conversations')} value={data.totalConversations} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
-        <StatCard icon={Clock} label={t('dashboard_open')} value={data.openConversations} color="bg-aurora-purple" />
-        <StatCard icon={CheckCircle} label={t('dashboard_closed')} value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" />
+        <StatCard icon={MessageSquare} label={t('dashboard_total_conversations')} value={data.totalConversations} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" caption="ข้อมูลปัจจุบันทั้งหมด ไม่ขึ้นกับช่วงเวลาที่เลือก" />
+        <StatCard icon={Clock} label={t('dashboard_open')} value={data.openConversations} color="bg-aurora-purple" caption="ข้อมูลปัจจุบัน" />
+        <StatCard icon={CheckCircle} label={t('dashboard_closed')} value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" caption="ข้อมูลปัจจุบัน" />
         <StatCard icon={Users} label={`${t('dashboard_new_conversations')} (${rangeLabel})`} value={data.newConversations} color="bg-amber-500" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Activity chart */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_messages_per_day')}</h2>
+          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_messages_per_day')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={activityData}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
@@ -136,7 +142,7 @@ export default function Dashboard() {
 
         {/* By channel */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_by_channel')}</h2>
+          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_by_channel')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
           <div className="space-y-3">
             {data.conversationsByChannel.length === 0 && (
               <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
