@@ -138,9 +138,13 @@ export default function Sidebar() {
             onClick={() => setProfileOpen(v => !v)}
             className="flex items-center gap-2 min-w-0 flex-1 text-left"
           >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
-              {agent?.name?.[0]?.toUpperCase() || 'A'}
-            </div>
+            {agent?.avatarUrl ? (
+              <img src={agent.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                {agent?.name?.[0]?.toUpperCase() || 'A'}
+              </div>
+            )}
             <p className="text-xs font-medium text-slate-200 truncate min-w-0">{agent?.name}</p>
           </button>
 

@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import axios from 'axios';
-import { X, Check } from 'lucide-react';
+import { X, Check, Camera, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+
+// Keeps this in sync with the ~10MB cap LINE itself enforces on original
+// images (see imageStorage.js / line.service.js) — no reason to let an
+// avatar upload be more permissive than message attachments already are.
+const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 
 export default function ProfileModal({ onClose }) {
   const { agent, updateAgent } = useAuth();
@@ -14,6 +19,35 @@ export default function ProfileModal({ onClose }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  function pickAvatarFile() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow picking the same file again later
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return setError('กรุณาเลือกไฟล์รูปภาพ');
+    if (file.size > MAX_AVATAR_BYTES) return setError('ไฟล์รูปภาพต้องมีขนาดไม่เกิน 10MB');
+
+    setError('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      setAvatarUploading(true);
+      try {
+        const { data } = await axios.patch('/api/agents/me/avatar', { imageData: reader.result });
+        updateAgent(data);
+      } catch (err) {
+        setError(err.response?.data?.error || 'อัปโหลดรูปโปรไฟล์ไม่สำเร็จ');
+      } finally {
+        setAvatarUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
 
   const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
@@ -54,9 +88,25 @@ export default function ProfileModal({ onClose }) {
         </div>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-lg font-semibold flex-shrink-0">
-            {agent?.name?.[0]?.toUpperCase() || 'A'}
-          </div>
+          <button
+            type="button"
+            onClick={pickAvatarFile}
+            disabled={avatarUploading}
+            className="relative w-14 h-14 rounded-full flex-shrink-0 group focus:outline-none focus:ring-2 focus:ring-aurora-teal rounded-full"
+            title="เปลี่ยนรูปโปรไฟล์"
+          >
+            {agent?.avatarUrl ? (
+              <img src={agent.avatarUrl} alt="" className="w-14 h-14 rounded-full object-cover" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-lg font-semibold">
+                {agent?.name?.[0]?.toUpperCase() || 'A'}
+              </div>
+            )}
+            <div className={`absolute inset-0 rounded-full bg-black/50 flex items-center justify-center transition-opacity ${avatarUploading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              {avatarUploading ? <Loader2 size={18} className="text-white animate-spin" /> : <Camera size={16} className="text-white" />}
+            </div>
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           <div className="min-w-0">
             <p className="text-sm text-slate-300 truncate">{agent?.email}</p>
             <p className="text-xs text-slate-500">{agent?.role === 'admin' ? 'Admin' : 'Agent'}</p>

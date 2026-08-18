@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, Pencil, Zap, ImagePlus } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -191,13 +191,35 @@ function ViewerTags({ msg, isAdmin }) {
   );
 }
 
-function MessageBubble({ msg, onImageClick, isAdmin }) {
+// NOT a LINE read receipt — LINE's Messaging API has no way to tell us when a
+// customer has actually opened/read a message we sent (only human-to-human
+// LINE chats get that; it isn't exposed to bots/OAs at all). This is the
+// closest honest proxy available: one tick once we've sent it, two once the
+// customer has sent ANYTHING back afterward in this conversation (concrete
+// proof they were in the chat, even if we can't know exactly when they saw
+// this particular message).
+function DeliveryTick({ repliedTo, onBubble }) {
+  const Icon = repliedTo ? CheckCheck : Check;
+  const activeCls = onBubble ? 'text-teal-200' : 'text-aurora-tealDeep dark:text-aurora-teal';
+  const inactiveCls = onBubble ? 'text-white/50' : 'text-gray-400 dark:text-slate-500';
+  return (
+    <span
+      className="inline-block ml-1 align-text-bottom"
+      title={repliedTo ? 'ลูกค้าส่งข้อความกลับมาหลังจากนี้' : 'ส่งแล้ว — ยังไม่มีข้อความตอบกลับจากลูกค้า'}
+    >
+      <Icon size={12} className={repliedTo ? activeCls : inactiveCls} />
+    </span>
+  );
+}
+
+function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   const isUser = msg.sender === 'user';
   const timeCls = isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70';
   const timeLabel = (
     <p className={`text-xs mt-1 ${timeCls}`}>
       {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
       {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+      {!isUser && <DeliveryTick repliedTo={repliedTo} onBubble />}
     </p>
   );
 
@@ -209,6 +231,7 @@ function MessageBubble({ msg, onImageClick, isAdmin }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
@@ -232,6 +255,7 @@ function MessageBubble({ msg, onImageClick, isAdmin }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
@@ -252,6 +276,7 @@ function MessageBubble({ msg, onImageClick, isAdmin }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
         </div>
@@ -637,6 +662,22 @@ export default function Inbox() {
     if (filter.agentId) n++;
     return n;
   }, [filter]);
+
+  // Which of our own (agent-sent) messages already have a customer reply
+  // somewhere after them in this conversation — see DeliveryTick above for
+  // why this is the proxy used instead of a real LINE read receipt. Single
+  // backward scan: walk from the newest message down, and once we've passed
+  // a user message everything before it (agent-side) counts as "replied to".
+  const repliedIds = useMemo(() => {
+    const ids = new Set();
+    let sawUser = false;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.sender === 'agent' && sawUser) ids.add(m.id);
+      if (m.sender === 'user') sawUser = true;
+    }
+    return ids;
+  }, [messages]);
 
   const loadConversations = useCallback(async () => {
     const params = {};
@@ -1059,7 +1100,7 @@ export default function Inbox() {
                 return (
                   <div key={msg.id}>
                     {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
-                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} />
+                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
                   </div>
                 );
               })}

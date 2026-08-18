@@ -15,6 +15,7 @@ model Agent {
   role          String         @default("agent") // admin | agent
   language      String         @default("th") // th | en
   status        String         @default("online") // online | offline | break
+  avatarUrl     String?        // profile picture, stored as a file path via imageStorage.js (same pattern as message/quick-reply images) — never a raw base64 blob in the DB
   createdAt     DateTime       @default(now())
   conversations Conversation[]
   channels      AgentChannel[]

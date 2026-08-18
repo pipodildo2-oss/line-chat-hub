@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
+const { saveBase64Image, deleteStoredImage } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -9,7 +10,7 @@ const prisma = new PrismaClient();
 router.get('/', auth, async (req, res) => {
   const agents = await prisma.agent.findMany({
     select: {
-      id: true, name: true, email: true, role: true, status: true, createdAt: true,
+      id: true, name: true, email: true, role: true, status: true, createdAt: true, avatarUrl: true,
       channels: { select: { channelId: true } },
       categoryId: true,
       category: { select: { id: true, name: true } },
@@ -51,8 +52,33 @@ router.patch('/me', auth, async (req, res) => {
     const updated = await prisma.agent.update({
       where: { id: req.agent.id },
       data,
-      select: { id: true, name: true, email: true, role: true, language: true, status: true },
+      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true },
     });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/agents/me/avatar — upload/replace own profile picture.
+// Accepts a base64 data URL (same as message/quick-reply images), runs it
+// through imageStorage.js (compressed + resized JPEG on disk), and deletes
+// the old avatar file if one existed so replacing a picture doesn't leak
+// files the same way plain Postgres blobs used to (see imageStorage.js).
+router.patch('/me/avatar', auth, async (req, res) => {
+  try {
+    const { imageData } = req.body;
+    if (!imageData) return res.status(400).json({ error: 'imageData required' });
+    const stored = await saveBase64Image(imageData);
+    if (!stored) return res.status(400).json({ error: 'ไม่สามารถประมวลผลรูปภาพนี้ได้' });
+
+    const previous = await prisma.agent.findUnique({ where: { id: req.agent.id }, select: { avatarUrl: true } });
+    const updated = await prisma.agent.update({
+      where: { id: req.agent.id },
+      data: { avatarUrl: stored },
+      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true },
+    });
+    if (previous?.avatarUrl) deleteStoredImage(previous.avatarUrl);
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -117,7 +143,8 @@ router.patch('/:id/password', auth, async (req, res) => {
 // DELETE /api/agents/:id
 router.delete('/:id', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  await prisma.agent.delete({ where: { id: req.params.id } });
+  const agent = await prisma.agent.delete({ where: { id: req.params.id } });
+  if (agent.avatarUrl) deleteStoredImage(agent.avatarUrl);
   res.json({ success: true });
 });
 
