@@ -47,7 +47,7 @@ export default function Login() {
           <div className="flex items-center gap-3 mb-8">
             <img src="/logo.png" alt="Aurora" className="w-11 h-11 rounded-xl shadow-lg shadow-aurora-teal/20" />
             <div>
-              <h1 className="font-brand font-semibold text-white text-xl leading-tight tracking-tight">Aurora</h1>
+              <h1 className="font-brand font-semibold text-white text-xl leading-tight tracking-tight">Aurora Chat</h1>
               <p className="text-white/40 text-xs">By BBB888</p>
             </div>
           </div>
@@ -93,7 +93,7 @@ export default function Login() {
             </button>
           </form>
         </div>
-        <p className="text-center text-white/20 text-xs mt-5">Aurora — Unified messaging workspace</p>
+        <p className="text-center text-white/20 text-xs mt-5">Aurora Chat — Unified messaging workspace</p>
       </div>
     </div>
   );
