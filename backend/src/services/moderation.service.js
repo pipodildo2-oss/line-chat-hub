@@ -1,76 +1,63 @@
-const Anthropic = require('@anthropic-ai/sdk');
+const badWords = require('../config/badWords.json');
 
-let client = null;
+// No AI/API involved here on purpose — the previous version called the
+// Claude API per message, which stopped working once the Anthropic Console
+// credit balance ran out. This is a pure keyword-list checker instead: zero
+// external calls, zero cost, works offline. Trade-off: it can only catch
+// words that are actually in badWords.json (edit that file to tune it) and
+// can't judge tone/context the way an AI could (e.g. "arguing with the
+// customer" without any bad word in it won't be caught) — see the spam
+// check below for the one piece of context-awareness kept from the old
+// version.
 
-function getClient() {
-  if (!client && process.env.ANTHROPIC_API_KEY) {
-    client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return client;
+// Strips whitespace/punctuation and lowercases so spaced-out or
+// punctuated evasion ("เ ห ี ้ ย", "f.u.c.k") still matches a plain
+// substring check. Word-list entries are normalized the same way at
+// load time below.
+function normalize(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[\s.\-_*!?,()[\]{}'"๊๋์ฯๆ]+/g, '');
 }
 
-let warnedNoKey = false;
+const SEVERE_WORDS = (badWords.severe || []).map(normalize).filter(Boolean);
+const MINOR_WORDS = (badWords.minor || []).map(normalize).filter(Boolean);
+
+function findMatch(normalizedText, wordList) {
+  return wordList.find(w => normalizedText.includes(w)) || null;
+}
 
 /**
  * Checks a single outgoing agent message (freely typed, not a canned quick
- * reply) for profanity, arguing with the customer, or spam — Thai or English,
- * including disguised/spaced-out swearing. `history` is the last few messages
- * in the conversation (oldest first, [{sender, content}]) so the model has
- * enough context to judge tone (arguing) and repetition (spam), not just the
- * single message in isolation.
- * Returns null if the service is unavailable or the message reads clean;
- * otherwise { severity: 'minor' | 'severe', reason: string }.
+ * reply) against the word list in badWords.json, plus a simple repeated-
+ * message spam check against recent history. `history` is the last few
+ * messages in the conversation (oldest first, [{sender, content}]).
+ * Returns null if clean; otherwise { severity: 'minor' | 'severe', reason: string }.
  *
- * Deliberately called fire-and-forget AFTER the send response goes back to
- * the agent — this is a background compliance check for the admin Report
- * page, not something that should add latency to sending a message.
+ * Kept synchronous-looking (still returns a Promise) so the call site in
+ * messages.js — which does `.then(history => checkMessage(...)).then(...)` —
+ * didn't need to change at all when this was swapped out from the old
+ * AI-based version.
  */
 async function checkMessage(text, history = []) {
-  const c = getClient();
-  if (!c) {
-    if (!process.env.ANTHROPIC_API_KEY && !warnedNoKey) {
-      warnedNoKey = true;
-      console.warn('Moderation check disabled: ANTHROPIC_API_KEY is not set.');
-    }
-    return null;
-  }
   if (!text?.trim()) return null;
+  const normalized = normalize(text);
 
-  const historyBlock = history.length
-    ? `Recent conversation, oldest to newest (context only — do not classify these, only the message below):\n${history.map(m => `${m.sender === 'user' ? 'Customer' : 'Employee'}: ${m.content}`).join('\n')}\n\n`
-    : '';
+  const severeHit = findMatch(normalized, SEVERE_WORDS);
+  if (severeHit) return { severity: 'severe', reason: 'พบคำหยาบ/ไม่เหมาะสมในข้อความ' };
 
-  try {
-    const response = await c.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
-      system: `You are a content-moderation classifier for a Thai customer-service LINE chat.
-Read the EMPLOYEE's latest outgoing message to a customer (with recent conversation history for context) and decide if it should be flagged for any of:
-1. Profanity, insults, threats, or abusive language — Thai or English, including disguised/spaced-out swearing.
-2. Arguing with, being confrontational, dismissive, or disrespectful toward the customer instead of helping them.
-3. Spam — sending the same or near-identical message repeatedly (compare against the employee's recent messages in the history), or sending irrelevant/nonsensical text unrelated to the conversation.
-Respond with ONLY compact JSON, nothing else, no markdown fences:
-{"flagged": boolean, "severity": "minor" | "severe" | null, "reason": string | null}
-Rules:
-- Normal, professional, or merely blunt/curt-but-clean messages: {"flagged": false, "severity": null, "reason": null}
-- "minor": mildly rude/dismissive tone, a single instance of pushing back on a customer, or a one-off repeated/odd message — not outright profanity or repeated abuse.
-- "severe": profanity, insults, threats, clearly abusive language, sustained arguing, or clear repeated spam.
-- "reason" (when flagged) must be a short Thai explanation, e.g. "มีคำหยาบ", "เถียงกับลูกค้า", or "ส่งข้อความซ้ำ/สแปม".`,
-      messages: [{ role: 'user', content: `${historyBlock}Employee's latest message to classify:\n${text}` }],
-    });
-    const raw = response.content[0].text.trim();
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    const parsed = JSON.parse(match[0]);
-    if (!parsed.flagged) return null;
-    return {
-      severity: parsed.severity === 'severe' ? 'severe' : 'minor',
-      reason: parsed.reason || null,
-    };
-  } catch (e) {
-    console.warn('Moderation check failed:', e.message);
-    return null;
+  const minorHit = findMatch(normalized, MINOR_WORDS);
+  if (minorHit) return { severity: 'minor', reason: 'พบคำพูดไม่สุภาพ/ก้าวร้าวเล็กน้อยในข้อความ' };
+
+  // Simple spam check: this exact message (normalized) already appears among
+  // the employee's own recent messages in this conversation — no AI needed
+  // to catch "sent the identical thing 2+ times in a row".
+  const repeatCount = history.filter(m => m.sender === 'agent' && normalize(m.content) === normalized).length;
+  if (normalized.length >= 3 && repeatCount >= 1) {
+    return { severity: 'minor', reason: 'ส่งข้อความซ้ำ/สแปม' };
   }
+
+  return null;
 }
 
 module.exports = { checkMessage };
