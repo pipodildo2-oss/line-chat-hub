@@ -587,9 +587,9 @@ function AgentConductSection({ from, to, navigate }) {
         </div>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-        เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง — {groupBy === 'individual' ? 'กดที่แถวเพื่อดูรายละเอียดรายบุคคล' : 'กดที่ทีมเพื่อดูสมาชิกในทีม'}
+        เปิดอ่านแชทของลูกค้าแล้วยังไม่ตอบกลับ และข้อความไม่เหมาะสมที่พิมพ์ส่ง (เฉพาะรายการที่เปิดอ่าน/พิมพ์ในช่วงเวลาที่เลือกด้านบน) — {groupBy === 'individual' ? 'กดที่แถวเพื่อดูรายละเอียดรายบุคคล' : 'กดที่ทีมเพื่อดูสมาชิกในทีม'}
         {data && (
-          <span> · ตอนนี้มี <span className="font-semibold text-amber-600 dark:text-amber-400">{data.totalViewedNoReply}</span> เคสเปิดอ่านค้างไม่ตอบทั้งทีม</span>
+          <span> · ในช่วงเวลานี้มี <span className="font-semibold text-amber-600 dark:text-amber-400">{data.totalViewedNoReply}</span> เคสเปิดอ่านค้างไม่ตอบทั้งทีม</span>
         )}
       </p>
 

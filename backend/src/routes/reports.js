@@ -124,20 +124,24 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
 // content this agent typed — see /flagged-messages above) and (2) the
 // "viewed a customer message but didn't reply" audit trail (MessageView —
 // see schema.prisma and messages.js POST /:conversationId, which deletes an
-// agent's own MessageView rows the moment they DO reply). A MessageView row
-// still existing means that agent opened the chat, saw an unanswered customer
-// message, and has not sent a reply in that conversation since — it's a live
-// signal, not a historical log, so unlike flagged messages it isn't bounded
-// by from/to.
+// agent's own MessageView rows the moment they DO reply). Both are bounded by
+// the same from/to range as the rest of this report, filtered on
+// MessageView.viewedAt (when the agent opened it) — note a row only exists
+// at all while still unanswered (it's deleted the moment that agent replies,
+// see messages.js), so this reads as "still-unresolved items that were first
+// opened during this date range," not a full historical log of every view
+// that ever happened.
 
 // GET /api/reports/agent-conduct?from=&to= — overview, one row per agent.
 router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
   const { from, to } = req.query;
   const flaggedWhere = { flagged: true, senderId: { not: null } };
+  const viewWhere = {};
   if (from || to) {
     flaggedWhere.createdAt = {};
-    if (from) flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`);
-    if (to) flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`);
+    viewWhere.viewedAt = {};
+    if (from) { flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`); viewWhere.viewedAt.gte = new Date(`${from}T00:00:00.000`); }
+    if (to) { flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`); viewWhere.viewedAt.lte = new Date(`${to}T23:59:59.999`); }
   }
 
   const [agents, flaggedGroups, viewGroups] = await Promise.all([
@@ -148,7 +152,7 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
       select: { id: true, name: true, email: true, role: true, categoryId: true, category: { select: { id: true, name: true } } },
     }),
     prisma.message.groupBy({ by: ['senderId', 'flagSeverity'], where: flaggedWhere, _count: { _all: true } }),
-    prisma.messageView.groupBy({ by: ['agentId'], _count: { _all: true } }),
+    prisma.messageView.groupBy({ by: ['agentId'], where: viewWhere, _count: { _all: true } }),
   ]);
 
   const flaggedByAgent = {}; // agentId -> { total, severe, minor }
@@ -191,10 +195,12 @@ router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
   const { from, to } = req.query;
 
   const flaggedWhere = { flagged: true, senderId: agentId };
+  const viewWhere = { agentId };
   if (from || to) {
     flaggedWhere.createdAt = {};
-    if (from) flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`);
-    if (to) flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`);
+    viewWhere.viewedAt = {};
+    if (from) { flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`); viewWhere.viewedAt.gte = new Date(`${from}T00:00:00.000`); }
+    if (to) { flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`); viewWhere.viewedAt.lte = new Date(`${to}T23:59:59.999`); }
   }
 
   const [agent, flaggedMessages, viewedNoReply] = await Promise.all([
@@ -209,7 +215,7 @@ router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
       take: 200,
     }),
     prisma.messageView.findMany({
-      where: { agentId },
+      where: viewWhere,
       select: {
         id: true, viewedAt: true,
         message: {
