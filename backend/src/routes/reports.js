@@ -41,7 +41,7 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
         },
       },
       orderBy: { createdAt: 'desc' },
-      take: 300,
+      take: 1000,
     }),
     prisma.message.count({ where: baseWhere }),
     prisma.message.count({ where: { ...baseWhere, flagSeverity: 'severe' } }),

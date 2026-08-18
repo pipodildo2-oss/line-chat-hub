@@ -45,6 +45,56 @@ const SEVERITY_BADGE = {
 };
 const SEVERITY_LABEL = { severe: 'รุนแรง', minor: 'เล็กน้อย' };
 
+// Client-side pagination — both tables on this page already fetch their full
+// (capped) result set in one request, so slicing on the frontend avoids a
+// second round-trip per page flip. Shared between the flagged-messages table
+// and the unanswered-chats table rather than duplicated.
+const PAGE_SIZE_OPTIONS = [10, 100, 1000];
+
+function Pagination({ page, setPage, pageSize, setPageSize, total }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total === 0) return null;
+  const startRow = (page - 1) * pageSize + 1;
+  const endRow = Math.min(page * pageSize, total);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 dark:border-slate-800">
+      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
+        <span>แถวต่อหน้า</span>
+        {PAGE_SIZE_OPTIONS.map(size => (
+          <button
+            key={size}
+            type="button"
+            onClick={() => { setPageSize(size); setPage(1); }}
+            className={`px-2 py-1 rounded-full border transition-colors ${pageSize === size ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+          >
+            {size}
+          </button>
+        ))}
+        <span className="ml-1">แสดง {startRow}–{endRow} จาก {total}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+        <button
+          type="button"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          className="px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-gray-400 dark:hover:border-slate-500 transition-colors"
+        >
+          ‹ ก่อนหน้า
+        </button>
+        <span>หน้า {page} / {totalPages}</span>
+        <button
+          type="button"
+          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          disabled={page >= totalPages}
+          className="px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-gray-400 dark:hover:border-slate-500 transition-colors"
+        >
+          ถัดไป ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Business rule: an agent should always send the last message in any
 // conversation. This section is a live worklist (not a historical report) of
 // every open/pending chat that currently breaks that rule — the customer's
@@ -65,6 +115,8 @@ function UnansweredSection({ channels, agents }) {
   // chats on a paused channel aren't the urgent kind (see channels.js/schema.prisma
   // for the soft-disable flag). "ทั้งหมด" is still one select away if needed.
   const [channelActive, setChannelActive] = useState('true');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const lastReloadRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -75,6 +127,12 @@ function UnansweredSection({ channels, agents }) {
     const { data } = await axios.get('/api/reports/unanswered', { params });
     setData(data);
   }, [channelIds, agentId, channelActive]);
+
+  // Any filter change invalidates the current page (e.g. page 3 might not
+  // exist anymore under a narrower filter) — same reset-on-filter-change
+  // pattern as every other filtered table in this app.
+  useEffect(() => { setPage(1); }, [channelIds, agentId, channelActive]);
+  const pagedConversations = data ? data.conversations.slice((page - 1) * pageSize, page * pageSize) : [];
 
   useEffect(() => { load(); }, [load]);
 
@@ -199,7 +257,7 @@ function UnansweredSection({ channels, agents }) {
               </tr>
             </thead>
             <tbody>
-              {data.conversations.map(c => (
+              {pagedConversations.map(c => (
                 <tr key={c.id} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 align-top">
                   <td className="px-4 py-2.5 text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
                     {formatDistanceToNow(new Date(c.waitingSince), { locale: th, addSuffix: false })}
@@ -229,6 +287,9 @@ function UnansweredSection({ channels, agents }) {
               ))}
             </tbody>
           </table>
+        )}
+        {data && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={data.conversations.length} />
         )}
       </div>
     </div>
@@ -687,6 +748,8 @@ function AuditReport() {
   const [[from, to], setDateRange] = useState(PRESETS[2].range());
   const [severity, setSeverity] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   function pickPreset(p) {
     setPreset(p.key);
@@ -711,6 +774,10 @@ function AuditReport() {
     axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
     axios.get('/api/channels').then(r => setChannels(r.data)).catch(() => {});
   }, []);
+  // Any filter change invalidates the current page — reset back to page 1
+  // rather than risk landing on an empty page under a narrower filter.
+  useEffect(() => { setPage(1); }, [from, to, severity, agentId]);
+  const pagedMessages = data ? data.messages.slice((page - 1) * pageSize, page * pageSize) : [];
 
   // Live-append when a new message gets flagged elsewhere in the app, so the
   // report doesn't feel stale while an admin is sitting on this page. Only
@@ -849,7 +916,7 @@ function AuditReport() {
               </tr>
             </thead>
             <tbody>
-              {data.messages.map(m => (
+              {pagedMessages.map(m => (
                 <tr key={m.id} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 align-top">
                   <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
                     {format(new Date(m.createdAt), 'd MMM yy HH:mm', { locale: th })}
@@ -891,6 +958,9 @@ function AuditReport() {
               ))}
             </tbody>
           </table>
+        )}
+        {data.messages.length > 0 && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={data.messages.length} />
         )}
       </div>
 
