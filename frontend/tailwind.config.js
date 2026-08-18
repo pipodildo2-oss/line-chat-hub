@@ -4,6 +4,11 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        // Brand wordmark font — Poppins, closest Google Font match to the
+        // "Aurora" logo wordmark supplied for the sidebar title.
+        brand: ['Poppins', 'sans-serif'],
+      },
       colors: {
         aurora: {
           midnight: '#070B18',

@@ -57,8 +57,8 @@ export default function Sidebar() {
           <MessageCircle size={17} className="text-white" strokeWidth={2.2} />
         </div>
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-slate-100 leading-tight truncate">LINE Chat Hub</p>
-          <p className="text-[11px] text-slate-500 truncate">Multi-channel inbox</p>
+          <p className="font-brand font-semibold text-sm text-slate-100 leading-tight truncate">LINE Chat Hub</p>
+          <p className="text-[11px] text-slate-500 truncate">By BBB888</p>
         </div>
       </div>
 
