@@ -131,6 +131,45 @@ function ImageMessage({ messageId, onImageClick }) {
   );
 }
 
+// Same authenticated-proxy pattern as ImageMessage above — LINE's video
+// content also requires our Channel Access Token to fetch, so it's pulled
+// through the backend and played from a blob URL rather than linked directly.
+function VideoMessage({ messageId }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let objectUrl;
+    let cancelled = false;
+    setSrc(null);
+    setFailed(false);
+    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
+      .then(res => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [messageId]);
+
+  if (failed) return <p className="text-sm text-gray-400">[Video] โหลดวิดีโอไม่สำเร็จ</p>;
+  if (!src) {
+    return (
+      <div className="w-56 h-40 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse flex items-center justify-center text-xs text-gray-400 dark:text-slate-500">
+        กำลังโหลดวิดีโอ...
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <video src={src} controls preload="metadata" className="max-w-[280px] max-h-[280px] rounded-lg bg-black" />
+  );
+}
+
 // Full-screen in-app image viewer — used for customer-sent images, agent-sent
 // images, and the not-yet-sent pending attachment, so clicking any of them
 // stays in the current tab instead of opening a new browser tab.
@@ -273,6 +312,26 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
           {stickerUrl ? <img src={stickerUrl} alt="sticker" className="w-24 h-24 object-contain" /> : <p className="text-sm text-gray-400">[Sticker]</p>}
+          <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
+            {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
+            {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+          </p>
+          <ViewerTags msg={msg} isAdmin={isAdmin} />
+        </div>
+      </div>
+    );
+  }
+
+  // Customer-sent video (agents can only attach images from the composer, so
+  // there's no "agent-sent video" case to handle here unlike the image
+  // branches above). Needs a lineMessageId to fetch through LINE's content
+  // API — every incoming message has one, so this should always be present.
+  if (msg.type === 'video' && msg.lineMessageId) {
+    return (
+      <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
+        <div className="max-w-xs lg:max-w-md">
+          <VideoMessage messageId={msg.lineMessageId} />
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
