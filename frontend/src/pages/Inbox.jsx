@@ -1253,82 +1253,92 @@ export default function Inbox() {
                 </div>
               )}
 
-              <div className="px-4 py-3 flex items-center gap-2">
-                <button
-                  onClick={() => setShowQrPicker(v => !v)}
-                  title="ข้อความลัด"
-                  className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-                >
-                  <Zap size={20} />
-                </button>
-                <button
-                  onClick={getSuggestion}
-                  title="AI suggest reply"
-                  className="inline-flex items-center justify-center w-5 h-5 text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
-                >
-                  <Sparkles size={20} />
-                </button>
-                <label
-                  title="แนบรูปภาพ"
-                  className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-                >
-                  <ImagePlus size={20} />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
+              {/* Toolbar icons live inside the same box as the text field, below
+                  it, rather than to its left — keeps the input full-width and
+                  matches the layout requested (text on top, icons + send
+                  bar underneath). */}
+              <div className="px-4 py-3">
+                <div className="border border-gray-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-aurora-tealDeep transition-shadow">
+                  <textarea
+                    ref={composerRef}
+                    rows={1}
+                    className="w-full bg-transparent text-gray-900 dark:text-slate-100 px-4 pt-2.5 pb-1 text-sm focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 resize-none leading-normal max-h-[120px] overflow-y-auto"
+                    placeholder="พิมพ์ข้อความ... (Shift+Enter เพื่อขึ้นบรรทัดใหม่)"
+                    value={input}
                     onChange={e => {
-                      attachImageFile(e.target.files?.[0]);
-                      e.target.value = '';
+                      setInput(e.target.value);
+                      // Throttled — don't fire a socket event on every keystroke, just
+                      // at most once every 2s while the agent is actively typing.
+                      const now = Date.now();
+                      if (socket && selected && now - lastTypingEmitRef.current > 2000) {
+                        lastTypingEmitRef.current = now;
+                        socket.emit('typing', { conversationId: selected.id, agentName: agent?.name || 'Agent' });
+                      }
+                    }}
+                    onKeyDown={e => {
+                      // Plain Enter sends (matches the old <input> behavior everyone's
+                      // used to); Shift+Enter inserts a line break instead — same
+                      // convention as LINE, WhatsApp, Slack, etc. The old element was a
+                      // single-line <input>, which can never hold a newline at all no
+                      // matter what the key handler does, hence this being a <textarea> now.
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    onPaste={e => {
+                      // A pasted screenshot/image arrives as a clipboard item, not text —
+                      // pull the image file out (if any) and attach it the same way a
+                      // drag-drop or file-picker attachment works. Text pastes (Ctrl+V of
+                      // plain text) fall through untouched.
+                      const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'));
+                      if (item) {
+                        e.preventDefault();
+                        attachImageFile(item.getAsFile());
+                      }
                     }}
                   />
-                </label>
-                <textarea
-                  ref={composerRef}
-                  rows={1}
-                  className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500 resize-none leading-normal max-h-[120px] overflow-y-auto"
-                  placeholder="พิมพ์ข้อความ... (Shift+Enter เพื่อขึ้นบรรทัดใหม่)"
-                  value={input}
-                  onChange={e => {
-                    setInput(e.target.value);
-                    // Throttled — don't fire a socket event on every keystroke, just
-                    // at most once every 2s while the agent is actively typing.
-                    const now = Date.now();
-                    if (socket && selected && now - lastTypingEmitRef.current > 2000) {
-                      lastTypingEmitRef.current = now;
-                      socket.emit('typing', { conversationId: selected.id, agentName: agent?.name || 'Agent' });
-                    }
-                  }}
-                  onKeyDown={e => {
-                    // Plain Enter sends (matches the old <input> behavior everyone's
-                    // used to); Shift+Enter inserts a line break instead — same
-                    // convention as LINE, WhatsApp, Slack, etc. The old element was a
-                    // single-line <input>, which can never hold a newline at all no
-                    // matter what the key handler does, hence this being a <textarea> now.
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  onPaste={e => {
-                    // A pasted screenshot/image arrives as a clipboard item, not text —
-                    // pull the image file out (if any) and attach it the same way a
-                    // drag-drop or file-picker attachment works. Text pastes (Ctrl+V of
-                    // plain text) fall through untouched.
-                    const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'));
-                    if (item) {
-                      e.preventDefault();
-                      attachImageFile(item.getAsFile());
-                    }
-                  }}
-                />
-                <button
-                  onClick={() => handleSend()}
-                  disabled={(!input.trim() && !pendingImage) || sending}
-                  className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-xl px-4 py-2 hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
-                >
-                  <Send size={18} />
-                </button>
+                  <div className="flex items-center justify-between px-3 pb-2 pt-0.5">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setShowQrPicker(v => !v)}
+                        title="ข้อความลัด"
+                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                      >
+                        <Zap size={19} />
+                      </button>
+                      <button
+                        onClick={getSuggestion}
+                        title="AI suggest reply"
+                        className="inline-flex items-center justify-center w-5 h-5 text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
+                      >
+                        <Sparkles size={19} />
+                      </button>
+                      <label
+                        title="แนบรูปภาพ"
+                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                      >
+                        <ImagePlus size={19} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => {
+                            attachImageFile(e.target.files?.[0]);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => handleSend()}
+                      disabled={(!input.trim() && !pendingImage) || sending}
+                      className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-full w-8 h-8 flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
+                    >
+                      <Send size={15} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             )}
