@@ -948,6 +948,16 @@ export default function Settings() {
   const [editingChannelCategoryId, setEditingChannelCategoryId] = useState(null);
   const [editingChannelCategoryName, setEditingChannelCategoryName] = useState('');
 
+  // "หมวดหมู่ใหญ่" — one level above the channel categories above, so several
+  // existing categories can be nested under a bigger heading. Exact mirror of
+  // the channel category state, plus each category also carries a `groupId`
+  // (see assignCategoryGroup below) pointing at one of these.
+  const [channelCategoryGroups, setChannelCategoryGroups] = useState([]);
+  const [showAddChannelCategoryGroup, setShowAddChannelCategoryGroup] = useState(false);
+  const [channelCategoryGroupName, setChannelCategoryGroupName] = useState('');
+  const [editingChannelCategoryGroupId, setEditingChannelCategoryGroupId] = useState(null);
+  const [editingChannelCategoryGroupName, setEditingChannelCategoryGroupName] = useState('');
+
   // Team ("หมวดหมู่ทีมงาน") categories — purely organizational grouping for
   // teammates, exact mirror of the channel categories state above.
   const [agentCategories, setAgentCategories] = useState([]);
@@ -961,6 +971,7 @@ export default function Settings() {
     axios.get('/api/agents').then(r => setAgents(r.data));
     axios.get('/api/tags').then(r => setTags(r.data));
     axios.get('/api/channel-categories').then(r => setChannelCategories(r.data));
+    axios.get('/api/channel-category-groups').then(r => setChannelCategoryGroups(r.data));
     axios.get('/api/agent-categories').then(r => setAgentCategories(r.data));
   }, []);
 
@@ -999,6 +1010,110 @@ export default function Settings() {
     await axios.delete(`/api/channel-categories/${id}`);
     setChannelCategories(prev => prev.filter(c => c.id !== id));
     setChannels(prev => prev.map(c => c.categoryId === id ? { ...c, categoryId: null, category: null } : c));
+  }
+
+  async function addChannelCategoryGroup(e) {
+    e.preventDefault();
+    if (!channelCategoryGroupName.trim()) return;
+    setSaving(true); setError('');
+    try {
+      const { data } = await axios.post('/api/channel-category-groups', { name: channelCategoryGroupName.trim() });
+      setChannelCategoryGroups(prev => [...prev, { ...data, _count: { categories: 0 } }]);
+      setChannelCategoryGroupName('');
+      setShowAddChannelCategoryGroup(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSaving(false); }
+  }
+
+  function startEditChannelCategoryGroup(group) {
+    setEditingChannelCategoryGroupId(group.id);
+    setEditingChannelCategoryGroupName(group.name);
+  }
+
+  async function saveChannelCategoryGroupEdit(id) {
+    if (!editingChannelCategoryGroupName.trim()) return;
+    try {
+      const { data } = await axios.patch(`/api/channel-category-groups/${id}`, { name: editingChannelCategoryGroupName.trim() });
+      setChannelCategoryGroups(prev => prev.map(g => g.id === id ? { ...g, name: data.name } : g));
+      setEditingChannelCategoryGroupId(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
+  async function deleteChannelCategoryGroup(id) {
+    if (!confirm('ลบหมวดหมู่ใหญ่นี้? หมวดหมู่ย่อยข้างในจะยังอยู่ครบ แค่ย้ายออกมาเป็นหมวดหมู่ย่อยเดี่ยวๆ')) return;
+    await axios.delete(`/api/channel-category-groups/${id}`);
+    setChannelCategoryGroups(prev => prev.filter(g => g.id !== id));
+    setChannelCategories(prev => prev.map(c => c.groupId === id ? { ...c, groupId: null } : c));
+  }
+
+  // Assigns (or clears, when groupId is '') an existing category's parent group.
+  async function assignCategoryGroup(categoryId, groupId) {
+    try {
+      const { data } = await axios.patch(`/api/channel-categories/${categoryId}`, { groupId: groupId || null });
+      setChannelCategories(prev => prev.map(c => c.id === categoryId ? { ...c, groupId: data.groupId } : c));
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
+  // Renders one channel-category block (name/edit/delete + its channel cards).
+  // Shared between the "grouped under a หมวดหมู่ใหญ่" and "ungrouped" sections
+  // below so the markup only lives in one place.
+  function renderChannelCategoryBlock(cat) {
+    const catChannels = channels.filter(ch => ch.categoryId === cat.id);
+    return (
+      <div key={cat.id}>
+        <div className="flex items-center gap-2 mb-2 group flex-wrap">
+          {editingChannelCategoryId === cat.id ? (
+            <>
+              <input
+                autoFocus
+                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                value={editingChannelCategoryName}
+                onChange={e => setEditingChannelCategoryName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveChannelCategoryEdit(cat.id)}
+              />
+              <button onClick={() => saveChannelCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
+              <button onClick={() => setEditingChannelCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
+              <span className="text-[10px] text-slate-500">{catChannels.length} ไลน์</span>
+              <button onClick={() => startEditChannelCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
+              <button onClick={() => deleteChannelCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+              {channelCategoryGroups.length > 0 && (
+                <select
+                  className="text-[11px] bg-slate-800 border border-slate-700 text-slate-400 rounded-md px-1.5 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-aurora-teal"
+                  value={cat.groupId || ''}
+                  onChange={e => assignCategoryGroup(cat.id, e.target.value)}
+                  title="ใส่ในหมวดหมู่ใหญ่"
+                >
+                  <option value="">ไม่มีหมวดหมู่ใหญ่</option>
+                  {channelCategoryGroups.map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              )}
+            </>
+          )}
+        </div>
+        {catChannels.length > 0 ? (
+          <div className="flex flex-wrap gap-4">
+            {catChannels.map(ch => (
+              <div key={ch.id} className="w-64 flex-shrink-0">
+                <ChannelListCard channel={ch} onManage={() => setManageChannelId(ch.id)} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-600">ยังไม่มีไลน์ในหมวดหมู่นี้ — ไปที่ Manage ของไลน์แล้วเลือกหมวดหมู่นี้</p>
+        )}
+      </div>
+    );
   }
 
   async function addChannel(e) {
@@ -1156,15 +1271,37 @@ export default function Settings() {
           />
         ) : (
           <div className="space-y-6 max-w-6xl">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ไลน์ OA</p>
-              <button
-                onClick={() => setShowAddChannelCategory(v => !v)}
-                className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
-              >
-                <Plus size={12} /> เพิ่มหมวดหมู่
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowAddChannelCategoryGroup(v => !v)}
+                  className="text-xs text-violet-300 font-medium flex items-center gap-1 hover:brightness-110"
+                >
+                  <Plus size={12} /> เพิ่มหมวดหมู่ใหญ่
+                </button>
+                <button
+                  onClick={() => setShowAddChannelCategory(v => !v)}
+                  className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
+                >
+                  <Plus size={12} /> เพิ่มหมวดหมู่
+                </button>
+              </div>
             </div>
+
+            {showAddChannelCategoryGroup && (
+              <form onSubmit={addChannelCategoryGroup} className="flex items-center gap-2 max-w-md">
+                <input
+                  autoFocus
+                  className={inputCls}
+                  placeholder="ชื่อหมวดหมู่ใหญ่ เช่น ทีมขายทั้งหมด"
+                  value={channelCategoryGroupName}
+                  onChange={e => setChannelCategoryGroupName(e.target.value)}
+                />
+                <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
+                <button type="button" onClick={() => { setShowAddChannelCategoryGroup(false); setChannelCategoryGroupName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+              </form>
+            )}
 
             {showAddChannelCategory && (
               <form onSubmit={addChannelCategory} className="flex items-center gap-2 max-w-md">
@@ -1195,47 +1332,50 @@ export default function Settings() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-6">
-                {channelCategories.map(cat => {
-                  const catChannels = channels.filter(ch => ch.categoryId === cat.id);
+              <div className="space-y-8">
+                {channelCategoryGroups.map(group => {
+                  const groupCats = channelCategories.filter(c => c.groupId === group.id);
                   return (
-                    <div key={cat.id}>
-                      <div className="flex items-center gap-2 mb-2 group">
-                        {editingChannelCategoryId === cat.id ? (
+                    <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                      <div className="flex items-center gap-2 mb-4 group/g">
+                        {editingChannelCategoryGroupId === group.id ? (
                           <>
                             <input
                               autoFocus
                               className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
-                              value={editingChannelCategoryName}
-                              onChange={e => setEditingChannelCategoryName(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && saveChannelCategoryEdit(cat.id)}
+                              value={editingChannelCategoryGroupName}
+                              onChange={e => setEditingChannelCategoryGroupName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && saveChannelCategoryGroupEdit(group.id)}
                             />
-                            <button onClick={() => saveChannelCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
-                            <button onClick={() => setEditingChannelCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                            <button onClick={() => saveChannelCategoryGroupEdit(group.id)} className="text-aurora-teal"><Check size={14} /></button>
+                            <button onClick={() => setEditingChannelCategoryGroupId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
                           </>
                         ) : (
                           <>
-                            <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
-                            <span className="text-[10px] text-slate-500">{catChannels.length} ไลน์</span>
-                            <button onClick={() => startEditChannelCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
-                            <button onClick={() => deleteChannelCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+                            <p className="text-sm font-bold text-white uppercase tracking-wide">{group.name}</p>
+                            <span className="text-[10px] text-slate-500">{groupCats.length} หมวดหมู่ย่อย</span>
+                            <button onClick={() => startEditChannelCategoryGroup(group)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover/g:opacity-100 transition-opacity"><Pencil size={12} /></button>
+                            <button onClick={() => deleteChannelCategoryGroup(group.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover/g:opacity-100 transition-opacity"><X size={13} /></button>
                           </>
                         )}
                       </div>
-                      {catChannels.length > 0 ? (
-                        <div className="flex flex-wrap gap-4">
-                          {catChannels.map(ch => (
-                            <div key={ch.id} className="w-64 flex-shrink-0">
-                              <ChannelListCard channel={ch} onManage={() => setManageChannelId(ch.id)} />
-                            </div>
-                          ))}
+                      {groupCats.length > 0 ? (
+                        <div className="space-y-6">
+                          {groupCats.map(cat => renderChannelCategoryBlock(cat))}
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-600">ยังไม่มีไลน์ในหมวดหมู่นี้ — ไปที่ Manage ของไลน์แล้วเลือกหมวดหมู่นี้</p>
+                        <p className="text-xs text-slate-600">ยังไม่มีหมวดหมู่ย่อยในหมวดหมู่ใหญ่นี้ — เลือกหมวดหมู่ใหญ่นี้จากหมวดหมู่ย่อยด้านล่าง</p>
                       )}
                     </div>
                   );
                 })}
+
+                <div className="space-y-6">
+                  {channelCategoryGroups.length > 0 && channelCategories.some(c => !c.groupId) && (
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ย่อยที่ยังไม่ได้จัดเข้าหมวดหมู่ใหญ่</p>
+                  )}
+                  {channelCategories.filter(c => !c.groupId).map(cat => renderChannelCategoryBlock(cat))}
+                </div>
 
                 <div>
                   <p className="text-sm font-semibold text-slate-200 mb-2">ยังไม่มีหมวดหมู่</p>

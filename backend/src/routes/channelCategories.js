@@ -23,6 +23,7 @@ router.get('/', auth, async (req, res) => {
   res.json(categories);
 });
 
+
 // POST /api/channel-categories — admin only
 router.post('/', auth, requireAdmin, async (req, res) => {
   try {
@@ -36,14 +37,20 @@ router.post('/', auth, requireAdmin, async (req, res) => {
   }
 });
 
-// PATCH /api/channel-categories/:id — admin only
+// PATCH /api/channel-categories/:id — admin only. Accepts `name` and/or `groupId`
+// (the ChannelCategoryGroup this "หมวดหมู่ย่อย" is nested under — pass null to
+// ungroup it back to the flat "ยังไม่มีหมวดหมู่ใหญ่" section). Either field is
+// optional so the frontend can send just a rename or just a group re-assignment.
 router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const { name } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+    const { name, groupId } = req.body;
+    if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name required' });
+    const data = {};
+    if (name !== undefined) data.name = name.trim();
+    if (groupId !== undefined) data.groupId = groupId || null;
     const category = await prisma.channelCategory.update({
       where: { id: req.params.id },
-      data: { name: name.trim() },
+      data,
     });
     res.json(category);
   } catch (err) {

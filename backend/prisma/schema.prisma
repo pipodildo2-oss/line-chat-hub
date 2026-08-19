@@ -72,11 +72,29 @@ model LineChannel {
 // name. Shown as horizontal rows on the channel management page. A channel
 // belongs to at most one category (or none — shown in an "uncategorized" row).
 // Deleting a category doesn't delete its channels (onDelete: SetNull above).
+// Optionally nested one level deeper under a ChannelCategoryGroup ("หมวดหมู่ใหญ่") —
+// see below.
 model ChannelCategory {
   id        String        @id @default(cuid())
   name      String        @unique
   createdAt DateTime      @default(now())
   channels  LineChannel[]
+  groupId   String?
+  group     ChannelCategoryGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+}
+
+// "หมวดหมู่ใหญ่" — an umbrella grouping one level above ChannelCategory ("หมวดหมู่ย่อย"),
+// so several existing categories can be nested under one bigger heading on the
+// channels page. Same purely-organizational, admin-typed-a-name pattern as
+// ChannelCategory itself. Deleting a group doesn't delete its categories, just
+// ungroups them (onDelete: SetNull above).
+model ChannelCategoryGroup {
+  id         String             @id @default(cuid())
+  name       String             @unique
+  createdAt  DateTime           @default(now())
+  categories ChannelCategory[]
 }
 
 // "หมวดหมู่" — a free-form group an admin creates by typing a name (e.g. "ทักทายลูกค้า",

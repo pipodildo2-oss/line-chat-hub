@@ -15,6 +15,7 @@ const agentRoutes = require('./routes/agents');
 const tagRoutes = require('./routes/tags');
 const quickReplyRoutes = require('./routes/quickReplies');
 const channelCategoryRoutes = require('./routes/channelCategories');
+const channelCategoryGroupRoutes = require('./routes/channelCategoryGroups');
 const agentCategoryRoutes = require('./routes/agentCategories');
 const reportRoutes = require('./routes/reports');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
@@ -82,6 +83,7 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/quick-replies', quickReplyRoutes);
 app.use('/api/channel-categories', channelCategoryRoutes);
+app.use('/api/channel-category-groups', channelCategoryGroupRoutes);
 app.use('/api/agent-categories', agentCategoryRoutes);
 app.use('/api/reports', reportRoutes);
 
