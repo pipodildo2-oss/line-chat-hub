@@ -359,11 +359,29 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
 function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
   const { t } = useLanguage();
   const [showChannelPicker, setShowChannelPicker] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const channelLabel = filter.channelIds.length === 0
     ? 'ทุก OA'
     : filter.channelIds.length === 1
       ? channels.find(c => c.id === filter.channelIds[0])?.name || 'เลือก 1 ช่องทาง'
       : `เลือก ${filter.channelIds.length} ช่องทาง`;
+
+  // Nest channels under their category's parent "หมวดหมู่ใหญ่" group (if any) —
+  // a channel with no category, or whose category has no group, stays in the
+  // flat list below instead. Grouped channels start collapsed (expandedGroups)
+  // so a long OA list doesn't overwhelm the picker by default.
+  const groupMap = new Map();
+  const flatChannels = [];
+  channels.forEach(c => {
+    const group = c.category?.group;
+    if (group) {
+      if (!groupMap.has(group.id)) groupMap.set(group.id, { id: group.id, name: group.name, channels: [] });
+      groupMap.get(group.id).channels.push(c);
+    } else {
+      flatChannels.push(c);
+    }
+  });
+  const channelGroups = Array.from(groupMap.values());
   return (
     <div className="absolute top-full left-3 right-3 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-20 p-3 space-y-3">
       <div>
@@ -418,7 +436,58 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
               />
               ทั้งหมด
             </label>
-            {channels.map(c => (
+            {channelGroups.map(group => {
+              const ids = group.channels.map(c => c.id);
+              const allSelected = ids.length > 0 && ids.every(id => filter.channelIds.includes(id));
+              const expanded = !!expandedGroups[group.id];
+              return (
+                <div key={group.id} className="border-b border-gray-100 dark:border-slate-600 pb-0.5 mb-0.5 last:border-0 last:mb-0 last:pb-0">
+                  <div className="flex items-center gap-0.5">
+                    <label className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200 font-medium flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        className="accent-aurora-teal flex-shrink-0"
+                        checked={allSelected}
+                        onChange={() => setFilter(f => ({
+                          ...f,
+                          channelIds: allSelected
+                            ? f.channelIds.filter(id => !ids.includes(id))
+                            : [...new Set([...f.channelIds, ...ids])],
+                        }))}
+                      />
+                      <span className="truncate">{group.name}</span>
+                      <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal flex-shrink-0">({group.channels.length})</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroups(e => ({ ...e, [group.id]: !e[group.id] }))}
+                      className="text-gray-400 dark:text-slate-500 px-1.5 py-1 flex-shrink-0"
+                    >
+                      {expanded ? '▲' : '▼'}
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="pl-4 space-y-0.5">
+                      {group.channels.map(c => (
+                        <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            className="accent-aurora-teal"
+                            checked={filter.channelIds.includes(c.id)}
+                            onChange={() => setFilter(f => ({
+                              ...f,
+                              channelIds: f.channelIds.includes(c.id) ? f.channelIds.filter(x => x !== c.id) : [...f.channelIds, c.id],
+                            }))}
+                          />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {flatChannels.map(c => (
               <label key={c.id} className="flex items-center gap-2 text-xs px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
                 <input
                   type="checkbox"

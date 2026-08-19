@@ -17,7 +17,9 @@ router.get('/', auth, async (req, res) => {
     orderBy: { createdAt: 'asc' },
     include: {
       _count: { select: { conversations: true } },
-      category: { select: { id: true, name: true } },
+      // groupId/group included so the Inbox channel filter can nest channels
+      // under their category's parent "หมวดหมู่ใหญ่" group without a separate call.
+      category: { select: { id: true, name: true, groupId: true, group: { select: { id: true, name: true } } } },
     },
   });
   res.json(channels);
