@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -598,6 +598,42 @@ const QR_KIND_TABS = [
   { key: 'promotion', label: 'โปรโมชั่น' },
 ];
 
+// Small curated set rather than a full picker library/dependency — covers
+// the common cases for a customer-service chat (reactions, hands, status
+// marks) without pulling in an emoji-data package just for this.
+const EMOJI_LIST = [
+  '😀', '😁', '😊', '🙂', '😉', '😍', '🥰', '😘', '😎', '🤔',
+  '😅', '😢', '😭', '😡', '😱', '🙏', '👍', '👎', '👏', '🙌',
+  '💪', '🤝', '❤️', '💛', '💚', '💙', '💜', '🔥', '✨', '🎉',
+  '🎁', '✅', '❌', '⚠️', '⏰', '💰', '📦', '🚚', '💳', '📱',
+];
+
+// Simple static grid — no fetch/state beyond what the parent already tracks.
+// Stays open after each pick (onPick doesn't call onClose) so an agent can
+// drop in several emoji in a row without reopening it each time.
+function EmojiPicker({ onPick, onClose }) {
+  return (
+    <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-xl z-20 overflow-hidden">
+      <div className="px-3 py-2 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-200">อิโมจิ</p>
+        <button onClick={onClose}><X size={14} className="text-gray-400 dark:text-slate-500" /></button>
+      </div>
+      <div className="grid grid-cols-8 gap-0.5 p-2 max-h-48 overflow-y-auto">
+        {EMOJI_LIST.map(e => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => onPick(e)}
+            className="text-lg hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg w-7 h-7 flex items-center justify-center transition-colors"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Picker for the quick-reply/canned-message feature. Agents pick a "ประเภท"
 // (ตอบกลับ / โปรโมชั่น) first, then see the matching messages — categories are
 // just an admin-side organizing label shown as a small tag per item here.
@@ -698,6 +734,7 @@ export default function Inbox() {
   const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null); // src of the image currently open in the in-app viewer
   const [typingMap, setTypingMap] = useState({}); // { [conversationId]: agentName } — who else is currently typing a reply
   const typingTimeoutsRef = useRef({});
@@ -720,6 +757,22 @@ export default function Inbox() {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
+
+  // Inserts at the cursor (not just appended to the end) so picking an emoji
+  // mid-sentence lands where you'd expect, then puts the cursor right after
+  // it and keeps focus on the composer so typing can continue immediately.
+  function insertEmoji(emoji) {
+    const el = composerRef.current;
+    if (!el) { setInput(prev => prev + emoji); return; }
+    const start = el.selectionStart ?? input.length;
+    const end = el.selectionEnd ?? input.length;
+    setInput(input.slice(0, start) + emoji + input.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + emoji.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   useEffect(() => {
     setEditingName(false);
@@ -1300,6 +1353,19 @@ export default function Inbox() {
                   />
                   <div className="flex items-center justify-between px-3 pb-2 pt-0.5">
                     <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker(v => !v)}
+                          title="อิโมจิ"
+                          className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                        >
+                          <Smile size={19} />
+                        </button>
+                        {showEmojiPicker && (
+                          <EmojiPicker onPick={insertEmoji} onClose={() => setShowEmojiPicker(false)} />
+                        )}
+                      </div>
                       <button
                         onClick={() => setShowQrPicker(v => !v)}
                         title="ข้อความลัด"
