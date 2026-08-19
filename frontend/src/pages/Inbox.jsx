@@ -703,10 +703,23 @@ export default function Inbox() {
   const typingTimeoutsRef = useRef({});
   const lastTypingEmitRef = useRef(0);
   const bottomRef = useRef(null);
+  const composerRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
   }, [showDetail]);
+
+  // Composer is a <textarea> (was a single-line <input>, which can't hold a
+  // line break at all — that's why Shift+Enter did nothing before) that
+  // grows with its content up to a cap, then scrolls. Recomputed on every
+  // `input` change, which also covers the reset back to one line right
+  // after sending (input gets cleared to '').
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [input]);
 
   useEffect(() => {
     setEditingName(false);
@@ -1270,9 +1283,11 @@ export default function Inbox() {
                     }}
                   />
                 </label>
-                <input
-                  className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
-                  placeholder="พิมพ์ข้อความ..."
+                <textarea
+                  ref={composerRef}
+                  rows={1}
+                  className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500 resize-none leading-normal max-h-[120px] overflow-y-auto"
+                  placeholder="พิมพ์ข้อความ... (Shift+Enter เพื่อขึ้นบรรทัดใหม่)"
                   value={input}
                   onChange={e => {
                     setInput(e.target.value);
@@ -1284,7 +1299,17 @@ export default function Inbox() {
                       socket.emit('typing', { conversationId: selected.id, agentName: agent?.name || 'Agent' });
                     }
                   }}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                  onKeyDown={e => {
+                    // Plain Enter sends (matches the old <input> behavior everyone's
+                    // used to); Shift+Enter inserts a line break instead — same
+                    // convention as LINE, WhatsApp, Slack, etc. The old element was a
+                    // single-line <input>, which can never hold a newline at all no
+                    // matter what the key handler does, hence this being a <textarea> now.
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   onPaste={e => {
                     // A pasted screenshot/image arrives as a clipboard item, not text —
                     // pull the image file out (if any) and attach it the same way a
