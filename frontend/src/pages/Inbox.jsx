@@ -822,7 +822,19 @@ export default function Inbox() {
         setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
       }
     });
-    socket.on('conversation_updated', (conv) => {
+    socket.on('conversation_updated', (rawConv) => {
+      // The backend emits the newest message as `lastMessage` (singular) on
+      // this event, but ConversationItem's preview text reads
+      // `conv.messages[0]` — the shape GET /api/conversations returns
+      // (`messages: { take: 1 }`). Without normalizing here, a live update
+      // never touches `messages` at all, so the list preview silently keeps
+      // showing whatever was last loaded via REST (blank for a
+      // conversation not yet in the local list, or the previous message for
+      // one that is) until something else happens to trigger a full
+      // refetch, like switching filter tabs. Other 'conversation_updated'
+      // emits not tied to a new message (block/unblock, tag/assign changes)
+      // don't include lastMessage, so this leaves those untouched.
+      const conv = rawConv.lastMessage ? { ...rawConv, messages: [rawConv.lastMessage] } : rawConv;
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === conv.id);
         if (idx === -1) return [conv, ...prev];
