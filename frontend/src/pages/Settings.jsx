@@ -806,7 +806,7 @@ function QuickRepliesSettings({ isAdmin, channels }) {
                 ))}
                 {channels.length === 0 && <p className="text-xs text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = แสดงกับทุกไลน์</p>
+              <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = ยังไม่แสดงกับไลน์ไหนเลย (ต้องเลือกอย่างน้อย 1 ไลน์ก่อนถึงจะขึ้น)</p>
             </div>
             <div className="flex gap-2">
               <button type="submit" disabled={savingCategory} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>

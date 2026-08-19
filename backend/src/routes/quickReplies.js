@@ -34,7 +34,9 @@ router.get('/categories', auth, async (req, res) => {
 
 // POST /api/quick-replies/categories — admin only
 // channelIds is optional: which LINE OAs this category (and its quick replies)
-// should show up for. Empty/omitted = unrestricted, shows for every OA.
+// should show up for. Empty/omitted = shows for NO channel yet — a freshly
+// created category stays hidden from every Inbox picker until at least one
+// channel is explicitly selected for it (see GET / above).
 router.post('/categories', auth, requireAdmin, async (req, res) => {
   try {
     const { name, channelIds } = req.body;
@@ -95,18 +97,19 @@ router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
 // ---------- Quick Replies ----------
 
 // GET /api/quick-replies?categoryId=...&kind=...&channelId=...
-// channelId filters to categories that are either unrestricted (no channels linked)
-// or explicitly include that channel — used by the Inbox picker so agents only see
-// quick replies relevant to the LINE OA of the conversation they're replying in.
+// channelId filters to categories that explicitly include that channel — used
+// by the Inbox picker so agents only see quick replies relevant to the LINE
+// OA of the conversation they're replying in. A category with NO channels
+// selected yet is hidden everywhere (not shown on every OA) until an admin
+// explicitly picks at least one channel for it in Settings — see
+// CATEGORY_INCLUDE / POST/PATCH /categories below for where that's set.
 router.get('/', auth, async (req, res) => {
   const { categoryId, kind, channelId } = req.query;
   const where = {};
   if (categoryId) where.categoryId = categoryId;
   if (kind) where.kind = kind;
   if (channelId) {
-    where.category = {
-      OR: [{ channels: { none: {} } }, { channels: { some: { id: channelId } } }],
-    };
+    where.category = { channels: { some: { id: channelId } } };
   }
   const quickReplies = await prisma.quickReply.findMany({
     where,
