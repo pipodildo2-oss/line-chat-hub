@@ -23,11 +23,11 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
-    const { name, email, password, role = 'agent' } = req.body;
+    const { name, email, password, role = 'agent', categoryId } = req.body;
     const hashed = await bcrypt.hash(password, 10);
     const agent = await prisma.agent.create({
-      data: { name, email, password: hashed, role },
-      select: { id: true, name: true, email: true, role: true },
+      data: { name, email, password: hashed, role, categoryId: categoryId || null },
+      select: { id: true, name: true, email: true, role: true, categoryId: true, category: { select: { id: true, name: true } } },
     });
     res.status(201).json(agent);
   } catch (err) {

@@ -936,7 +936,7 @@ export default function Settings() {
   const [showAgentPassword, setShowAgentPassword] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
   const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
-  const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent' });
+  const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent', categoryId: '' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1147,7 +1147,7 @@ export default function Settings() {
     try {
       const { data } = await axios.post('/api/agents', agentForm);
       setAgents(prev => [...prev, { ...data, channelIds: [] }]);
-      setAgentForm({ name: '', email: '', password: '', role: 'agent' });
+      setAgentForm({ name: '', email: '', password: '', role: 'agent', categoryId: '' });
       setShowAddAgent(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -1482,6 +1482,12 @@ export default function Settings() {
                 <option value="agent">Agent</option>
                 <option value="admin">Admin</option>
               </select>
+              <select className={inputCls} value={agentForm.categoryId} onChange={e => setAgentForm(f => ({ ...f, categoryId: e.target.value }))}>
+                <option value="">ยังไม่มีทีม</option>
+                {agentCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
               <div className="flex gap-2">
                 <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
                 <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-slate-400 px-4 py-2">ยกเลิก</button>
@@ -1496,7 +1502,7 @@ export default function Settings() {
                 onClick={() => setShowAddAgentCategory(v => !v)}
                 className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
               >
-                <Plus size={12} /> เพิ่มหมวดหมู่
+                <Plus size={12} /> เพิ่มทีม
               </button>
             </div>
           )}
@@ -1506,7 +1512,7 @@ export default function Settings() {
               <input
                 autoFocus
                 className={inputCls}
-                placeholder="ชื่อหมวดหมู่ เช่น ทีมขาย A"
+                placeholder="ชื่อทีม เช่น ทีมขาย A"
                 value={agentCategoryName}
                 onChange={e => setAgentCategoryName(e.target.value)}
               />
