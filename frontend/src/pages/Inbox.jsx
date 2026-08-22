@@ -810,6 +810,12 @@ export default function Inbox() {
   const lastTypingEmitRef = useRef(0);
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
+  // Set from the `msg` deep-link param (e.g. the Report page's "ไปที่แชท" on a
+  // flagged message) — the message to scroll to + highlight once its
+  // conversation's history has loaded. flashMessageId drives the highlight
+  // itself, cleared a couple seconds after it lands (see the two effects below).
+  const [jumpToMessageId, setJumpToMessageId] = useState(null);
+  const [flashMessageId, setFlashMessageId] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
@@ -886,14 +892,18 @@ export default function Inbox() {
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
   // Deep link from elsewhere in the app (e.g. the Report page's "ไปที่แชท"
-  // button) — /inbox?conv=<id>. The target conversation might not be in the
-  // currently filtered list (e.g. it's closed, or a different channel), so
-  // fetch it directly rather than relying on the list containing it.
+  // button) — /inbox?conv=<id>[&msg=<id>]. The target conversation might not
+  // be in the currently filtered list (e.g. it's closed, or a different
+  // channel), so fetch it directly rather than relying on the list containing
+  // it. `msg`, when present, is picked up by the scroll/highlight effect below
+  // once that conversation's messages have actually loaded.
   useEffect(() => {
     const convId = searchParams.get('conv');
+    const msgId = searchParams.get('msg');
     if (!convId) return;
     axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
-    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); return next; }, { replace: true });
+    if (msgId) setJumpToMessageId(msgId);
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); next.delete('msg'); return next; }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -946,9 +956,36 @@ export default function Inbox() {
     return () => socket?.emit('leave', selected.id);
   }, [selected?.id, socket]);
 
+  // Normally just scrolls to the newest message on any change to `messages`.
+  // When a jump target is pending (see the `msg` deep-link effect above),
+  // scroll to that specific message + flash-highlight it instead, and skip the
+  // bottom-scroll for this update. If the target isn't in the loaded messages
+  // yet, wait for the next `messages` update rather than falling back to
+  // bottom-scroll immediately — unless messages did load and it's genuinely
+  // not in there, in which case give up on the jump instead of getting stuck.
   useEffect(() => {
+    if (jumpToMessageId) {
+      const found = messages.some(m => m.id === jumpToMessageId);
+      if (found) {
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-message-id="${jumpToMessageId}"]`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        setFlashMessageId(jumpToMessageId);
+        setJumpToMessageId(null);
+        return;
+      }
+      if (messages.length > 0) setJumpToMessageId(null);
+      else return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, jumpToMessageId]);
+
+  useEffect(() => {
+    if (!flashMessageId) return;
+    const timer = setTimeout(() => setFlashMessageId(null), 2200);
+    return () => clearTimeout(timer);
+  }, [flashMessageId]);
 
   useEffect(() => {
     if (!socket) return;
@@ -1306,7 +1343,12 @@ export default function Inbox() {
                 return (
                   <div key={msg.id}>
                     {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
-                    <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
+                    <div
+                      data-message-id={msg.id}
+                      className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''}`}
+                    >
+                      <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
+                    </div>
                   </div>
                 );
               })}

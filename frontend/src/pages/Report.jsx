@@ -322,9 +322,9 @@ function AgentConductModal({ agentId, from, to, onClose, navigate }) {
     return () => { cancelled = true; };
   }, [agentId, from, to]);
 
-  function goTo(conversationId) {
+  function goTo(conversationId, messageId) {
     onClose();
-    navigate(`/inbox?conv=${conversationId}`);
+    navigate(messageId ? `/inbox?conv=${conversationId}&msg=${messageId}` : `/inbox?conv=${conversationId}`);
   }
 
   return (
@@ -363,7 +363,7 @@ function AgentConductModal({ agentId, from, to, onClose, navigate }) {
                     {data.viewedNoReply.map(v => (
                       <button
                         key={v.id}
-                        onClick={() => goTo(v.message.conversation.id)}
+                        onClick={() => goTo(v.message.conversation.id, v.message.id)}
                         className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-lg border border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
                       >
                         <div className="min-w-0 flex-1">
@@ -397,7 +397,7 @@ function AgentConductModal({ agentId, from, to, onClose, navigate }) {
                     {data.flaggedMessages.map(m => (
                       <button
                         key={m.id}
-                        onClick={() => m.conversation && goTo(m.conversation.id)}
+                        onClick={() => m.conversation && goTo(m.conversation.id, m.id)}
                         className="w-full flex items-start gap-3 text-left px-3 py-2 rounded-lg border border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
                       >
                         <span className={`mt-0.5 text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${SEVERITY_BADGE[m.flagSeverity] || 'bg-gray-100 text-gray-500'}`}>
@@ -947,7 +947,7 @@ function AuditReport() {
                   <td className="px-4 py-2.5">
                     {m.conversation && (
                       <button
-                        onClick={() => navigate(`/inbox?conv=${m.conversation.id}`)}
+                        onClick={() => navigate(`/inbox?conv=${m.conversation.id}&msg=${m.id}`)}
                         title="ไปที่แชท"
                         className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal"
                       >
