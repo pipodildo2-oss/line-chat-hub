@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2 } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -16,6 +16,10 @@ const AVATAR_SIZE_CLASSES = {
   10: 'w-10 h-10',
   16: 'w-16 h-16',
 };
+
+// How many messages GET /api/messages/:conversationId returns per page —
+// matches the backend's own default `limit` there.
+const MESSAGE_PAGE_LIMIT = 50;
 
 function Avatar({ name, pictureUrl, size = 10 }) {
   const sizeCls = AVATAR_SIZE_CLASSES[size] || AVATAR_SIZE_CLASSES[10];
@@ -810,12 +814,26 @@ export default function Inbox() {
   const lastTypingEmitRef = useRef(0);
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
-  // Set from the `msg` deep-link param (e.g. the Report page's "ไปที่แชท" on a
-  // flagged message) — the message to scroll to + highlight once its
-  // conversation's history has loaded. flashMessageId drives the highlight
-  // itself, cleared a couple seconds after it lands (see the two effects below).
-  const [jumpToMessageId, setJumpToMessageId] = useState(null);
+  const messageListRef = useRef(null);
+  // Pending "scroll to + highlight this message" target from the `msg`
+  // deep-link param (e.g. the Report page's "ไปที่แชท" on a flagged message).
+  // A ref rather than state — it's read/cleared synchronously inside the
+  // scroll-management effect below and doesn't need to trigger its own
+  // re-render; flashMessageId (below) is the piece that actually drives a
+  // visual update once the target is found.
+  const jumpTargetRef = useRef(null);
   const [flashMessageId, setFlashMessageId] = useState(null);
+  // Older-message pagination (GET /api/messages/:conversationId?cursor=...).
+  // hasMoreMessagesRef/messagesRef are refs (not state) so loadOlderMessages
+  // and the scroll listener always read the latest value without having to be
+  // recreated on every message list change — same "ref mirror" pattern as
+  // typingTimeoutsRef/lastTypingEmitRef below.
+  const hasMoreMessagesRef = useRef(true);
+  const messagesRef = useRef([]);
+  const selectedRef = useRef(null); // lets loadOlderMessages notice it should discard a stale response after a conversation switch mid-fetch
+  const loadingOlderRef = useRef(false);
+  const isPrependingRef = useRef(false); // true for exactly one render right after loadOlderMessages prepends, so the bottom-scroll effect skips that update
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
@@ -902,7 +920,7 @@ export default function Inbox() {
     const msgId = searchParams.get('msg');
     if (!convId) return;
     axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
-    if (msgId) setJumpToMessageId(msgId);
+    if (msgId) jumpTargetRef.current = msgId;
     setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); next.delete('msg'); return next; }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -937,7 +955,9 @@ export default function Inbox() {
 
   useEffect(() => {
     if (!selected) return;
-    axios.get(`/api/messages/${selected.id}`).then(r => {
+    hasMoreMessagesRef.current = true;
+    axios.get(`/api/messages/${selected.id}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
+      if (r.data.length < MESSAGE_PAGE_LIMIT) hasMoreMessagesRef.current = false;
       setMessages(r.data);
       // That GET call also marks this conversation's unread messages as read
       // on the server (for agents), but the unread badge count in the
@@ -956,30 +976,102 @@ export default function Inbox() {
     return () => socket?.emit('leave', selected.id);
   }, [selected?.id, socket]);
 
-  // Normally just scrolls to the newest message on any change to `messages`.
-  // When a jump target is pending (see the `msg` deep-link effect above),
-  // scroll to that specific message + flash-highlight it instead, and skip the
-  // bottom-scroll for this update. If the target isn't in the loaded messages
-  // yet, wait for the next `messages` update rather than falling back to
-  // bottom-scroll immediately — unless messages did load and it's genuinely
-  // not in there, in which case give up on the jump instead of getting stuck.
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // Fetches the next-older page (cursor = the oldest message currently
+  // loaded) and prepends it. Used both by the "scroll to top" listener below
+  // and by the jump-to-message search in the scroll-management effect further
+  // down. Guarded by loadingOlderRef (not React state) so a scroll event and
+  // an in-flight jump-search never fire overlapping requests. Restores the
+  // scroll position itself right after prepending — without this the view
+  // would jump around as the container's content grows above the fold — and
+  // sets isPrependingRef so the scroll-management effect knows to leave that
+  // restored position alone instead of also trying to scroll to the bottom.
+  const loadOlderMessages = useCallback(async () => {
+    if (!selected || loadingOlderRef.current || !hasMoreMessagesRef.current || messagesRef.current.length === 0) return;
+    const conversationId = selected.id;
+    loadingOlderRef.current = true;
+    // Captured BEFORE the loading spinner renders (not after the fetch
+    // resolves) — otherwise the spinner's own height would throw off the
+    // scrollHeight-delta math below by a few pixels once it disappears again.
+    const container = messageListRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+    setLoadingOlder(true);
+    try {
+      const cursor = messagesRef.current[0].createdAt;
+      const { data } = await axios.get(`/api/messages/${conversationId}`, { params: { cursor, limit: MESSAGE_PAGE_LIMIT } });
+      // The agent may have switched to a different conversation while this was
+      // in flight — prepending onto whatever's now loaded would splice one
+      // chat's history into another's, so bail out silently instead.
+      if (selectedRef.current?.id !== conversationId) return;
+      if (data.length < MESSAGE_PAGE_LIMIT) hasMoreMessagesRef.current = false;
+      if (data.length > 0) {
+        isPrependingRef.current = true;
+        setMessages(prev => [...data, ...prev]);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (container) container.scrollTop = container.scrollHeight - prevScrollHeight + prevScrollTop;
+          });
+        });
+      }
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [selected]);
+
+  // Infinite-scroll-up: load older history once the user scrolls near the top
+  // of the message list, independent of the jump-to-message feature below.
   useEffect(() => {
-    if (jumpToMessageId) {
-      const found = messages.some(m => m.id === jumpToMessageId);
+    const container = messageListRef.current;
+    if (!container) return;
+    function handleScroll() {
+      if (container.scrollTop < 100) loadOlderMessages();
+    }
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [selected?.id, loadOlderMessages]);
+
+  // Normally just scrolls to the newest message on any change to `messages`.
+  // When a jump target is pending (see the `msg` deep-link effect above and
+  // jumpTargetRef), it takes priority: if the target message is already
+  // loaded, scroll to it + flash-highlight it; if not, keep paging in older
+  // history (loadOlderMessages) and re-check on the next `messages` update,
+  // until it's found or this conversation's entire history is exhausted (at
+  // which point it gives up rather than getting stuck, and falls through to
+  // the normal bottom-scroll). isPrependingRef is checked separately below —
+  // it means this update came from loadOlderMessages itself (either the
+  // infinite-scroll-up path or a jump-search step that just gave up), which
+  // already restored the right scroll position, so skip bottom-scrolling.
+  useEffect(() => {
+    if (jumpTargetRef.current) {
+      const targetId = jumpTargetRef.current;
+      const found = messages.some(m => m.id === targetId);
       if (found) {
         requestAnimationFrame(() => {
-          document.querySelector(`[data-message-id="${jumpToMessageId}"]`)
+          document.querySelector(`[data-message-id="${targetId}"]`)
             ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
-        setFlashMessageId(jumpToMessageId);
-        setJumpToMessageId(null);
+        setFlashMessageId(targetId);
+        jumpTargetRef.current = null;
+        isPrependingRef.current = false;
         return;
       }
-      if (messages.length > 0) setJumpToMessageId(null);
-      else return;
+      if (messages.length === 0) return; // first page for this conversation hasn't arrived yet
+      if (hasMoreMessagesRef.current) {
+        loadOlderMessages();
+        return;
+      }
+      jumpTargetRef.current = null; // exhausted this conversation's history — give up, fall through below
+    }
+    if (isPrependingRef.current) {
+      isPrependingRef.current = false;
+      return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, jumpToMessageId]);
+  }, [messages, loadOlderMessages]);
 
   useEffect(() => {
     if (!flashMessageId) return;
@@ -1321,6 +1413,7 @@ export default function Inbox() {
             {/* Messages — also acts as an image drop zone; dropping a file attaches
                 it to the composer below rather than sending it immediately. */}
             <div
+              ref={messageListRef}
               className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-midnight relative"
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
@@ -1335,6 +1428,11 @@ export default function Inbox() {
                   <p className="text-sm font-medium text-aurora-tealDeep dark:text-aurora-teal bg-white dark:bg-slate-900 px-4 py-2 rounded-lg shadow">
                     วางรูปที่นี่เพื่อแนบ
                   </p>
+                </div>
+              )}
+              {loadingOlder && (
+                <div className="flex justify-center py-2">
+                  <Loader2 size={16} className="animate-spin text-gray-400 dark:text-slate-500" />
                 </div>
               )}
               {messages.map((msg, i) => {
