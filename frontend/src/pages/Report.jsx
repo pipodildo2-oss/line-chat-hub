@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -1438,14 +1438,27 @@ function CustomerFollowupPage() {
   // "at least," so they force this back to 'gte' when clicked (see below) —
   // only the custom control below lets the operator itself be chosen.
   const [daysInactiveOp, setDaysInactiveOp] = useState('gte');
-  // "กำหนดเอง" — a number + unit + operator that gets converted to days and
-  // written into minDaysInactive/daysInactiveOp on apply (see CUSTOM_DAYS_UNITS
-  // and CUSTOM_DAYS_OPS above). Kept as separate draft state rather than
-  // driving the applied filters directly on every keystroke, so a half-typed
-  // number doesn't refetch the list on every digit.
+  // Optional second condition, combined with the first via AND/OR (e.g.
+  // "มากกว่า 5 วัน AND น้อยกว่า 10 วัน" for a range, or "น้อยกว่า 3 OR มากกว่า
+  // 30" to catch either end while excluding the middle). Empty
+  // minDaysInactive2 means no second condition is applied.
+  const [minDaysInactive2, setMinDaysInactive2] = useState('');
+  const [daysInactiveOp2, setDaysInactiveOp2] = useState('eq');
+  const [daysInactiveCombine, setDaysInactiveCombine] = useState('and');
+  // "กำหนดเอง" — a number + unit + operator (x2, if the second condition is
+  // shown) that gets converted to days and written into the applied
+  // minDaysInactive*/daysInactiveOp*/daysInactiveCombine state on apply (see
+  // CUSTOM_DAYS_UNITS and CUSTOM_DAYS_OPS above). Kept as separate draft state
+  // rather than driving the applied filters directly on every keystroke, so a
+  // half-typed number doesn't refetch the list on every digit.
   const [customDaysValue, setCustomDaysValue] = useState('');
   const [customDaysUnit, setCustomDaysUnit] = useState('day');
   const [customDaysOp, setCustomDaysOp] = useState('eq');
+  const [showSecondDaysCondition, setShowSecondDaysCondition] = useState(false);
+  const [customDaysValue2, setCustomDaysValue2] = useState('');
+  const [customDaysUnit2, setCustomDaysUnit2] = useState('day');
+  const [customDaysOp2, setCustomDaysOp2] = useState('eq');
+  const [customDaysCombine, setCustomDaysCombine] = useState('and');
   const [sort, setSort] = useState('oldest');
 
   function applyCustomDaysInactive() {
@@ -1454,6 +1467,21 @@ function CustomerFollowupPage() {
     const unit = CUSTOM_DAYS_UNITS.find(u => u.value === customDaysUnit) || CUSTOM_DAYS_UNITS[0];
     setMinDaysInactive(String(Math.round(n * unit.days)));
     setDaysInactiveOp(customDaysOp);
+
+    const n2 = Number(customDaysValue2);
+    if (showSecondDaysCondition && customDaysValue2 && Number.isFinite(n2) && n2 > 0) {
+      const unit2 = CUSTOM_DAYS_UNITS.find(u => u.value === customDaysUnit2) || CUSTOM_DAYS_UNITS[0];
+      setMinDaysInactive2(String(Math.round(n2 * unit2.days)));
+      setDaysInactiveOp2(customDaysOp2);
+      setDaysInactiveCombine(customDaysCombine);
+    } else {
+      setMinDaysInactive2('');
+    }
+  }
+
+  function clearCustomDaysInactive() {
+    setMinDaysInactive(''); setDaysInactiveOp('gte'); setMinDaysInactive2('');
+    setCustomDaysValue(''); setCustomDaysValue2(''); setShowSecondDaysCondition(false);
   }
 
   const [selectionMode, setSelectionMode] = useState('filter'); // 'filter' | 'manual'
@@ -1474,9 +1502,14 @@ function CustomerFollowupPage() {
     if (tagIds.length > 0) p.tagIds = tagIds.join(',');
     if (blocked) p.blocked = blocked;
     if (lifecycleStage) p.lifecycleStage = lifecycleStage;
-    if (minDaysInactive) { p.minDaysInactive = minDaysInactive; p.daysInactiveOp = daysInactiveOp; }
+    if (minDaysInactive) {
+      p.minDaysInactive = minDaysInactive; p.daysInactiveOp = daysInactiveOp;
+      if (minDaysInactive2) {
+        p.minDaysInactive2 = minDaysInactive2; p.daysInactiveOp2 = daysInactiveOp2; p.daysInactiveCombine = daysInactiveCombine;
+      }
+    }
     return p;
-  }, [search, status, channelIds, agentId, agentCategoryId, tagIds, blocked, lifecycleStage, minDaysInactive, daysInactiveOp]);
+  }, [search, status, channelIds, agentId, agentCategoryId, tagIds, blocked, lifecycleStage, minDaysInactive, daysInactiveOp, minDaysInactive2, daysInactiveOp2, daysInactiveCombine]);
 
   const loadSummary = useCallback(() => {
     axios.get('/api/conversations/summary').then(r => setSummary(r.data)).catch(() => {});
@@ -1528,7 +1561,7 @@ function CustomerFollowupPage() {
   // "custom" by definition — this only needs to disambiguate the 'gte' case,
   // where a custom value happening to match a preset's day count should still
   // highlight as that preset, not as a separate custom filter.
-  const isCustomDaysActive = minDaysInactive !== '' && (daysInactiveOp !== 'gte' || !DAY_PRESETS.some(d => String(d) === minDaysInactive));
+  const isCustomDaysActive = minDaysInactive !== '' && (minDaysInactive2 !== '' || daysInactiveOp !== 'gte' || !DAY_PRESETS.some(d => String(d) === minDaysInactive));
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -1549,8 +1582,12 @@ function CustomerFollowupPage() {
             label={`หายไป ${d}+ วัน`}
             value={summary?.[`inactive${d}`]}
             cls="border-orange-500/25 bg-orange-500/10 text-orange-300"
-            onClick={() => { setMinDaysInactive(v => v === String(d) && daysInactiveOp === 'gte' ? '' : String(d)); setDaysInactiveOp('gte'); setCustomDaysValue(''); }}
-            active={minDaysInactive === String(d) && daysInactiveOp === 'gte'}
+            onClick={() => {
+              if (minDaysInactive === String(d) && daysInactiveOp === 'gte' && !minDaysInactive2) { setMinDaysInactive(''); }
+              else { setMinDaysInactive(String(d)); setDaysInactiveOp('gte'); setMinDaysInactive2(''); }
+              setCustomDaysValue(''); setShowSecondDaysCondition(false);
+            }}
+            active={minDaysInactive === String(d) && daysInactiveOp === 'gte' && !minDaysInactive2}
           />
         ))}
         <FollowupStatCard label="ไม่เคยมีข้อความเลย" value={summary?.neverMessaged} cls="border-rose-500/25 bg-rose-500/10 text-rose-300" />
@@ -1608,18 +1645,22 @@ function CustomerFollowupPage() {
             {tab.label}
           </button>
         ))}
-        <div className="flex items-center gap-1 ml-1">
+        <div className="flex flex-wrap items-center gap-1 ml-1">
           <span className="text-xs text-gray-500 dark:text-slate-400 mr-1">หายไปตั้งแต่:</span>
           {DAY_PRESETS.map(d => (
             <button
               key={d}
-              onClick={() => { setMinDaysInactive(v => v === String(d) && daysInactiveOp === 'gte' ? '' : String(d)); setDaysInactiveOp('gte'); setCustomDaysValue(''); }}
-              className={`text-xs px-2 py-1 rounded-full border transition-colors ${minDaysInactive === String(d) && daysInactiveOp === 'gte' ? 'bg-aurora-teal text-white border-transparent' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+              onClick={() => {
+                if (minDaysInactive === String(d) && daysInactiveOp === 'gte' && !minDaysInactive2) { setMinDaysInactive(''); }
+                else { setMinDaysInactive(String(d)); setDaysInactiveOp('gte'); setMinDaysInactive2(''); }
+                setCustomDaysValue(''); setShowSecondDaysCondition(false);
+              }}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${minDaysInactive === String(d) && daysInactiveOp === 'gte' && !minDaysInactive2 ? 'bg-aurora-teal text-white border-transparent' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               {d}+ วัน
             </button>
           ))}
-          <div className={`flex items-center gap-1 border rounded-full pl-2 pr-1 py-0.5 ml-1 ${isCustomDaysActive ? 'border-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700'}`}>
+          <div className={`flex flex-wrap items-center gap-1 border rounded-full pl-2 pr-1 py-0.5 ml-1 ${isCustomDaysActive ? 'border-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700'}`}>
             <select
               className="text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none"
               value={customDaysOp}
@@ -1643,6 +1684,61 @@ function CustomerFollowupPage() {
             >
               {CUSTOM_DAYS_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
             </select>
+
+            {showSecondDaysCondition ? (
+              <>
+                <select
+                  className="text-xs bg-transparent text-aurora-tealDeep dark:text-aurora-teal font-medium focus:outline-none"
+                  value={customDaysCombine}
+                  onChange={e => setCustomDaysCombine(e.target.value)}
+                  title="วิธีรวมเงื่อนไขทั้งสอง"
+                >
+                  <option value="and">และ (AND)</option>
+                  <option value="or">หรือ (OR)</option>
+                </select>
+                <select
+                  className="text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none"
+                  value={customDaysOp2}
+                  onChange={e => setCustomDaysOp2(e.target.value)}
+                >
+                  {CUSTOM_DAYS_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-12 text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+                  placeholder="จำนวน"
+                  value={customDaysValue2}
+                  onChange={e => setCustomDaysValue2(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applyCustomDaysInactive(); }}
+                />
+                <select
+                  className="text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none"
+                  value={customDaysUnit2}
+                  onChange={e => setCustomDaysUnit2(e.target.value)}
+                >
+                  {CUSTOM_DAYS_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setShowSecondDaysCondition(false); setCustomDaysValue2(''); }}
+                  title="ลบเงื่อนไขที่ 2"
+                  className="text-gray-400 dark:text-slate-500 hover:text-rose-500"
+                >
+                  <X size={12} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSecondDaysCondition(true)}
+                title="เพิ่มเงื่อนไข AND/OR"
+                className="flex items-center text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal px-0.5"
+              >
+                <Plus size={12} />
+              </button>
+            )}
+
             <button
               type="button"
               onClick={applyCustomDaysInactive}
@@ -1654,7 +1750,7 @@ function CustomerFollowupPage() {
           {minDaysInactive && (
             <button
               type="button"
-              onClick={() => { setMinDaysInactive(''); setDaysInactiveOp('gte'); setCustomDaysValue(''); }}
+              onClick={clearCustomDaysInactive}
               className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 px-1"
               title="ล้างตัวกรองหายไปกี่วัน"
             >

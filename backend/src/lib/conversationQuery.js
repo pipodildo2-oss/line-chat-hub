@@ -13,6 +13,31 @@ async function getVisibleChannelIds(agent) {
   return rows.map(r => r.channelId);
 }
 
+// Builds one comparison against a conversation's daysInactive() (see below —
+// a floored day count, matching exactly what the frontend displays, e.g.
+// "10 วัน") for the given N and operator:
+//   gte (default, used by every preset chip/summary card — "N+" labels) —
+//     daysInactive >= N. A customer who never got a single message is at
+//     least as "gone quiet" as any finite N, so null counts as a match too.
+//   lt  — daysInactive < N. Never-messaged customers are excluded (their
+//     inactivity isn't "less than" anything finite).
+//   gt  — daysInactive > N. Never-messaged customers are included (their
+//     inactivity is greater than any finite N).
+//   eq  — daysInactive === N exactly. Never-messaged customers are
+//     excluded (they don't have a finite day count to equal N).
+// cutoffAtLeastN = the boundary where daysInactive >= N; cutoffAtLeastNPlus1
+// = the boundary where daysInactive >= N+1 (equivalently daysInactive > N).
+function daysInactiveCondition(nRaw, op) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const n = Number(nRaw);
+  const cutoffAtLeastN = new Date(Date.now() - n * msPerDay);
+  const cutoffAtLeastNPlus1 = new Date(Date.now() - (n + 1) * msPerDay);
+  if (op === 'lt') return { lastMessageAt: { gt: cutoffAtLeastN } };
+  if (op === 'gt') return { OR: [{ lastMessageAt: { lte: cutoffAtLeastNPlus1 } }, { lastMessageAt: null }] };
+  if (op === 'eq') return { lastMessageAt: { lte: cutoffAtLeastN, gt: cutoffAtLeastNPlus1 } };
+  return { OR: [{ lastMessageAt: { lte: cutoffAtLeastN } }, { lastMessageAt: null }] }; // gte
+}
+
 // Builds the shared Prisma `where` clause for filtering conversations —
 // one filter vocabulary reused by the Customers directory (GET
 // /api/conversations), the "ตามลูกค้า" follow-up report (same endpoint, wider
@@ -30,6 +55,7 @@ function buildConversationWhere(query, meAgentId) {
   const {
     status, channelId, channelIds, agentId, search, tagId, tagIds, lifecycleStage,
     blocked, agentCategoryId, unansweredMinutes, minDaysInactive, daysInactiveOp,
+    minDaysInactive2, daysInactiveOp2, daysInactiveCombine,
   } = query;
 
   let selectedChannelIds = [];
@@ -72,45 +98,18 @@ function buildConversationWhere(query, meAgentId) {
     });
   }
   if (minDaysInactive) {
-    // daysInactiveOp picks how `minDaysInactive` (N) is compared against each
-    // conversation's daysInactive() (see below — a floored day count, matching
-    // exactly what the frontend displays, e.g. "10 วัน"):
-    //   gte (default, used by every preset chip/summary card — "N+" labels) —
-    //     daysInactive >= N. A customer who never got a single message is at
-    //     least as "gone quiet" as any finite N, so null counts as a match too.
-    //   lt  — daysInactive < N. Never-messaged customers are excluded (their
-    //     inactivity isn't "less than" anything finite).
-    //   gt  — daysInactive > N. Never-messaged customers are included (their
-    //     inactivity is greater than any finite N).
-    //   eq  — daysInactive === N exactly. Never-messaged customers are
-    //     excluded (they don't have a finite day count to equal N).
-    // cutoffAtLeastN = the boundary where daysInactive >= N; cutoffAtLeastNPlus1
-    // = the boundary where daysInactive >= N+1 (equivalently daysInactive > N).
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const n = Number(minDaysInactive);
-    const cutoffAtLeastN = new Date(Date.now() - n * msPerDay);
-    const cutoffAtLeastNPlus1 = new Date(Date.now() - (n + 1) * msPerDay);
-    const op = daysInactiveOp || 'gte';
-    if (op === 'lt') {
-      andConds.push({ lastMessageAt: { gt: cutoffAtLeastN } });
-    } else if (op === 'gt') {
-      andConds.push({
-        OR: [
-          { lastMessageAt: { lte: cutoffAtLeastNPlus1 } },
-          { lastMessageAt: null },
-        ],
-      });
-    } else if (op === 'eq') {
-      andConds.push({
-        lastMessageAt: { lte: cutoffAtLeastN, gt: cutoffAtLeastNPlus1 },
-      });
+    const cond1 = daysInactiveCondition(minDaysInactive, daysInactiveOp || 'gte');
+    // A second condition (from the follow-up report's "+ เพิ่มเงื่อนไข" toggle)
+    // combined with the first via AND (e.g. "มากกว่า 5 AND น้อยกว่า 10" — a
+    // range) or OR (e.g. "น้อยกว่า 3 OR มากกว่า 30" — new-ish or long-abandoned
+    // customers, excluding the middle). Only ever a flat pair, not a general
+    // condition tree — good enough for "narrow to a range" / "either end,"
+    // which covers what a custom day filter like this actually needs.
+    if (minDaysInactive2) {
+      const cond2 = daysInactiveCondition(minDaysInactive2, daysInactiveOp2 || 'gte');
+      andConds.push(daysInactiveCombine === 'or' ? { OR: [cond1, cond2] } : { AND: [cond1, cond2] });
     } else {
-      andConds.push({
-        OR: [
-          { lastMessageAt: { lte: cutoffAtLeastN } },
-          { lastMessageAt: null },
-        ],
-      });
+      andConds.push(cond1);
     }
   }
   if (andConds.length > 0) where.AND = andConds;
