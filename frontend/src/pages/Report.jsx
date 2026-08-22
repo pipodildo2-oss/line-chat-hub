@@ -1053,6 +1053,16 @@ const FOLLOWUP_SORT_OPTIONS = [
 ];
 
 const DAY_PRESETS = [3, 7, 14, 30, 60];
+// Custom "หายไปตั้งแต่" filter — a plain number plus one of these units, converted
+// to a day count before being sent as minDaysInactive (the backend only ever
+// understands days, see conversationQuery.js). Month/year are calendar
+// approximations (30/365 days), not exact — fine for a "roughly this long" filter.
+const CUSTOM_DAYS_UNITS = [
+  { value: 'day', label: 'วัน', days: 1 },
+  { value: 'week', label: 'อาทิตย์', days: 7 },
+  { value: 'month', label: 'เดือน', days: 30 },
+  { value: 'year', label: 'ปี', days: 365 },
+];
 const FOLLOWUP_LIMIT = 25;
 const MAX_BROADCAST_IMAGES = 3;
 const MAX_BROADCAST_IMAGE_BYTES = 10 * 1024 * 1024; // matches ProfileModal's avatar-upload cap
@@ -1413,7 +1423,20 @@ function CustomerFollowupPage() {
   const [blocked, setBlocked] = useState('');
   const [lifecycleStage, setLifecycleStage] = useState('');
   const [minDaysInactive, setMinDaysInactive] = useState('');
+  // "กำหนดเอง" — a number + unit that gets converted to days and written into
+  // minDaysInactive on apply (see CUSTOM_DAYS_UNITS above). Kept as separate
+  // draft state rather than driving minDaysInactive directly on every
+  // keystroke, so a half-typed number doesn't refetch the list on every digit.
+  const [customDaysValue, setCustomDaysValue] = useState('');
+  const [customDaysUnit, setCustomDaysUnit] = useState('day');
   const [sort, setSort] = useState('oldest');
+
+  function applyCustomDaysInactive() {
+    const n = Number(customDaysValue);
+    if (!customDaysValue || !Number.isFinite(n) || n <= 0) return;
+    const unit = CUSTOM_DAYS_UNITS.find(u => u.value === customDaysUnit) || CUSTOM_DAYS_UNITS[0];
+    setMinDaysInactive(String(Math.round(n * unit.days)));
+  }
 
   const [selectionMode, setSelectionMode] = useState('filter'); // 'filter' | 'manual'
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -1481,6 +1504,11 @@ function CustomerFollowupPage() {
   const targetCount = selectionMode === 'filter' ? total : selectedIds.size;
   const selectCls = 'text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none';
   const totalPages = Math.max(1, Math.ceil(total / FOLLOWUP_LIMIT));
+  // Active filter came from the custom input rather than a fixed-day preset —
+  // drives the custom control's highlight below. (A custom value that happens
+  // to equal a preset, e.g. "1 สัปดาห์" = 7 days, highlights that preset chip
+  // too — same filter value, so no reason to fight that.)
+  const isCustomDaysActive = minDaysInactive !== '' && !DAY_PRESETS.some(d => String(d) === minDaysInactive);
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -1501,7 +1529,7 @@ function CustomerFollowupPage() {
             label={`หายไป ${d}+ วัน`}
             value={summary?.[`inactive${d}`]}
             cls="border-orange-500/25 bg-orange-500/10 text-orange-300"
-            onClick={() => setMinDaysInactive(v => v === String(d) ? '' : String(d))}
+            onClick={() => { setMinDaysInactive(v => v === String(d) ? '' : String(d)); setCustomDaysValue(''); }}
             active={minDaysInactive === String(d)}
           />
         ))}
@@ -1565,12 +1593,47 @@ function CustomerFollowupPage() {
           {DAY_PRESETS.map(d => (
             <button
               key={d}
-              onClick={() => setMinDaysInactive(v => v === String(d) ? '' : String(d))}
+              onClick={() => { setMinDaysInactive(v => v === String(d) ? '' : String(d)); setCustomDaysValue(''); }}
               className={`text-xs px-2 py-1 rounded-full border transition-colors ${minDaysInactive === String(d) ? 'bg-aurora-teal text-white border-transparent' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
               {d} วัน
             </button>
           ))}
+          <div className={`flex items-center gap-1 border rounded-full pl-2 pr-1 py-0.5 ml-1 ${isCustomDaysActive ? 'border-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700'}`}>
+            <input
+              type="number"
+              min="1"
+              className="w-12 text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+              placeholder="กำหนดเอง"
+              value={customDaysValue}
+              onChange={e => setCustomDaysValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') applyCustomDaysInactive(); }}
+            />
+            <select
+              className="text-xs bg-transparent text-gray-700 dark:text-slate-200 focus:outline-none"
+              value={customDaysUnit}
+              onChange={e => setCustomDaysUnit(e.target.value)}
+            >
+              {CUSTOM_DAYS_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={applyCustomDaysInactive}
+              className="text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium px-1.5 py-0.5 rounded-full hover:bg-aurora-teal/10"
+            >
+              กรอง
+            </button>
+          </div>
+          {minDaysInactive && (
+            <button
+              type="button"
+              onClick={() => { setMinDaysInactive(''); setCustomDaysValue(''); }}
+              className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 px-1"
+              title="ล้างตัวกรองหายไปกี่วัน"
+            >
+              ล้าง
+            </button>
+          )}
         </div>
         <span className="text-sm text-gray-500 dark:text-slate-400 ml-auto">
           พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{total}</span> รายการ
