@@ -29,7 +29,7 @@ async function getVisibleChannelIds(agent) {
 function buildConversationWhere(query, meAgentId) {
   const {
     status, channelId, channelIds, agentId, search, tagId, tagIds, lifecycleStage,
-    blocked, agentCategoryId, unansweredMinutes, minDaysInactive,
+    blocked, agentCategoryId, unansweredMinutes, minDaysInactive, daysInactiveOp,
   } = query;
 
   let selectedChannelIds = [];
@@ -72,15 +72,46 @@ function buildConversationWhere(query, meAgentId) {
     });
   }
   if (minDaysInactive) {
-    // A customer who never got a single message is at least as "gone quiet"
-    // as one whose last message is N days old, so null counts as a match too.
-    const cutoff = new Date(Date.now() - Number(minDaysInactive) * 24 * 60 * 60 * 1000);
-    andConds.push({
-      OR: [
-        { lastMessageAt: { lte: cutoff } },
-        { lastMessageAt: null },
-      ],
-    });
+    // daysInactiveOp picks how `minDaysInactive` (N) is compared against each
+    // conversation's daysInactive() (see below — a floored day count, matching
+    // exactly what the frontend displays, e.g. "10 วัน"):
+    //   gte (default, used by every preset chip/summary card — "N+" labels) —
+    //     daysInactive >= N. A customer who never got a single message is at
+    //     least as "gone quiet" as any finite N, so null counts as a match too.
+    //   lt  — daysInactive < N. Never-messaged customers are excluded (their
+    //     inactivity isn't "less than" anything finite).
+    //   gt  — daysInactive > N. Never-messaged customers are included (their
+    //     inactivity is greater than any finite N).
+    //   eq  — daysInactive === N exactly. Never-messaged customers are
+    //     excluded (they don't have a finite day count to equal N).
+    // cutoffAtLeastN = the boundary where daysInactive >= N; cutoffAtLeastNPlus1
+    // = the boundary where daysInactive >= N+1 (equivalently daysInactive > N).
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const n = Number(minDaysInactive);
+    const cutoffAtLeastN = new Date(Date.now() - n * msPerDay);
+    const cutoffAtLeastNPlus1 = new Date(Date.now() - (n + 1) * msPerDay);
+    const op = daysInactiveOp || 'gte';
+    if (op === 'lt') {
+      andConds.push({ lastMessageAt: { gt: cutoffAtLeastN } });
+    } else if (op === 'gt') {
+      andConds.push({
+        OR: [
+          { lastMessageAt: { lte: cutoffAtLeastNPlus1 } },
+          { lastMessageAt: null },
+        ],
+      });
+    } else if (op === 'eq') {
+      andConds.push({
+        lastMessageAt: { lte: cutoffAtLeastN, gt: cutoffAtLeastNPlus1 },
+      });
+    } else {
+      andConds.push({
+        OR: [
+          { lastMessageAt: { lte: cutoffAtLeastN } },
+          { lastMessageAt: null },
+        ],
+      });
+    }
   }
   if (andConds.length > 0) where.AND = andConds;
 
