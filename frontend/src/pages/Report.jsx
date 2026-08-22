@@ -1459,7 +1459,7 @@ function CustomerFollowupPage() {
   const [customDaysUnit2, setCustomDaysUnit2] = useState('day');
   const [customDaysOp2, setCustomDaysOp2] = useState('eq');
   const [customDaysCombine, setCustomDaysCombine] = useState('and');
-  const [sort, setSort] = useState('oldest');
+  const [sort, setSort] = useState('newest');
 
   function applyCustomDaysInactive() {
     const n = Number(customDaysValue);
