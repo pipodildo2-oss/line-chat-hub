@@ -2,21 +2,21 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToAll } = require('../services/socket.service');
+const { getVisibleChannelIds, buildConversationWhere, daysInactive } = require('../lib/conversationQuery');
 
 const prisma = new PrismaClient();
 
 const CONV_INCLUDE = {
   channel: { select: { id: true, name: true, active: true } },
-  agent: { select: { id: true, name: true } },
+  agent: { select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } } },
   tags: { include: { tag: true } },
 };
 
-// Returns the list of channelIds this agent is restricted to, or null if unrestricted (admin or no restriction set).
-async function getVisibleChannelIds(agent) {
-  if (agent.role === 'admin') return null;
-  const rows = await prisma.agentChannel.findMany({ where: { agentId: agent.id }, select: { channelId: true } });
-  if (rows.length === 0) return null;
-  return rows.map(r => r.channelId);
+// Adds the computed daysInactive field to every row in a conversation list —
+// used by the "ตามลูกค้า" follow-up report to sort/label how stale a customer
+// is without the frontend having to redo the date math.
+function withDaysInactive(list) {
+  return list.map(c => ({ ...c, daysInactive: daysInactive(c.lastMessageAt) }));
 }
 
 // Applies the `sort` query param the same way whether the list came from a DB
@@ -39,38 +39,9 @@ function sortConversationsInMemory(list, sort) {
 
 // GET /api/conversations
 router.get('/', auth, async (req, res) => {
-  const {
-    status, channelId, channelIds, agentId, search, tagId, lifecycleStage, blocked,
-    unansweredMinutes, sort = 'newest', page = 1, limit = 30,
-  } = req.query;
+  const { unansweredMinutes, sort = 'newest', page = 1, limit = 30 } = req.query;
 
-  // Support both a single channelId (legacy) and a multi-select channelIds list (comma-separated).
-  let selectedChannelIds = [];
-  if (channelIds) selectedChannelIds = String(channelIds).split(',').filter(Boolean);
-  else if (channelId) selectedChannelIds = [channelId];
-
-  const where = {};
-  if (status) where.status = status;
-  else if (unansweredMinutes) {
-    // Business rule (see reports.js /unanswered): a conversation on "pending"
-    // isn't actionable — nobody's expected to reply while it's on hold. Only
-    // apply this default when the caller hasn't explicitly picked a status
-    // themselves (handled by the `if (status)` branch above taking priority).
-    where.status = { in: ['open', 'closed'] };
-  }
-  if (lifecycleStage) where.lifecycleStage = lifecycleStage;
-  if (selectedChannelIds.length > 0) where.channelId = { in: selectedChannelIds };
-  if (agentId === 'me') where.agentId = req.agent.id;
-  else if (agentId === 'unassigned') where.agentId = null;
-  else if (agentId) where.agentId = agentId;
-  if (tagId) where.tags = { some: { tagId } };
-  if (blocked !== undefined) where.blocked = blocked === 'true';
-  if (search) {
-    where.OR = [
-      { displayName: { contains: search, mode: 'insensitive' } },
-      { lineUserId: { contains: search } },
-    ];
-  }
+  const { where, selectedChannelIds } = buildConversationWhere(req.query, req.agent.id);
 
   const visibleChannelIds = await getVisibleChannelIds(req.agent);
   if (visibleChannelIds) {
@@ -107,22 +78,30 @@ router.get('/', auth, async (req, res) => {
     const filtered = all.filter(c => c.messages[0]?.sender === 'user' && new Date(c.messages[0].createdAt) <= cutoff);
     const sorted = sortConversationsInMemory(filtered, sort);
     const start = (Number(page) - 1) * Number(limit);
-    const conversations = sorted.slice(start, start + Number(limit));
+    const conversations = withDaysInactive(sorted.slice(start, start + Number(limit)));
     return res.json({ conversations, total: filtered.length, page: Number(page), limit: Number(limit) });
   }
+
+  // sort=oldest ("หายไปนานสุดก่อน" on the follow-up report) puts never-messaged
+  // customers first — they're at least as stale as any real timestamp. newest
+  // (default) puts them last, behind every conversation that has activity.
+  let orderBy;
+  if (sort === 'name') orderBy = { displayName: 'asc' };
+  else if (sort === 'oldest') orderBy = { lastMessageAt: { sort: 'asc', nulls: 'first' } };
+  else orderBy = { lastMessageAt: { sort: 'desc', nulls: 'last' } };
 
   const [total, conversations] = await Promise.all([
     prisma.conversation.count({ where }),
     prisma.conversation.findMany({
       where,
       include: includeOpts,
-      orderBy: sort === 'name' ? { displayName: 'asc' } : { lastMessageAt: sort === 'oldest' ? 'asc' : 'desc' },
+      orderBy,
       skip: (page - 1) * limit,
       take: Number(limit),
     }),
   ]);
 
-  res.json({ conversations, total, page: Number(page), limit: Number(limit) });
+  res.json({ conversations: withDaysInactive(conversations), total, page: Number(page), limit: Number(limit) });
 });
 
 // GET /api/conversations/summary — aggregate counts for the Customers directory
@@ -135,7 +114,22 @@ router.get('/summary', auth, async (req, res) => {
   const visibleChannelIds = await getVisibleChannelIds(req.agent);
   const baseWhere = visibleChannelIds ? { channelId: { in: visibleChannelIds } } : {};
 
-  const [total, open, pending, closed, blockedCount, unansweredCandidates] = await Promise.all([
+  // Inactivity buckets for the "ตามลูกค้า" follow-up report's clickable summary
+  // cards — cheap since lastMessageAt is indexed (schema.prisma). Each count is
+  // "at least N days inactive OR never messaged," same rule as minDaysInactive
+  // in conversationQuery.js, so clicking a card and seeing that count match up
+  // with the filtered list underneath it — separate query per bucket rather
+  // than a single groupBy since the buckets overlap (open-ended >=N, not bins).
+  const inactiveDaysCutoff = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const inactiveWhere = (days) => ({
+    ...baseWhere,
+    OR: [{ lastMessageAt: { lte: inactiveDaysCutoff(days) } }, { lastMessageAt: null }],
+  });
+
+  const [
+    total, open, pending, closed, blockedCount, unansweredCandidates,
+    inactive3, inactive7, inactive14, inactive30, inactive60, neverMessaged,
+  ] = await Promise.all([
     prisma.conversation.count({ where: baseWhere }),
     prisma.conversation.count({ where: { ...baseWhere, status: 'open' } }),
     prisma.conversation.count({ where: { ...baseWhere, status: 'pending' } }),
@@ -146,6 +140,12 @@ router.get('/summary', auth, async (req, res) => {
       select: { messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { sender: true, createdAt: true } } },
       take: 3000,
     }),
+    prisma.conversation.count({ where: inactiveWhere(3) }),
+    prisma.conversation.count({ where: inactiveWhere(7) }),
+    prisma.conversation.count({ where: inactiveWhere(14) }),
+    prisma.conversation.count({ where: inactiveWhere(30) }),
+    prisma.conversation.count({ where: inactiveWhere(60) }),
+    prisma.conversation.count({ where: { ...baseWhere, lastMessageAt: null } }),
   ]);
 
   const cutoff = new Date(Date.now() - 10 * 60 * 1000);
@@ -153,7 +153,10 @@ router.get('/summary', auth, async (req, res) => {
     c => c.messages[0]?.sender === 'user' && new Date(c.messages[0].createdAt) <= cutoff
   ).length;
 
-  res.json({ total, open, pending, closed, blocked: blockedCount, unanswered });
+  res.json({
+    total, open, pending, closed, blocked: blockedCount, unanswered,
+    inactive3, inactive7, inactive14, inactive30, inactive60, neverMessaged,
+  });
 });
 
 // GET /api/conversations/:id

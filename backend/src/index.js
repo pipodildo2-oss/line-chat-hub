@@ -18,6 +18,7 @@ const channelCategoryRoutes = require('./routes/channelCategories');
 const channelCategoryGroupRoutes = require('./routes/channelCategoryGroups');
 const agentCategoryRoutes = require('./routes/agentCategories');
 const reportRoutes = require('./routes/reports');
+const broadcastRoutes = require('./routes/broadcasts');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
@@ -70,7 +71,8 @@ app.use(cors());
 app.use('/api/webhooks/line', express.raw({ type: 'application/json' }));
 // Default body limit (100kb) is too small once quick-reply images are base64-encoded
 // into JSON — raised to cover LINE's own 10MB image message cap plus base64 overhead.
-app.use(express.json({ limit: '15mb' }));
+// 30mb (not 15mb) since a broadcast can carry up to 3 attached images in one request.
+app.use(express.json({ limit: '30mb' }));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -86,6 +88,7 @@ app.use('/api/channel-categories', channelCategoryRoutes);
 app.use('/api/channel-category-groups', channelCategoryGroupRoutes);
 app.use('/api/agent-categories', agentCategoryRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/broadcasts', broadcastRoutes);
 
 // Serves agent-attached chat images and quick-reply images saved by
 // imageStorage.saveBase64Image (see backend/src/lib/imageStorage.js). Must be

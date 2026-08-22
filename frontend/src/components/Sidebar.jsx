@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -41,6 +41,7 @@ export default function Sidebar() {
   const reportChildren = [
     { to: '/report/audit', icon: Search, label: 'ตรวจสอบ' },
     { to: '/report/agents', icon: Users, label: 'พนักงาน' },
+    { to: '/report/followup', icon: Clock, label: 'ตามลูกค้า' },
   ];
 
   const linkCls = ({ isActive }) =>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
+import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -1030,10 +1031,698 @@ function AgentConductPage() {
   );
 }
 
+// ---------- "ตามลูกค้า" (customer follow-up + broadcast) ----------
+
+const FOLLOWUP_STATUS_TABS = [
+  { key: '', label: 'ทั้งหมด' },
+  { key: 'open', label: 'เปิด' },
+  { key: 'pending', label: 'รอ' },
+  { key: 'closed', label: 'ปิด' },
+];
+
+const BLOCKED_FILTER_OPTIONS = [
+  { value: '', label: 'บล็อค: ทั้งหมด' },
+  { value: 'false', label: 'ไม่ถูกบล็อค' },
+  { value: 'true', label: 'บล็อคเราอยู่' },
+];
+
+const FOLLOWUP_SORT_OPTIONS = [
+  { value: 'oldest', label: 'หายไปนานสุดก่อน' },
+  { value: 'newest', label: 'ข้อความล่าสุดก่อน' },
+  { value: 'name', label: 'ชื่อ A-Z' },
+];
+
+const DAY_PRESETS = [3, 7, 14, 30, 60];
+const FOLLOWUP_LIMIT = 25;
+const MAX_BROADCAST_IMAGES = 3;
+const MAX_BROADCAST_IMAGE_BYTES = 10 * 1024 * 1024; // matches ProfileModal's avatar-upload cap
+
+function FollowupAvatar({ name, pictureUrl }) {
+  if (pictureUrl) return <img src={pictureUrl} className="w-9 h-9 rounded-full object-cover flex-shrink-0" alt="" />;
+  return (
+    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+      {name?.[0]?.toUpperCase() || '?'}
+    </div>
+  );
+}
+
+function FollowupStatCard({ label, value, cls, onClick, active }) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      onClick={onClick}
+      className={`text-left rounded-xl border px-4 py-2.5 min-w-[110px] transition-colors ${cls} ${onClick ? 'cursor-pointer hover:brightness-125' : ''} ${active ? 'ring-2 ring-offset-0 ring-current' : ''}`}
+    >
+      <p className="text-xl font-bold text-white leading-tight">{value ?? '—'}</p>
+      <p className="text-[11px] font-medium mt-0.5">{label}</p>
+    </Tag>
+  );
+}
+
+function daysInactiveLabel(days) {
+  if (days === null || days === undefined) return { text: 'ไม่เคยมีข้อความ', cls: 'text-rose-600 dark:text-rose-400 font-medium' };
+  if (days >= 30) return { text: `${days} วัน`, cls: 'text-rose-600 dark:text-rose-400 font-semibold' };
+  if (days >= 14) return { text: `${days} วัน`, cls: 'text-amber-600 dark:text-amber-400 font-semibold' };
+  if (days >= 7) return { text: `${days} วัน`, cls: 'text-orange-600 dark:text-orange-400 font-medium' };
+  return { text: `${days} วัน`, cls: 'text-gray-500 dark:text-slate-400' };
+}
+
+// Checkbox-dropdown multi-select — same pattern as UnansweredSection's channel
+// picker above, generalized so it can also drive the tag filter here.
+function MultiCheckDropdown({ label, allLabel, items, selectedIds, onToggle, onClear }) {
+  const [open, setOpen] = useState(false);
+  const count = selectedIds.length;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 text-sm border rounded-lg px-2.5 py-2 focus:outline-none ${count > 0 ? 'border-aurora-teal text-aurora-tealDeep dark:text-aurora-teal bg-aurora-teal/5' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200'}`}
+      >
+        <span>{count === 0 ? allLabel : count === 1 ? (items.find(i => i.id === selectedIds[0])?.name || `เลือก 1 ${label}`) : `เลือก ${count} ${label}`}</span>
+        <span className="text-gray-400 dark:text-slate-500 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-56 border border-gray-200 dark:border-slate-600 rounded-lg p-1.5 space-y-0.5 max-h-56 overflow-y-auto bg-white dark:bg-slate-700 shadow-lg z-30">
+          <label className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200 font-medium border-b border-gray-100 dark:border-slate-600 mb-0.5 pb-1.5">
+            <input type="checkbox" className="accent-aurora-teal" checked={count === 0} onChange={onClear} />
+            {allLabel}
+          </label>
+          {items.map(item => (
+            <label key={item.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer text-gray-700 dark:text-slate-200">
+              <input type="checkbox" className="accent-aurora-teal" checked={selectedIds.includes(item.id)} onChange={() => onToggle(item.id)} />
+              {item.name}
+            </label>
+          ))}
+          {items.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500 px-1.5 py-1">ไม่มีข้อมูล</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SimplePager({ page, setPage, total, limit }) {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  if (total === 0) return null;
+  return (
+    <div className="flex items-center justify-between mt-3">
+      <p className="text-xs text-gray-500 dark:text-slate-400">หน้า {page} จาก {totalPages} ({total} รายการ)</p>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 transition-colors"
+        >
+          <ChevronLeft size={14} /> ก่อนหน้า
+        </button>
+        <button
+          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          disabled={page >= totalPages}
+          className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 transition-colors"
+        >
+          ถัดไป <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Compose + send a broadcast — text + up to 3 images, either to every
+// conversation matching the follow-up page's current filters ("ตามตัวกรอง")
+// or to a hand-picked list ("เลือกเอง"). Mirrors QuickReplyImageUpload's
+// controlled data-URL pattern from Settings.jsx, repeated as a small array.
+function BroadcastComposeModal({ targetCount, mode, filters, conversationIds, onClose, onSent }) {
+  const [message, setMessage] = useState('');
+  const [images, setImages] = useState([]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return setError('กรุณาเลือกไฟล์รูปภาพ');
+    if (file.size > MAX_BROADCAST_IMAGE_BYTES) return setError('ไฟล์รูปภาพต้องมีขนาดไม่เกิน 10MB ต่อรูป');
+    setError('');
+    const reader = new FileReader();
+    reader.onload = () => setImages(prev => [...prev, reader.result]);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSend() {
+    if (!message.trim() && images.length === 0) {
+      setError('ต้องมีข้อความหรือรูปภาพอย่างน้อย 1 อย่าง');
+      return;
+    }
+    setSending(true); setError('');
+    try {
+      const body = { message: message.trim(), images, mode };
+      if (mode === 'manual') body.conversationIds = conversationIds;
+      else body.filters = filters;
+      const { data } = await axios.post('/api/broadcasts', body);
+      onSent(data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || 'ส่ง Broadcast ไม่สำเร็จ');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-5 w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2"><Send size={16} /> ส่งข้อความติดตาม (Broadcast)</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={18} /></button>
+        </div>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+          จะส่งถึงลูกค้า <span className="font-semibold text-gray-900 dark:text-slate-100">{targetCount}</span> คน
+          {mode === 'filter' && ' ตามตัวกรองปัจจุบัน'} — ลูกค้าที่บล็อคเราอยู่หรืออยู่ในช่องทางที่ปิดใช้งานจะถูกข้ามให้อัตโนมัติ
+        </p>
+
+        <textarea
+          className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500 resize-none"
+          rows={4}
+          placeholder="พิมพ์ข้อความติดตามลูกค้า..."
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+        />
+
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          {images.map((img, i) => (
+            <div key={i} className="relative">
+              <img src={img} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+              <button
+                type="button"
+                onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
+                className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+          {images.length < MAX_BROADCAST_IMAGES && (
+            <label className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400 border border-dashed border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:border-aurora-teal hover:text-aurora-teal w-fit transition-colors">
+              <ImagePlus size={15} /> แนบรูป ({images.length}/{MAX_BROADCAST_IMAGES})
+              <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
+            </label>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-rose-500 mt-3">{error}</p>}
+
+        <div className="flex gap-2 mt-5">
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={sending || targetCount === 0}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-50"
+          >
+            {sending && <Loader2 size={14} className="animate-spin" />}
+            ยืนยันส่ง Broadcast ให้ลูกค้า {targetCount} คน
+          </button>
+          <button type="button" onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 px-4 py-2">ยกเลิก</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const BROADCAST_STATUS_LABEL = { sent: 'สำเร็จ', failed: 'ล้มเหลว', skipped_blocked: 'ข้าม (บล็อค)', skipped_channel_inactive: 'ข้าม (ช่องทางปิด)' };
+
+// Detail drill-down for one campaign — who it went to and who replied.
+function BroadcastDetailModal({ campaignId, onClose }) {
+  const [detail, setDetail] = useState(null);
+
+  useEffect(() => {
+    axios.get(`/api/broadcasts/${campaignId}`).then(r => setDetail(r.data)).catch(() => {});
+  }, [campaignId]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-5 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 dark:text-slate-100">รายละเอียด Broadcast</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={18} /></button>
+        </div>
+        {!detail ? (
+          <p className="text-sm text-gray-400 dark:text-slate-500 py-6 text-center">กำลังโหลด...</p>
+        ) : (
+          <div className="overflow-y-auto flex-1 -mx-1 px-1">
+            {detail.message && <p className="text-sm text-gray-700 dark:text-slate-300 mb-3 whitespace-pre-wrap">{detail.message}</p>}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-500">
+                  <th className="py-1.5 pr-3 font-medium">ลูกค้า</th>
+                  <th className="py-1.5 pr-3 font-medium">ช่องทาง</th>
+                  <th className="py-1.5 pr-3 font-medium">สถานะ</th>
+                  <th className="py-1.5 pr-3 font-medium">ตอบกลับ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.recipients.map(r => (
+                  <tr key={r.id} className="border-b border-gray-50 dark:border-slate-800/60">
+                    <td className="py-1.5 pr-3 text-gray-800 dark:text-slate-200">{r.conversation?.displayName || r.conversation?.lineUserId || '—'}</td>
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-slate-400">{r.conversation?.channel?.name}</td>
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-slate-400">{BROADCAST_STATUS_LABEL[r.status] || r.status}</td>
+                    <td className="py-1.5 pr-3">{r.replied ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">ตอบแล้ว</span> : <span className="text-gray-400 dark:text-slate-600">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Paginated history of past campaigns — refreshes when `refreshKey` changes
+// (bumped by the parent right after a new broadcast is created) and
+// live-updates the matching row when its send finishes (broadcast_progress).
+function BroadcastHistorySection({ refreshKey }) {
+  const { socket } = useSocket();
+  const [campaigns, setCampaigns] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [detailId, setDetailId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get('/api/broadcasts', { params: { page, limit: 10 } });
+      setCampaigns(data.campaigns);
+      setTotal(data.total);
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [refreshKey]);
+
+  useEffect(() => {
+    if (!socket) return;
+    function handleProgress(campaign) {
+      setCampaigns(prev => prev.some(c => c.id === campaign.id)
+        ? prev.map(c => c.id === campaign.id ? { ...c, ...campaign, repliedCount: c.repliedCount } : c)
+        : prev);
+    }
+    socket.on('broadcast_progress', handleProgress);
+    return () => socket.off('broadcast_progress', handleProgress);
+  }, [socket]);
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-1">ประวัติการ Broadcast</h2>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">1 ครั้งที่กดส่ง = 1 แคมเปญ ไม่ว่าจะมีข้อความ/รูปกี่ชิ้น — "ตอบกลับ" นับลูกค้า 1 คนต่อ 1 ครั้ง ไม่ว่าจะพิมพ์มากี่ข้อความ</p>
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        {loading && campaigns.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : campaigns.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีการส่ง Broadcast</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-500">
+                <th className="px-4 py-2.5 font-medium">วันที่</th>
+                <th className="px-4 py-2.5 font-medium">ผู้ส่ง</th>
+                <th className="px-4 py-2.5 font-medium">ข้อความ</th>
+                <th className="px-4 py-2.5 font-medium">ส่งถึง</th>
+                <th className="px-4 py-2.5 font-medium">สำเร็จ/ล้มเหลว/ข้าม</th>
+                <th className="px-4 py-2.5 font-medium">ตอบกลับ</th>
+                <th className="px-4 py-2.5 font-medium">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaigns.map(c => (
+                <tr key={c.id} onClick={() => setDetailId(c.id)} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">{format(new Date(c.createdAt), 'd MMM yyyy HH:mm', { locale: th })}</td>
+                  <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300 whitespace-nowrap">{c.createdBy?.name}</td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 max-w-xs">
+                    <p className="line-clamp-1">{c.message || <span className="text-gray-400 dark:text-slate-500 italic">(ไม่มีข้อความ)</span>}</p>
+                    {c.images?.length > 0 && <span className="text-[11px] text-gray-400 dark:text-slate-500">📷 {c.images.length} รูป</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300">{c.totalRecipients}</td>
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                    <span className="text-emerald-600 dark:text-emerald-400">{c.successCount}</span>
+                    {' / '}
+                    <span className="text-rose-500 dark:text-rose-400">{c.failedCount}</span>
+                    {' / '}
+                    <span>{c.skippedCount}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300">{c.repliedCount}</td>
+                  <td className="px-4 py-2.5">
+                    {c.status === 'sending'
+                      ? <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><Loader2 size={12} className="animate-spin" /> กำลังส่ง</span>
+                      : <span className="text-[11px] text-gray-500 dark:text-slate-400">เสร็จสิ้น</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <SimplePager page={page} setPage={setPage} total={total} limit={10} />
+      {detailId && <BroadcastDetailModal campaignId={detailId} onClose={() => setDetailId(null)} />}
+    </div>
+  );
+}
+
+function CustomerFollowupPage() {
+  const navigate = useNavigate();
+  const [summary, setSummary] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  const [channels, setChannels] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [teams, setTeams] = useState([]);
+
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [channelIds, setChannelIds] = useState([]);
+  const [agentId, setAgentId] = useState('');
+  const [agentCategoryId, setAgentCategoryId] = useState('');
+  const [tagIds, setTagIds] = useState([]);
+  const [blocked, setBlocked] = useState('');
+  const [lifecycleStage, setLifecycleStage] = useState('');
+  const [minDaysInactive, setMinDaysInactive] = useState('');
+  const [sort, setSort] = useState('oldest');
+
+  const [selectionMode, setSelectionMode] = useState('filter'); // 'filter' | 'manual'
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [showCompose, setShowCompose] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Shared shape between the list query and the broadcast targeting request
+  // (POST /api/broadcasts, mode: 'filter') — see conversationQuery.js on the
+  // backend, which builds its `where` from these exact same param names.
+  const filterParams = useMemo(() => {
+    const p = {};
+    if (search.trim()) p.search = search.trim();
+    if (status) p.status = status;
+    if (channelIds.length > 0) p.channelIds = channelIds.join(',');
+    if (agentId) p.agentId = agentId;
+    if (agentCategoryId) p.agentCategoryId = agentCategoryId;
+    if (tagIds.length > 0) p.tagIds = tagIds.join(',');
+    if (blocked) p.blocked = blocked;
+    if (lifecycleStage) p.lifecycleStage = lifecycleStage;
+    if (minDaysInactive) p.minDaysInactive = minDaysInactive;
+    return p;
+  }, [search, status, channelIds, agentId, agentCategoryId, tagIds, blocked, lifecycleStage, minDaysInactive]);
+
+  const loadSummary = useCallback(() => {
+    axios.get('/api/conversations/summary').then(r => setSummary(r.data)).catch(() => {});
+  }, []);
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get('/api/conversations', { params: { ...filterParams, page, limit: FOLLOWUP_LIMIT, sort } });
+      setConversations(data.conversations);
+      setTotal(data.total);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterParams, page, sort]);
+
+  useEffect(() => {
+    loadSummary();
+    axios.get('/api/channels').then(r => setChannels(r.data)).catch(() => {});
+    axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
+    axios.get('/api/tags').then(r => setTags(r.data)).catch(() => {});
+    axios.get('/api/agent-categories').then(r => setTeams(r.data)).catch(() => {});
+  }, [loadSummary]);
+
+  useEffect(() => { loadList(); }, [loadList]);
+  useEffect(() => { setPage(1); }, [filterParams, sort]);
+
+  function toggleSelected(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function selectAllOnPage() {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      conversations.forEach(c => next.add(c.id));
+      return next;
+    });
+  }
+
+  const targetCount = selectionMode === 'filter' ? total : selectedIds.size;
+  const selectCls = 'text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none';
+  const totalPages = Math.max(1, Math.ceil(total / FOLLOWUP_LIMIT));
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <div className="flex items-center gap-2 mb-1">
+        <Clock size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
+        <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">ตามลูกค้า</h1>
+      </div>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-5">
+        ลูกค้าทุกคนในทุกช่องทาง เรียงตามจำนวนวันที่หายไป — ใช้ตัวกรองเพื่อคัดกลุ่มที่ต้องการ แล้วส่งข้อความติดตามแบบ broadcast ได้จากหน้านี้เลย
+      </p>
+
+      {/* Summary cards */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <FollowupStatCard label="ลูกค้าทั้งหมด" value={summary?.total} cls="border-slate-800 bg-slate-900 text-slate-400" />
+        {DAY_PRESETS.slice(0, 4).map(d => (
+          <FollowupStatCard
+            key={d}
+            label={`หายไป ${d}+ วัน`}
+            value={summary?.[`inactive${d}`]}
+            cls="border-orange-500/25 bg-orange-500/10 text-orange-300"
+            onClick={() => setMinDaysInactive(v => v === String(d) ? '' : String(d))}
+            active={minDaysInactive === String(d)}
+          />
+        ))}
+        <FollowupStatCard label="ไม่เคยมีข้อความเลย" value={summary?.neverMessaged} cls="border-rose-500/25 bg-rose-500/10 text-rose-300" />
+        <FollowupStatCard
+          label="บล็อคเราอยู่" value={summary?.blocked} cls="border-slate-700 bg-slate-800/60 text-slate-400"
+          onClick={() => setBlocked(b => b === 'true' ? '' : 'true')} active={blocked === 'true'}
+        />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+          <input
+            className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500"
+            placeholder="ค้นหาชื่อหรือ LINE user ID"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            autoComplete="off"
+            type="search"
+            name="followup-search"
+          />
+        </div>
+        <MultiCheckDropdown label="ช่องทาง" allLabel="ทุกช่องทาง" items={channels} selectedIds={channelIds} onToggle={id => setChannelIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])} onClear={() => setChannelIds([])} />
+        <select className={selectCls} value={agentCategoryId} onChange={e => setAgentCategoryId(e.target.value)}>
+          <option value="">ทุกทีม</option>
+          <option value="none">ไม่มีทีม</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <select className={selectCls} value={agentId} onChange={e => setAgentId(e.target.value)}>
+          <option value="">พนักงานทั้งหมด</option>
+          <option value="unassigned">ยังไม่ได้ assign</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <MultiCheckDropdown label="แท็ก" allLabel="ทุกแท็ก" items={tags} selectedIds={tagIds} onToggle={id => setTagIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])} onClear={() => setTagIds([])} />
+        <select className={selectCls} value={lifecycleStage} onChange={e => setLifecycleStage(e.target.value)}>
+          <option value="">ทุก Lifecycle</option>
+          {LIFECYCLE_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <select className={selectCls} value={blocked} onChange={e => setBlocked(e.target.value)}>
+          {BLOCKED_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select className={selectCls} value={sort} onChange={e => setSort(e.target.value)}>
+          {FOLLOWUP_SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {FOLLOWUP_STATUS_TABS.map(tab => (
+          <button
+            key={tab.key || 'all'}
+            onClick={() => setStatus(tab.key)}
+            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${status === tab.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+        <div className="flex items-center gap-1 ml-1">
+          <span className="text-xs text-gray-500 dark:text-slate-400 mr-1">หายไปตั้งแต่:</span>
+          {DAY_PRESETS.map(d => (
+            <button
+              key={d}
+              onClick={() => setMinDaysInactive(v => v === String(d) ? '' : String(d))}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${minDaysInactive === String(d) ? 'bg-aurora-teal text-white border-transparent' : 'text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {d} วัน
+            </button>
+          ))}
+        </div>
+        <span className="text-sm text-gray-500 dark:text-slate-400 ml-auto">
+          พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{total}</span> รายการ
+        </span>
+      </div>
+
+      {/* Selection mode + broadcast action */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-800 rounded-xl px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 dark:text-slate-400">โหมดเลือกลูกค้า:</span>
+          {[{ key: 'filter', label: 'ตามตัวกรองปัจจุบัน' }, { key: 'manual', label: 'เลือกเอง' }].map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setSelectionMode(opt.key)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${selectionMode === opt.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {selectionMode === 'manual' && (
+            <>
+              <button onClick={selectAllOnPage} className="text-xs text-aurora-tealDeep dark:text-aurora-teal hover:brightness-110">เลือกทั้งหมดในหน้านี้</button>
+              <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">ล้างที่เลือก</button>
+            </>
+          )}
+        </div>
+        <button
+          onClick={() => setShowCompose(true)}
+          disabled={targetCount === 0}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-3.5 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-40 transition-all"
+        >
+          <Send size={15} /> ส่งข้อความติดตาม ({targetCount} คน)
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        {loading ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : conversations.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ไม่พบลูกค้าที่ตรงกับตัวกรองที่เลือก</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-500">
+                {selectionMode === 'manual' && <th className="px-4 py-2.5 w-8"></th>}
+                <th className="px-4 py-2.5 font-medium">ลูกค้า</th>
+                <th className="px-4 py-2.5 font-medium">ช่องทาง</th>
+                <th className="px-4 py-2.5 font-medium">พนักงาน/ทีม</th>
+                <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                <th className="px-4 py-2.5 font-medium">Lifecycle</th>
+                <th className="px-4 py-2.5 font-medium">หายไปกี่วัน</th>
+                <th className="px-4 py-2.5 font-medium">ข้อความล่าสุด</th>
+                <th className="px-4 py-2.5 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {conversations.map(c => {
+                const last = c.messages?.[0];
+                const inactive = daysInactiveLabel(c.daysInactive);
+                const stage = stageInfo(c.lifecycleStage);
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => selectionMode === 'manual' ? toggleSelected(c.id) : navigate(`/inbox?conv=${c.id}`)}
+                    className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 align-top cursor-pointer"
+                  >
+                    {selectionMode === 'manual' && (
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" className="accent-aurora-teal" checked={selectedIds.has(c.id)} onChange={() => toggleSelected(c.id)} />
+                      </td>
+                    )}
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <FollowupAvatar name={c.displayName || c.lineUserId} pictureUrl={c.pictureUrl} />
+                        <div className="min-w-0">
+                          <p className="text-gray-800 dark:text-slate-100 font-medium truncate max-w-[160px]">{c.displayName || c.lineUserId}</p>
+                          {c.blocked && <span className="text-[10px] text-rose-500 dark:text-rose-400 font-medium">🚫 บล็อคเราอยู่</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">{c.channel?.name}</td>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                      {c.agent?.name || <span className="text-gray-400 dark:text-slate-500">ยังไม่ได้ assign</span>}
+                      {c.agent?.category?.name && <span className="block text-[11px] text-gray-400 dark:text-slate-500">{c.agent.category.name}</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
+                        {c.status === 'open' ? 'เปิด' : c.status === 'pending' ? 'รอ' : 'ปิด'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${stage.color}`}>{stage.label}</span>
+                    </td>
+                    <td className={`px-4 py-2.5 whitespace-nowrap ${inactive.cls}`}>{inactive.text}</td>
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 max-w-xs">
+                      {last ? <p className="line-clamp-1 text-gray-600 dark:text-slate-300">{last.type === 'text' ? last.content : `[${last.type}]`}</p> : <span className="text-gray-400 dark:text-slate-600">ยังไม่มีข้อความ</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/inbox?conv=${c.id}`); }}
+                        title="ไปที่แชท"
+                        className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal"
+                      >
+                        <ExternalLink size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {total > FOLLOWUP_LIMIT && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-gray-500 dark:text-slate-400">หน้า {page} จาก {totalPages} ({total} รายการ)</p>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 transition-colors">
+              <ChevronLeft size={14} /> ก่อนหน้า
+            </button>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 transition-colors">
+              ถัดไป <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <BroadcastHistorySection refreshKey={historyRefreshKey} />
+
+      {showCompose && (
+        <BroadcastComposeModal
+          targetCount={targetCount}
+          mode={selectionMode}
+          filters={filterParams}
+          conversationIds={[...selectedIds]}
+          onClose={() => setShowCompose(false)}
+          onSent={() => { setHistoryRefreshKey(k => k + 1); loadSummary(); }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Sidebar routes here as /report/:tab (see Sidebar.jsx's "รายงาน" dropdown) —
-// "agents" renders the employee scorecard, anything else (including no tab,
-// which App.jsx redirects to /report/audit) renders the audit page.
+// "agents" renders the employee scorecard, "followup" renders the customer
+// follow-up + broadcast page, anything else (including no tab, which
+// App.jsx redirects to /report/audit) renders the audit page.
 export default function Report() {
   const { tab } = useParams();
-  return tab === 'agents' ? <AgentConductPage /> : <AuditReport />;
+  if (tab === 'agents') return <AgentConductPage />;
+  if (tab === 'followup') return <CustomerFollowupPage />;
+  return <AuditReport />;
 }

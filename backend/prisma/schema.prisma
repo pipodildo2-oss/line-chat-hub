@@ -27,6 +27,7 @@ model Agent {
   // still controls actual permissions.
   categoryId    String?
   category      AgentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  broadcastCampaigns BroadcastCampaign[]
 
   @@index([categoryId])
 }
@@ -182,12 +183,57 @@ model Conversation {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   lastMessageAt DateTime?
+  broadcastRecipients BroadcastRecipient[]
 
   @@unique([lineUserId, channelId])
   @@index([channelId])
   @@index([agentId])
   @@index([status])
   @@index([lastMessageAt])
+}
+
+// ---------- Broadcast ("ตามลูกค้า" follow-up broadcasts) ----------
+// One BroadcastCampaign = one admin action ("send this text + these images to
+// this set of customers"), regardless of how many text/image pieces or
+// recipients it fans out to — see BroadcastRecipient for the per-customer
+// outcome. Reply tracking is deliberately NOT a stored column here — it's
+// computed on read by checking for a `sender: 'user'` Message after this
+// campaign's createdAt in each recipient's conversation (see broadcasts.js),
+// so it always reflects live conversation state instead of going stale.
+model BroadcastCampaign {
+  id              String   @id @default(cuid())
+  createdById     String
+  createdBy       Agent    @relation(fields: [createdById], references: [id])
+  message         String?
+  images          String?  // JSON array of stored "/uploads/..." paths (see imageStorage.js), null if text-only
+  filters         String?  // JSON snapshot of the filter criteria used to pick recipients, for reference — null when recipients were hand-picked instead
+  status          String   @default("sending") // sending | completed
+  totalRecipients Int      @default(0)
+  successCount    Int      @default(0)
+  failedCount     Int      @default(0)
+  skippedCount    Int      @default(0) // blocked customers / disabled channels, auto-excluded before any LINE call
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  recipients      BroadcastRecipient[]
+
+  @@index([createdById])
+}
+
+// One row per customer targeted by a campaign — records the actual outcome for
+// that customer, independent of how many Message rows the send produced.
+model BroadcastRecipient {
+  id             String   @id @default(cuid())
+  campaignId     String
+  campaign       BroadcastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  status         String   // sent | failed | skipped_blocked | skipped_channel_inactive
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([conversationId])
 }
 
 model Message {
