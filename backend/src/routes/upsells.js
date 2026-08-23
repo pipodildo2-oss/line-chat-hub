@@ -263,4 +263,23 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   res.json(submission);
 });
 
+// DELETE /api/upsells/:id — admin: remove a submission entirely (wrong
+// message picked, duplicate, submitted by mistake, etc). Cascades to its
+// UpsellSubmissionItem rows (see schema.prisma's onDelete: Cascade), which
+// frees the claimed messages — they become selectable again in Inbox.
+router.delete('/:id', auth, requireAdmin, async (req, res) => {
+  const existing = await prisma.upsellSubmission.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, agentId: true, conversationId: true, items: { select: { messageId: true } } },
+  });
+  if (!existing) return res.status(404).json({ error: 'Submission not found' });
+
+  await prisma.upsellSubmission.delete({ where: { id: req.params.id } });
+
+  emitToConversation(existing.conversationId, 'upsell_unclaimed', { messageIds: existing.items.map(i => i.messageId) });
+  emitToAll('upsell_reviewed', { submissionId: existing.id, agentId: existing.agentId, status: 'deleted' });
+
+  res.json({ success: true });
+});
+
 module.exports = router;

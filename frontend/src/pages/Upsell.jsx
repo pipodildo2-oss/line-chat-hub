@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users, CheckCircle2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users, CheckCircle2, ChevronUp, ChevronDown, ChevronsUpDown, Trash2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -124,12 +124,12 @@ function SubmissionItemPreview({ item }) {
   );
 }
 
-function SubmissionRow({ submission, onReview, navigate }) {
+function SubmissionRow({ submission, onReview, onDelete, navigate }) {
   const [amount, setAmount] = useState(submission.amount ?? '');
   const [saving, setSaving] = useState(false);
   // Lets a reviewer reopen the amount+ผ่าน/ไม่ผ่าน form after already
-  // approving a submission, in case they typed the wrong figure — without
-  // this there was no way to correct a mis-scored amount after the fact.
+  // reviewing a submission, in case they got the amount or the ผ่าน/ไม่ผ่าน
+  // call wrong — without this there was no way to correct it after the fact.
   const [editing, setEditing] = useState(false);
   // Backend now returns items sorted oldest-message-first (see
   // GET /api/upsells/agents/:agentId), so items[0] is always the topmost
@@ -143,6 +143,16 @@ function SubmissionRow({ submission, onReview, navigate }) {
     try {
       await onReview(submission.id, status, amount);
       setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm('ลบรายการอัพเซลล์นี้? ข้อความที่เลือกไว้จะกลับไปให้เลือกใหม่ได้อีกครั้ง')) return;
+    setSaving(true);
+    try {
+      await onDelete(submission.id);
     } finally {
       setSaving(false);
     }
@@ -175,6 +185,14 @@ function SubmissionRow({ submission, onReview, navigate }) {
               <ExternalLink size={15} />
             </button>
           )}
+          <button
+            onClick={handleDelete}
+            disabled={saving}
+            title="ลบรายการ"
+            className="text-gray-400 dark:text-slate-500 hover:text-rose-500 disabled:opacity-50"
+          >
+            <Trash2 size={15} />
+          </button>
         </div>
       </div>
 
@@ -236,7 +254,7 @@ function SubmissionRow({ submission, onReview, navigate }) {
               onClick={() => { setAmount(submission.amount ?? ''); setEditing(true); }}
               className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800"
             >
-              <Pencil size={12} /> {submission.status === 'approved' ? 'แก้ไขยอด' : 'แก้ไข'}
+              <Pencil size={12} /> แก้ไข
             </button>
           )}
         </div>
@@ -255,6 +273,12 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
 
   async function handleReview(submissionId, status, amount) {
     await axios.patch(`/api/upsells/${submissionId}`, { status, amount: amount === '' ? null : amount });
+    load();
+    onChanged?.();
+  }
+
+  async function handleDelete(submissionId) {
+    await axios.delete(`/api/upsells/${submissionId}`);
     load();
     onChanged?.();
   }
@@ -284,7 +308,7 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
           ) : data.submissions.length === 0 ? (
             <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">ยังไม่มีรายการอัพเซลล์</p>
           ) : (
-            data.submissions.map(s => <SubmissionRow key={s.id} submission={s} onReview={handleReview} navigate={navigate} />)
+            data.submissions.map(s => <SubmissionRow key={s.id} submission={s} onReview={handleReview} onDelete={handleDelete} navigate={navigate} />)
           )}
         </div>
       </div>
@@ -382,10 +406,10 @@ function UpsellReviewPage() {
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
                     <SortableTh label="พนักงาน" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
-                    <SortableTh label="ส่งมาแล้ว" active={sortKey === 'total'} dir={sortDir} onClick={() => handleSort('total')} />
-                    <SortableTh label="รอตรวจ" active={sortKey === 'pending'} dir={sortDir} onClick={() => handleSort('pending')} />
-                    <SortableTh label="ผ่าน" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} />
-                    <SortableTh label="ไม่ผ่าน" active={sortKey === 'rejected'} dir={sortDir} onClick={() => handleSort('rejected')} />
+                    <SortableTh label="ส่งมาแล้ว" active={sortKey === 'total'} dir={sortDir} onClick={() => handleSort('total')} align="center" />
+                    <SortableTh label="รอตรวจ" active={sortKey === 'pending'} dir={sortDir} onClick={() => handleSort('pending')} align="center" />
+                    <SortableTh label="ผ่าน" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} align="center" />
+                    <SortableTh label="ไม่ผ่าน" active={sortKey === 'rejected'} dir={sortDir} onClick={() => handleSort('rejected')} align="center" />
                     <SortableTh label="ยอดที่ผ่านแล้ว" active={sortKey === 'approvedAmount'} dir={sortDir} onClick={() => handleSort('approvedAmount')} align="right" />
                   </tr>
                 </thead>
@@ -409,16 +433,16 @@ function UpsellReviewPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300">{a.total}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.total}</td>
+                      <td className="px-4 py-2.5 text-center">
                         {a.pending > 0 ? (
                           <span className="text-amber-600 dark:text-amber-400 font-semibold">{a.pending}</span>
                         ) : (
                           <span className="text-gray-400 dark:text-slate-500">0</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-emerald-600 dark:text-emerald-400">{a.approved}</td>
-                      <td className="px-4 py-2.5 text-rose-500 dark:text-rose-400">{a.rejected}</td>
+                      <td className="px-4 py-2.5 text-center text-emerald-600 dark:text-emerald-400">{a.approved}</td>
+                      <td className="px-4 py-2.5 text-center text-rose-500 dark:text-rose-400">{a.rejected}</td>
                       <td className="px-4 py-2.5 text-right text-gray-800 dark:text-slate-200 font-medium whitespace-nowrap">
                         {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
                       </td>
@@ -471,9 +495,10 @@ const TEAM_CARD_COLORS = ['bg-amber-500', 'bg-sky-500', 'bg-rose-500', 'bg-viole
 // Clickable column header — click to sort by this column, click again to
 // flip direction. Purely a display affordance; UpsellScorePage owns the
 // actual sort state and re-orders each team's agents by it.
+const TH_ALIGN_CLS = { left: 'text-left', center: 'text-center', right: 'text-right' };
 function SortableTh({ label, active, dir, onClick, align = 'left' }) {
   return (
-    <th className={`px-4 py-2.5 font-medium select-none ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    <th className={`px-4 py-2.5 font-medium select-none whitespace-nowrap ${TH_ALIGN_CLS[align]}`}>
       <button
         type="button"
         onClick={onClick}

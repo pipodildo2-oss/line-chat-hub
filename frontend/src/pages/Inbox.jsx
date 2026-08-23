@@ -1407,12 +1407,19 @@ export default function Inbox() {
         return next;
       });
     });
+    // Fired when an admin deletes a submission from the review page — frees
+    // the messages back up so they can be claimed again, reflected live
+    // instead of needing a reload to see the lock badge disappear.
+    socket.on('upsell_unclaimed', ({ messageIds }) => {
+      setMessages(prev => prev.map(m => (messageIds.includes(m.id) ? { ...m, upsellItem: null } : m)));
+    });
     return () => {
       socket.off('new_message');
       socket.off('conversation_updated');
       socket.off('message_view');
       socket.off('message_view_cleared');
       socket.off('upsell_claimed');
+      socket.off('upsell_unclaimed');
     };
   }, [socket, selected?.id, agent?.id, agent?.role]);
 
