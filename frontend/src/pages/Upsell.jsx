@@ -391,17 +391,27 @@ function UpsellReviewPage() {
 // One consistent card style for both the overall totals and each team's
 // subtotal, so they read as one uniform row instead of two different-looking
 // groups of boxes.
-function ScoreStatCard({ icon: Icon, label, value, caption }) {
+// Same colored-icon-badge pattern as Report.jsx's StatCard, so this row reads
+// as a real dashboard row instead of plain white boxes — `color` is a
+// Tailwind bg-* (solid or gradient) class for the icon badge.
+function ScoreStatCard({ icon: Icon, label, value, caption, color }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
-      <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 flex items-center gap-1.5 mb-1.5 truncate">
-        {Icon && <Icon size={13} className="flex-shrink-0" />} <span className="truncate">{label}</span>
-      </p>
-      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{value}</p>
-      {caption && <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{caption}</p>}
+    <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800 flex items-center gap-3">
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
+        {Icon && <Icon size={20} className="text-white" />}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{label}</p>
+        <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{value}</p>
+        {caption && <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{caption}</p>}
+      </div>
     </div>
   );
 }
+
+// Cycled across team cards (index % length) so each team gets a visually
+// distinct color regardless of how many teams exist.
+const TEAM_CARD_COLORS = ['bg-amber-500', 'bg-sky-500', 'bg-rose-500', 'bg-violet-500', 'bg-cyan-500', 'bg-fuchsia-500'];
 
 // Clickable column header — click to sort by this column, click again to
 // flip direction. Purely a display affordance; UpsellScorePage owns the
@@ -421,10 +431,12 @@ function SortableTh({ label, active, dir, onClick, align = 'left' }) {
   );
 }
 
+// Three visually distinct medal hues (yellow/gray/orange) rather than the
+// amber-on-amber gold/bronze that used to be hard to tell apart at a glance.
 const RANK_STYLE = [
-  'text-amber-500', // 1st — gold
-  'text-slate-400', // 2nd — silver
-  'text-amber-700 dark:text-amber-600', // 3rd — bronze
+  'text-yellow-500', // 1st — gold
+  'text-gray-400 dark:text-gray-300', // 2nd — silver
+  'text-orange-700 dark:text-orange-500', // 3rd — bronze
 ];
 
 // "คะแนน" — a score leaderboard pulled from the same per-agent data the
@@ -518,8 +530,8 @@ function UpsellScorePage() {
       ) : teams.length === 0 ? (
         <>
           <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} />
-            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} />
+            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
+            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} color="bg-emerald-500" />
           </div>
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบในช่วงนี้</p>
         </>
@@ -530,15 +542,16 @@ function UpsellScorePage() {
               next to the org-wide totals instead of in a separately-styled
               row below. */}
           <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} />
-            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} />
-            {teams.map(t => (
+            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
+            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} color="bg-emerald-500" />
+            {teams.map((t, i) => (
               <ScoreStatCard
                 key={t.id || 'none'}
                 icon={Users}
                 label={t.name}
                 value={`${t.approvedAmount.toLocaleString()} บาท`}
                 caption={`${t.approved} รายการ · ${t.agents.length} คน`}
+                color={TEAM_CARD_COLORS[i % TEAM_CARD_COLORS.length]}
               />
             ))}
           </div>
