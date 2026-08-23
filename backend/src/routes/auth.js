@@ -16,15 +16,22 @@ const loginLimiter = rateLimit({
   message: { error: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่ในอีกสักครู่' },
 });
 
+// Fixed, arbitrary bcrypt hash with no corresponding real password — used
+// below purely so the "email not found" path spends roughly the same time
+// as the "email found, wrong password" path. Without this, an unknown email
+// returns 401 immediately while a known one waits on a real bcrypt.compare
+// (deliberately slow), so measuring response time lets an attacker enumerate
+// which emails are registered even though both cases return an identical
+// error message.
+const DUMMY_PASSWORD_HASH = '$2a$10$RbzgkEiHzMw9u6j4W5rtguyJ6BKFj5bkn1mQBfR4BFKZgo9.bhGbG';
+
 // POST /api/auth/login
 router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const agent = await prisma.agent.findUnique({ where: { email } });
-    if (!agent) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const valid = await bcrypt.compare(password, agent.password);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    const valid = await bcrypt.compare(password || '', agent?.password || DUMMY_PASSWORD_HASH);
+    if (!agent || !valid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign(
       { id: agent.id, email: agent.email, name: agent.name, role: agent.role },

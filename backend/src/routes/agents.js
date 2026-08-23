@@ -1,22 +1,44 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { saveBase64Image, deleteStoredImage } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
-// GET /api/agents
+// Password-change endpoints require `auth` first (so `req.agent` is always
+// set), so keying by agent id rather than IP correctly limits per-account —
+// a stolen token can't be used to hammer `/me/password`'s current-password
+// check any faster than this. Same window/count as the login limiter
+// (auth.js) for consistency.
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.agent.id,
+  message: { error: 'พยายามเปลี่ยนรหัสผ่านบ่อยเกินไป กรุณาลองใหม่ในอีกสักครู่' },
+});
+
+// GET /api/agents — every agent needs SOME version of this list (assigning a
+// conversation, the "who's typing"/filter pickers), so it isn't admin-gated
+// entirely, but a non-admin has no legitimate reason to see teammates' email
+// addresses, roles, or which channels they're restricted to — that's
+// management data, not chat-assignment data. Only admins get the full shape.
 router.get('/', auth, async (req, res) => {
+  const isAdmin = req.agent.role === 'admin';
   const agents = await prisma.agent.findMany({
-    select: {
+    select: isAdmin ? {
       id: true, name: true, email: true, role: true, status: true, createdAt: true, avatarUrl: true,
       channels: { select: { channelId: true } },
       categoryId: true,
       category: { select: { id: true, name: true } },
+    } : {
+      id: true, name: true, status: true, avatarUrl: true,
     },
   });
-  res.json(agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined })));
+  res.json(isAdmin ? agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined })) : agents);
 });
 
 // POST /api/agents
@@ -86,7 +108,7 @@ router.patch('/me/avatar', auth, async (req, res) => {
 });
 
 // PATCH /api/agents/me/password — change own password
-router.patch('/me/password', auth, async (req, res) => {
+router.patch('/me/password', auth, passwordChangeLimiter, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
@@ -125,7 +147,7 @@ router.patch('/:id', auth, async (req, res) => {
 });
 
 // PATCH /api/agents/:id/password — admin resets another agent's password
-router.patch('/:id/password', auth, async (req, res) => {
+router.patch('/:id/password', auth, passwordChangeLimiter, async (req, res) => {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   try {
     const { newPassword } = req.body;

@@ -13,6 +13,18 @@ async function getVisibleChannelIds(agent) {
   return rows.map(r => r.channelId);
 }
 
+// Whether `agent` is allowed to see/act on a conversation on `channelId` —
+// the single-record counterpart to getVisibleChannelIds(), which only ever
+// got applied to LIST endpoints (GET /api/conversations, broadcast
+// targeting). Every route that fetches or mutates ONE conversation/message
+// by id must call this too, or a channel-restricted agent can bypass the
+// restriction entirely just by knowing/guessing that record's id — the list
+// view hiding it from them was never actually enforced anywhere else.
+async function canAccessChannel(agent, channelId) {
+  const visible = await getVisibleChannelIds(agent);
+  return visible === null || visible.includes(channelId);
+}
+
 // Builds one comparison against a conversation's daysInactive() (see below —
 // a floored day count, matching exactly what the frontend displays, e.g.
 // "10 วัน") for the given N and operator:
@@ -124,4 +136,4 @@ function daysInactive(lastMessageAt) {
   return Math.floor((Date.now() - new Date(lastMessageAt).getTime()) / (24 * 60 * 60 * 1000));
 }
 
-module.exports = { getVisibleChannelIds, buildConversationWhere, daysInactive };
+module.exports = { getVisibleChannelIds, canAccessChannel, buildConversationWhere, daysInactive };

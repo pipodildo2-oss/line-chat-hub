@@ -10,6 +10,12 @@ const prisma = new PrismaClient();
 // as current all-time snapshot counts regardless of the selected range — "currently
 // open" doesn't really mean anything scoped to a past date range.
 router.get('/summary', auth, async (req, res) => {
+  // Global, cross-channel figures (total conversations, channel breakdown,
+  // etc.) — the frontend only ever calls this from the admin-only Dashboard
+  // page, but the API itself had no matching check, so a channel-restricted
+  // agent could call it directly and see names/counts for every channel in
+  // the system, not just the ones they're assigned to.
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   const { from, to } = req.query;
   const toDate = to ? new Date(`${to}T23:59:59.999`) : new Date();
   const fromDate = from ? new Date(`${from}T00:00:00.000`) : new Date(toDate.getTime() - 6 * 24 * 60 * 60 * 1000);

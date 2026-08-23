@@ -1,12 +1,27 @@
 const router = require('express').Router();
 const line = require('@line/bot-sdk');
+const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
 const { enqueueLineEvent } = require('../services/queue.service');
 
 const prisma = new PrismaClient();
 
+// This endpoint is unauthenticated by design (LINE calls it directly) and
+// does a DB lookup BEFORE verifying anything (the channelId in the URL isn't
+// validated until the signature check below) — without this, it's an open
+// door to flood the DB with lookups using arbitrary/garbage channelId
+// values at unlimited rate. Limit is generous relative to what any real LINE
+// webhook traffic looks like (LINE doesn't deliver anywhere close to this
+// volume per source), so legitimate delivery is unaffected.
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // POST /api/webhooks/line/:channelId
-router.post('/line/:channelId', async (req, res) => {
+router.post('/line/:channelId', webhookLimiter, async (req, res) => {
   // Respond immediately (LINE requires fast response)
   res.sendStatus(200);
 

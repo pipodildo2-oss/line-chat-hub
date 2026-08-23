@@ -32,9 +32,31 @@ const app = express();
 // rate limiting (below) to key off the right client instead of blocking everyone at once.
 app.set('trust proxy', 1);
 
+// CORS was wide open (`origin: '*'`) on both the REST API and Socket.io —
+// with the JWT sent via an Authorization header rather than a cookie, that
+// didn't enable classic CSRF, but it meant zero defense-in-depth if a token
+// ever leaked through some other channel (XSS, a log line, a referrer, etc.)
+// — any page on the web could then read authenticated responses cross-origin.
+// In production the frontend is served from THIS same backend (backend/dist,
+// see the static-file block below), so real traffic is same-origin and never
+// even hits this check — this only matters for local dev (frontend on a
+// different Vite port) and FRONTEND_URL, for the rare case the frontend is
+// ever deployed separately from this backend.
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+];
+function corsOriginCheck(origin, callback) {
+  // No Origin header = same-origin request, or a non-browser client (curl,
+  // server-to-server) — neither is something CORS applies to anyway.
+  if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+  callback(new Error('Not allowed by CORS'));
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: { origin: corsOriginCheck, methods: ['GET', 'POST'] },
 });
 
 setIo(io);
@@ -66,7 +88,7 @@ const worker = startWorker(async (channelId, event) => {
   await processLineEvent(channel, event);
 });
 
-app.use(cors());
+app.use(cors({ origin: corsOriginCheck }));
 // Raw body for LINE signature verification (must come before express.json)
 app.use('/api/webhooks/line', express.raw({ type: 'application/json' }));
 // Default body limit (100kb) is too small once quick-reply images are base64-encoded

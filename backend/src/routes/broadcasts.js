@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
-const { saveBase64Image, thumbPathFor } = require('../lib/imageStorage');
+const { saveBase64Image, thumbPathFor, isValidImageDataUrl } = require('../lib/imageStorage');
 const { getVisibleChannelIds, buildConversationWhere } = require('../lib/conversationQuery');
 
 const prisma = new PrismaClient();
@@ -18,6 +19,19 @@ function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 }
+
+// A single broadcast can already push to up to 5000 conversations — nothing
+// else in the app sends at that scale, so this exists purely to bound how
+// many of those an admin (or a compromised admin token) can fire off back
+// to back, not to police normal usage.
+const broadcastLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.agent.id,
+  message: { error: 'ส่ง Broadcast บ่อยเกินไป กรุณาลองใหม่ในอีกสักครู่' },
+});
 
 const CONV_INCLUDE = {
   channel: { select: { id: true, name: true, active: true } },
@@ -152,7 +166,7 @@ async function computeRepliedCount(campaignId, campaignCreatedAt) {
 // conversation currently matching those filters (recomputed here, not a list
 // of ids the frontend enumerated); 'manual' mode broadcasts to an explicit
 // hand-picked list.
-router.post('/', auth, requireAdmin, async (req, res) => {
+router.post('/', auth, requireAdmin, broadcastLimiter, async (req, res) => {
   try {
     const { message, images, mode, filters, conversationIds } = req.body;
     if (mode !== 'filter' && mode !== 'manual') {
@@ -167,8 +181,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: `แนบรูปได้สูงสุด ${MAX_IMAGES} รูป` });
     }
     for (const img of imageList) {
-      if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(img)) {
-        return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
+      if (!isValidImageDataUrl(img)) {
+        return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
       }
     }
 

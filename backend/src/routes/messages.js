@@ -5,7 +5,8 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
-const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
+const { canAccessChannel } = require('../lib/conversationQuery');
 
 const prisma = new PrismaClient();
 
@@ -26,6 +27,12 @@ router.get('/content/:messageId', auth, async (req, res) => {
       include: { conversation: { include: { channel: true } } },
     });
     if (!message) return res.status(404).end();
+    // A channel-restricted agent has no business proxying media from a
+    // conversation outside their assigned channels just by knowing/guessing
+    // a LINE message id — see canAccessChannel's doc comment.
+    if (!(await canAccessChannel(req.agent, message.conversation.channelId))) {
+      return res.status(404).end();
+    }
     const { stream, contentType } = await getMessageContent(message.conversation.channel, req.params.messageId);
     res.set('Content-Type', contentType);
     res.set('Cache-Control', 'private, max-age=86400');
@@ -51,16 +58,37 @@ router.get('/image/:id', async (req, res) => {
     const target = req.query.preview ? thumbPathFor(message.imageData) : message.imageData;
     return res.redirect(target);
   }
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(message.imageData);
+  // Restricted to the same safe raster-image allowlist as new uploads (see
+  // imageStorage.js) rather than the original permissive `image/[a-zA-Z0-9.+-]+`
+  // pattern — this path only still exists for legacy rows written before that
+  // allowlist existed, some of which could carry an unsafe declared type like
+  // `image/svg+xml`. nosniff is extra defense-in-depth on top of that: even
+  // for an allowed type, it stops a browser from second-guessing the header
+  // and rendering the body as something else.
+  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(message.imageData);
   if (!match) return res.status(404).end();
-  const [, contentType, base64] = match;
-  res.set('Content-Type', contentType);
+  const [, ext, base64] = match;
+  res.set('Content-Type', `image/${ext}`);
+  res.set('X-Content-Type-Options', 'nosniff');
   res.set('Cache-Control', 'public, max-age=86400');
   res.send(Buffer.from(base64, 'base64'));
 });
 
 // GET /api/messages/:conversationId
 router.get('/:conversationId', auth, async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.conversationId },
+    select: { channelId: true },
+  });
+  if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+  // Same channel-restriction gap as the other routes in this file — reading a
+  // conversation's message history (and marking it read / writing an audit
+  // row below) shouldn't be reachable outside an agent's assigned channels
+  // just because they know/guess the conversation id.
+  if (!(await canAccessChannel(req.agent, conversation.channelId))) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+
   const { cursor, limit = 50 } = req.query;
   const where = { conversationId: req.params.conversationId };
   if (cursor) where.createdAt = { lt: new Date(cursor) };
@@ -128,8 +156,8 @@ router.post('/:conversationId', auth, async (req, res) => {
   try {
     const { content, imageData } = req.body;
     if (!content?.trim() && !imageData) return res.status(400).json({ error: 'Content required' });
-    if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
+    if (imageData && !isValidImageDataUrl(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
     }
 
     const conversation = await prisma.conversation.findUnique({
@@ -137,6 +165,12 @@ router.post('/:conversationId', auth, async (req, res) => {
       include: { channel: true },
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    // Without this, a channel-restricted agent could push a real LINE message
+    // into any conversation outside their assigned channels just by knowing/
+    // guessing its id — see canAccessChannel's doc comment.
+    if (!(await canAccessChannel(req.agent, conversation.channelId))) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
     // LINE returns 200 OK with no error when pushing to a blocked user — the
     // message just silently never arrives. Refuse it here instead, since the
     // frontend composer is also disabled for a blocked conversation; this is
@@ -237,9 +271,15 @@ router.post('/:conversationId', auth, async (req, res) => {
     // below reflects the new value immediately instead of the old one.
     const now = new Date();
     conversation.lastMessageAt = now;
+    // `conversation` was fetched with the FULL LineChannel row (channel:
+    // true, needed above for sendMessage/sendImageMessage's accessToken) —
+    // broadcasting it as-is would push channelSecret/accessToken to every
+    // connected agent's browser on every single message sent. Redact before
+    // it goes anywhere near a socket emit or API response.
+    const safeConversation = { ...conversation, channel: { id: conversation.channel.id, name: conversation.channel.name, active: conversation.channel.active } };
 
-    emitToConversation(conversation.id, 'new_message', { message, conversation });
-    emitToAll('conversation_updated', { ...conversation, lastMessage: message });
+    emitToConversation(conversation.id, 'new_message', { message, conversation: safeConversation });
+    emitToAll('conversation_updated', { ...safeConversation, lastMessage: message });
 
     res.status(201).json(message);
 
@@ -299,14 +339,23 @@ router.post('/:conversationId', auth, async (req, res) => {
 // GET /api/messages/:conversationId/suggest
 router.get('/:conversationId/suggest', auth, async (req, res) => {
   try {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: req.params.conversationId },
+      select: { channelId: true, channel: { select: { name: true } } },
+    });
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    // Without this, a channel-restricted agent could pull an AI-generated
+    // reply suggestion (which reflects recent message content) for any
+    // conversation outside their assigned channels — see canAccessChannel's
+    // doc comment.
+    if (!(await canAccessChannel(req.agent, conversation.channelId))) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     const messages = await prisma.message.findMany({
       where: { conversationId: req.params.conversationId },
       orderBy: { createdAt: 'desc' },
       take: 10,
-    });
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: req.params.conversationId },
-      include: { channel: true },
     });
     const suggestion = await suggestReply(messages.reverse(), conversation?.channel?.name || 'Support');
     res.json({ suggestion });

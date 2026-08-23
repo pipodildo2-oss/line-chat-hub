@@ -65,7 +65,12 @@ function ChannelListCard({ channel, onManage }) {
 function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete }) {
   const [name, setName] = useState(channel.name);
   const [lineId, setLineId] = useState(channel.lineId || '');
-  const [channelSecret, setChannelSecret] = useState(channel.channelSecret || '');
+  // The backend no longer sends channelSecret/accessToken back in any
+  // response (see channels.js) — these are live LINE credentials with no
+  // reason to ever reach the browser once set, so both fields start blank
+  // and are only sent on save if the admin actually typed a new value
+  // (channelSecret now matches the pattern accessToken already used).
+  const [channelSecret, setChannelSecret] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -98,7 +103,7 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
   async function handleSave() {
     setSaving(true); setSaved(false);
     try {
-      await onSave(channel.id, { name, lineId, channelSecret, accessToken: accessToken || undefined });
+      await onSave(channel.id, { name, lineId, channelSecret: channelSecret || undefined, accessToken: accessToken || undefined });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally { setSaving(false); }
@@ -199,7 +204,7 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
 
         <div>
           <label className={labelCls}>Channel Secret</label>
-          <input className={fieldCls} value={channelSecret} onChange={e => setChannelSecret(e.target.value)} />
+          <input className={fieldCls} placeholder="ปล่อยว่างไว้ถ้าไม่ต้องการเปลี่ยน" value={channelSecret} onChange={e => setChannelSecret(e.target.value)} />
         </div>
 
         <div>

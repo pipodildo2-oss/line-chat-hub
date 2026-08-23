@@ -3,7 +3,8 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
-const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
+const { canAccessChannel } = require('../lib/conversationQuery');
 
 const prisma = new PrismaClient();
 
@@ -142,8 +143,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'categoryId, name and content required' });
     }
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
+    if (imageData && !isValidImageDataUrl(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
     }
     // New items go to the end of their category's list by default.
     const count = await prisma.quickReply.count({ where: { categoryId } });
@@ -165,8 +166,8 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
     const { name, content, imageData, categoryId, kind } = req.body;
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพเท่านั้น' });
+    if (imageData && !isValidImageDataUrl(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
     }
     const data = {};
     if (categoryId) data.categoryId = categoryId;
@@ -221,10 +222,15 @@ router.get('/:id/image', async (req, res) => {
     const target = req.query.preview ? thumbPathFor(quickReply.imageData) : quickReply.imageData;
     return res.redirect(target);
   }
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(quickReply.imageData);
+  // Restricted to the same safe raster-image allowlist as new uploads (see
+  // imageStorage.js) — this path only still exists for legacy rows written
+  // before that allowlist existed. nosniff is extra defense-in-depth on top
+  // of that even for an allowed type.
+  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(quickReply.imageData);
   if (!match) return res.status(404).end();
-  const [, contentType, base64] = match;
-  res.set('Content-Type', contentType);
+  const [, ext, base64] = match;
+  res.set('Content-Type', `image/${ext}`);
+  res.set('X-Content-Type-Options', 'nosniff');
   res.set('Cache-Control', 'public, max-age=86400');
   res.send(Buffer.from(base64, 'base64'));
 });
@@ -243,6 +249,12 @@ router.post('/:id/send', auth, async (req, res) => {
     ]);
     if (!quickReply) return res.status(404).json({ error: 'Quick reply not found' });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    // Without this, a channel-restricted agent could push a real LINE
+    // message into any conversation outside their assigned channels just by
+    // knowing/guessing its id — see canAccessChannel's doc comment.
+    if (!(await canAccessChannel(req.agent, conversation.channelId))) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
     if (conversation.blocked) {
       return res.status(409).json({ error: 'ลูกค้าคนนี้บล็อคเราอยู่ ไม่สามารถส่งข้อความได้' });
     }
@@ -319,11 +331,16 @@ router.post('/:id/send', auth, async (req, res) => {
     // locally before broadcasting, otherwise the inbox list briefly shows a
     // stale value (jumping backward in sort order).
     conversation.lastMessageAt = now;
+    // `conversation` was fetched with the FULL LineChannel row (channel:
+    // true, needed above for sendMessage/sendImageMessage's accessToken) —
+    // broadcasting it as-is would push channelSecret/accessToken to every
+    // connected agent's browser. Redact before it reaches a socket emit.
+    const safeConversation = { ...conversation, channel: { id: conversation.channel.id, name: conversation.channel.name, active: conversation.channel.active } };
 
     for (const message of created) {
-      emitToConversation(conversation.id, 'new_message', { message, conversation });
+      emitToConversation(conversation.id, 'new_message', { message, conversation: safeConversation });
     }
-    emitToAll('conversation_updated', { ...conversation, lastMessage: created[created.length - 1] });
+    emitToAll('conversation_updated', { ...safeConversation, lastMessage: created[created.length - 1] });
 
     if (sendErr) {
       // 207 (not 201) — the frontend keys off this to warn the agent only the

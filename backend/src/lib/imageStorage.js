@@ -32,13 +32,50 @@ const FULL_QUALITY = 82;
 const THUMB_MAX_DIMENSION = 480;
 const THUMB_QUALITY = 70;
 
+// Every route that accepts an agent-supplied `data:image/...;base64,...`
+// payload (message/quick-reply/broadcast image attachments) validates it
+// against this SAME allowlist before it ever reaches saveBase64Image below —
+// deliberately a strict list of real raster image types, not a generic
+// `image/[a-zA-Z0-9.+-]+` wildcard. That wildcard used to also accept things
+// like `image/svg+xml`; sharp normally re-encodes everything to JPEG
+// regardless of input format, but if sharp ever fails to decode a payload,
+// callers fall back to storing (and later serving, unauthenticated) the RAW
+// bytes with whatever Content-Type the client declared — an SVG is
+// browser-renderable as a full HTML/JS-capable document, so that fallback
+// path was a stored-XSS vector for anyone who could reach those endpoints.
+// Restricting accepted input to real photo formats closes it at the door,
+// no matter what the fallback path does downstream.
+const SAFE_IMAGE_DATA_URL = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/;
+
+// Independent of the global express.json() body-size limit (index.js), which
+// bounds the whole request (a broadcast can carry several images at once) —
+// this bounds any SINGLE attachment. A base64 string runs about 1.37x the
+// size of the bytes it encodes, so ~20MB of base64 text here caps out around
+// 15MB decoded — generous for a real photo, but a hard ceiling on how much
+// sharp gets asked to decode/resize per attachment.
+const MAX_IMAGE_DATA_URL_LENGTH = 20 * 1024 * 1024;
+
+// Single check every route accepting an image attachment should run on the
+// raw request body BEFORE doing anything else with it (before saveBase64Image,
+// before creating any DB row) — combines the format allowlist and size cap
+// above so there's one place to keep both in sync instead of four routes
+// each re-implementing (and potentially drifting from) the same checks.
+function isValidImageDataUrl(dataUrl) {
+  return typeof dataUrl === 'string'
+    && dataUrl.length <= MAX_IMAGE_DATA_URL_LENGTH
+    && SAFE_IMAGE_DATA_URL.test(dataUrl);
+}
+
 // Decodes a `data:image/...;base64,...` string, compresses + resizes it, and
 // writes both a full-size and thumbnail JPEG to disk. Returns the full image's
 // public path (e.g. "/uploads/<id>.jpg") to store in the DB — the thumbnail
 // path is always derivable from it via thumbPathFor() below, so no extra DB
-// column is needed. Returns null if the input isn't a recognizable data URL.
+// column is needed. Returns null if the input isn't a recognizable data URL —
+// this ALSO enforces the same allowlist above, redundantly with the route-
+// level checks that should already have rejected anything else, so a caller
+// that forgets that check can't slip an unsafe type through here either.
 async function saveBase64Image(dataUrl) {
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl || '');
+  const match = SAFE_IMAGE_DATA_URL.exec(dataUrl || '');
   if (!match) return null;
   const [, , base64] = match;
   const buffer = Buffer.from(base64, 'base64');
@@ -104,4 +141,4 @@ function deleteStoredImage(storedPath) {
   fs.rm(path.join(UPLOAD_DIR, thumbFilename), { force: true }, () => {});
 }
 
-module.exports = { UPLOAD_DIR, saveBase64Image, thumbPathFor, isStoredPath, deleteStoredImage };
+module.exports = { UPLOAD_DIR, saveBase64Image, thumbPathFor, isStoredPath, deleteStoredImage, isValidImageDataUrl };
