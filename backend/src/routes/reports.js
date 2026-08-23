@@ -9,6 +9,19 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// `from`/`to` query params are plain "YYYY-MM-DD" strings computed in the
+// BROWSER's local timezone (Thailand, UTC+7) — e.g. the date-range pickers on
+// the Report page. Parsing them with no offset makes JS interpret them in the
+// SERVER's local timezone instead, which on Railway is UTC — silently
+// shifting the intended day boundary 7 hours later than the browser meant
+// (a report for "today" would miss anything before 7am Bangkok time, and in
+// the worst case — checking a report in the early Bangkok morning — the
+// window's start is still in the future, so it reads empty even though
+// matching rows already exist). The explicit +07:00 makes the boundary
+// unambiguous regardless of what timezone the server process itself runs in.
+function dayStart(dateStr) { return new Date(`${dateStr}T00:00:00.000+07:00`); }
+function dayEnd(dateStr) { return new Date(`${dateStr}T23:59:59.999+07:00`); }
+
 // GET /api/reports/flagged-messages?from=&to=&severity=&agentId=
 // Admin-only — powers the KPI review Report page. Only ever contains messages
 // flagged by the AI moderation check going forward from when that feature
@@ -24,8 +37,8 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
   if (agentId) baseWhere.senderId = agentId;
   if (from || to) {
     baseWhere.createdAt = {};
-    if (from) baseWhere.createdAt.gte = new Date(`${from}T00:00:00.000`);
-    if (to) baseWhere.createdAt.lte = new Date(`${to}T23:59:59.999`);
+    if (from) baseWhere.createdAt.gte = dayStart(from);
+    if (to) baseWhere.createdAt.lte = dayEnd(to);
   }
   const where = severity ? { ...baseWhere, flagSeverity: severity } : baseWhere;
 
@@ -140,8 +153,8 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
   if (from || to) {
     flaggedWhere.createdAt = {};
     viewWhere.viewedAt = {};
-    if (from) { flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`); viewWhere.viewedAt.gte = new Date(`${from}T00:00:00.000`); }
-    if (to) { flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`); viewWhere.viewedAt.lte = new Date(`${to}T23:59:59.999`); }
+    if (from) { flaggedWhere.createdAt.gte = dayStart(from); viewWhere.viewedAt.gte = dayStart(from); }
+    if (to) { flaggedWhere.createdAt.lte = dayEnd(to); viewWhere.viewedAt.lte = dayEnd(to); }
   }
 
   const [agents, flaggedGroups, viewGroups] = await Promise.all([
@@ -199,8 +212,8 @@ router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
   if (from || to) {
     flaggedWhere.createdAt = {};
     viewWhere.viewedAt = {};
-    if (from) { flaggedWhere.createdAt.gte = new Date(`${from}T00:00:00.000`); viewWhere.viewedAt.gte = new Date(`${from}T00:00:00.000`); }
-    if (to) { flaggedWhere.createdAt.lte = new Date(`${to}T23:59:59.999`); viewWhere.viewedAt.lte = new Date(`${to}T23:59:59.999`); }
+    if (from) { flaggedWhere.createdAt.gte = dayStart(from); viewWhere.viewedAt.gte = dayStart(from); }
+    if (to) { flaggedWhere.createdAt.lte = dayEnd(to); viewWhere.viewedAt.lte = dayEnd(to); }
   }
 
   const [agent, flaggedMessages, viewedNoReply] = await Promise.all([

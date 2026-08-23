@@ -17,8 +17,19 @@ router.get('/summary', auth, async (req, res) => {
   // the system, not just the ones they're assigned to.
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   const { from, to } = req.query;
-  const toDate = to ? new Date(`${to}T23:59:59.999`) : new Date();
-  const fromDate = from ? new Date(`${from}T00:00:00.000`) : new Date(toDate.getTime() - 6 * 24 * 60 * 60 * 1000);
+  // `from`/`to` are plain "YYYY-MM-DD" strings computed in the BROWSER's local
+  // timezone (Thailand, UTC+7) — e.g. the "วันนี้" preset. Interpolating them
+  // into `new Date(...)` with no offset makes JS parse them in the SERVER's
+  // local timezone instead, which on Railway is UTC. That silently shifts
+  // "today" 7 hours later than intended: a customer who messaged at 2am
+  // Bangkok time wouldn't count as "today" until the server's UTC clock also
+  // reaches midnight, 7 hours later — in the worst case (checking the
+  // dashboard in the early Bangkok morning) the window's start is still in
+  // the future, so newConversations reads 0 even though real messages came
+  // in hours ago. The explicit +07:00 makes this unambiguous regardless of
+  // what timezone the server process itself happens to be running in.
+  const toDate = to ? new Date(`${to}T23:59:59.999+07:00`) : new Date();
+  const fromDate = from ? new Date(`${from}T00:00:00.000+07:00`) : new Date(toDate.getTime() - 6 * 24 * 60 * 60 * 1000);
 
   const [
     totalConversations,
