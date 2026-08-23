@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { Wallet, X, ExternalLink, Check, Ban, Pencil } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -242,7 +242,10 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
   );
 }
 
-export default function Upsell() {
+// "ตรวจสอบ" — the reviewer confirms upsell work agents submitted from Inbox:
+// per-agent list (with pending/approved/rejected counts) → drill into an
+// agent → approve/reject each submission with a ผ่าน/ไม่ผ่าน + amount.
+function UpsellReviewPage() {
   const [agents, setAgents] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const { socket } = useSocket();
@@ -267,7 +270,7 @@ export default function Upsell() {
     <div className="p-6 overflow-y-auto h-full">
       <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
         <Wallet size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
-        อัพเซลล์
+        ตรวจสอบอัพเซลล์
       </h1>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
@@ -333,4 +336,92 @@ export default function Upsell() {
       )}
     </div>
   );
+}
+
+// "รายงาน" — a score leaderboard pulled from the same per-agent data the
+// ตรวจสอบ tab already reviews: 1 ผ่าน = 1 รายการ, plus the running total of
+// all approved upsell amounts. Read-only — no review actions here, that's
+// ตรวจสอบ's job; this is just the scoreboard.
+function UpsellReportPage() {
+  const [agents, setAgents] = useState(null);
+  const { socket } = useSocket();
+
+  function load() {
+    axios.get('/api/upsells/agents').then(r => setAgents(r.data.agents));
+  }
+  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('upsell_reviewed', load);
+    return () => socket.off('upsell_reviewed', load);
+  }, [socket]);
+
+  const ranked = agents
+    ? [...agents].filter(a => a.approved > 0).sort((a, b) => b.approvedAmount - a.approvedAmount || b.approved - a.approved)
+    : [];
+  const totalApproved = ranked.reduce((s, a) => s + a.approved, 0);
+  const totalAmount = ranked.reduce((s, a) => s + a.approvedAmount, 0);
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+        <TrendingUp size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
+        รายงานคะแนนอัพเซลล์
+      </h1>
+
+      <div className="grid grid-cols-2 gap-4 mb-4 max-w-lg">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
+          <p className="text-gray-500 dark:text-slate-400 text-sm">รายการที่ผ่านทั้งหมด</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalApproved}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
+          <p className="text-gray-500 dark:text-slate-400 text-sm">ยอดอัพเซลล์รวม</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalAmount.toLocaleString()} บาท</p>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        {!agents ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : ranked.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบ</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                <th className="px-4 py-2.5 font-medium">อันดับ</th>
+                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                <th className="px-4 py-2.5 font-medium">รายการที่ผ่าน</th>
+                <th className="px-4 py-2.5 font-medium">ยอดอัพเซลล์รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranked.map((a, i) => (
+                <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60">
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
+                    {i === 0 ? <Trophy size={15} className="text-amber-500 inline" /> : i + 1}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={a.name} />
+                      <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300 font-medium">{a.approved}</td>
+                  <td className="px-4 py-2.5 text-gray-900 dark:text-slate-100 font-semibold">{a.approvedAmount.toLocaleString()} บาท</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function Upsell() {
+  const { tab } = useParams();
+  if (tab === 'report') return <UpsellReportPage />;
+  return <UpsellReviewPage />;
 }

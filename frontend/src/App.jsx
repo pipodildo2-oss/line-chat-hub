@@ -46,7 +46,8 @@ export default function App() {
               <Route path="report" element={<AdminRoute><Navigate to="/report/audit" replace /></AdminRoute>} />
               <Route path="report/:tab" element={<AdminRoute><Report /></AdminRoute>} />
               <Route path="customers" element={<AdminRoute><Customers /></AdminRoute>} />
-              <Route path="upsell" element={<AdminRoute><Upsell /></AdminRoute>} />
+              <Route path="upsell" element={<AdminRoute><Navigate to="/upsell/review" replace /></AdminRoute>} />
+              <Route path="upsell/:tab" element={<AdminRoute><Upsell /></AdminRoute>} />
               <Route path="settings" element={<AdminRoute><Navigate to="/settings/channels" replace /></AdminRoute>} />
               <Route path="settings/:tab" element={<AdminRoute><Settings /></AdminRoute>} />
             </Route>

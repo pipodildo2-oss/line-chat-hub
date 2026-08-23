@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -18,6 +18,8 @@ export default function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(onSettings);
   const onReport = location.pathname.startsWith('/report');
   const [reportOpen, setReportOpen] = useState(onReport);
+  const onUpsell = location.pathname.startsWith('/upsell');
+  const [upsellOpen, setUpsellOpen] = useState(onUpsell);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -42,6 +44,11 @@ export default function Sidebar() {
     { to: '/report/audit', icon: Search, label: 'ตรวจสอบ' },
     { to: '/report/agents', icon: Users, label: 'พนักงาน' },
     { to: '/report/followup', icon: Clock, label: 'ตามลูกค้า' },
+  ];
+
+  const upsellChildren = [
+    { to: '/upsell/review', icon: ClipboardCheck, label: 'ตรวจสอบ' },
+    { to: '/upsell/report', icon: TrendingUp, label: 'รายงาน' },
   ];
 
   const linkCls = ({ isActive }) =>
@@ -105,10 +112,26 @@ export default function Sidebar() {
                 <Contact size={17} />
                 {t('nav_customers')}
               </NavLink>
-              <NavLink to="/upsell" className={linkCls}>
+              <button
+                onClick={() => setUpsellOpen(v => !v)}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  onUpsell ? 'text-aurora-teal' : 'text-slate-400 hover:bg-slate-800'
+                }`}
+              >
                 <Wallet size={17} />
-                อัพเซลล์
-              </NavLink>
+                <span className="flex-1 text-left">อัพเซลล์</span>
+                <ChevronDown size={15} className={`transition-transform ${upsellOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {upsellOpen && (
+                <div className="pl-4 space-y-0.5 pt-0.5">
+                  {upsellChildren.map(({ to, icon: Icon, label }) => (
+                    <NavLink key={to} to={to} className={linkCls}>
+                      <Icon size={14} />
+                      <span className="text-[13px]">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
               <button
                 onClick={() => setSettingsOpen(v => !v)}
                 className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
