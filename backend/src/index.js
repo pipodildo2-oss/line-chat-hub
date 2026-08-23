@@ -20,6 +20,7 @@ const channelCategoryGroupRoutes = require('./routes/channelCategoryGroups');
 const agentCategoryRoutes = require('./routes/agentCategories');
 const reportRoutes = require('./routes/reports');
 const broadcastRoutes = require('./routes/broadcasts');
+const upsellRoutes = require('./routes/upsells');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
@@ -160,6 +161,7 @@ app.use('/api/channel-category-groups', channelCategoryGroupRoutes);
 app.use('/api/agent-categories', agentCategoryRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/broadcasts', broadcastRoutes);
+app.use('/api/upsells', upsellRoutes);
 
 // Serves agent-attached chat images and quick-reply images saved by
 // imageStorage.saveBase64Image (see backend/src/lib/imageStorage.js). Must be

@@ -15,6 +15,7 @@ const prisma = new PrismaClient();
 const MESSAGE_SELECT = {
   id: true, conversationId: true, sender: true, senderName: true, type: true,
   content: true, metadata: true, read: true, lineMessageId: true, createdAt: true,
+  upsellItem: { select: { id: true, submissionId: true, submission: { select: { status: true } } } },
 };
 
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.

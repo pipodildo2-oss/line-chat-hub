@@ -28,6 +28,8 @@ model Agent {
   categoryId    String?
   category      AgentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   broadcastCampaigns BroadcastCampaign[]
+  upsellSubmissions UpsellSubmission[] @relation("UpsellSubmitter")
+  upsellReviews     UpsellSubmission[] @relation("UpsellReviewer")
 
   @@index([categoryId])
 }
@@ -184,6 +186,7 @@ model Conversation {
   updatedAt   DateTime    @updatedAt
   lastMessageAt DateTime?
   broadcastRecipients BroadcastRecipient[]
+  upsellSubmissions UpsellSubmission[]
 
   @@unique([lineUserId, channelId])
   @@index([channelId])
@@ -253,6 +256,7 @@ model Message {
   lineMessageId  String?      @unique // LINE's own message id — used to reject duplicate webhook redeliveries
   createdAt      DateTime     @default(now())
   views          MessageView[]
+  upsellItem     UpsellSubmissionItem?
 
   // AI moderation result (see moderation.service.js) — only ever checked for
   // freely-typed agent text messages sent to a customer via the composer, and
@@ -284,4 +288,43 @@ model MessageView {
 
   @@unique([messageId, agentId])
   @@index([messageId])
+}
+
+// ---------- Upsell ("อัพเซลล์") submissions ----------
+// An agent picks one or more messages/images from a chat as proof of a
+// successful upsell and submits them together as one UpsellSubmission for a
+// reviewer to score. The exclusivity rule ("ข้อความอัพเซลล์เป็นของใครของมัน" —
+// once claimed, nobody else can claim the same message) is enforced by the
+// @unique on UpsellSubmissionItem.messageId below, not just client-side UI —
+// a second agent's submit attempt hits a real DB constraint violation.
+model UpsellSubmission {
+  id             String    @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agentId        String
+  agent          Agent     @relation("UpsellSubmitter", fields: [agentId], references: [id])
+  status         String    @default("pending") // pending | approved | rejected
+  amount         Float?    // baht, filled in by the reviewer alongside the ผ่าน/ไม่ผ่าน decision
+  reviewNote     String?
+  reviewedById   String?
+  reviewedBy     Agent?    @relation("UpsellReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  items          UpsellSubmissionItem[]
+
+  @@index([agentId])
+  @@index([status])
+}
+
+// One row per claimed message. messageId is unique across the whole table —
+// this is the actual lock, independent of which submission it ends up under.
+model UpsellSubmissionItem {
+  id           String   @id @default(cuid())
+  submissionId String
+  submission   UpsellSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  messageId    String   @unique
+  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([submissionId])
 }

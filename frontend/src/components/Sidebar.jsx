@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -104,6 +104,10 @@ export default function Sidebar() {
               <NavLink to="/customers" className={linkCls}>
                 <Contact size={17} />
                 {t('nav_customers')}
+              </NavLink>
+              <NavLink to="/upsell" className={linkCls}>
+                <Wallet size={17} />
+                อัพเซลล์
               </NavLink>
               <button
                 onClick={() => setSettingsOpen(v => !v)}

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2 } from 'lucide-react';
+import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -243,6 +243,54 @@ function Lightbox({ src, onClose }) {
   );
 }
 
+// Backdrop+centered-box confirm dialog for submitting a batch of claimed
+// messages as one upsell submission — same modal shell as Lightbox above,
+// just with content instead of an image.
+function UpsellConfirmModal({ messages, submitting, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <div
+        className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-800">
+          <p className="font-semibold text-gray-900 dark:text-slate-100">ยืนยันส่งเป็นรายการอัพเซลล์ใช่หรือไม่?</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
+            เลือกแล้ว {messages.length} รายการ — เมื่อส่งแล้วคนอื่นจะเลือกข้อความเหล่านี้ไม่ได้อีก
+          </p>
+        </div>
+        <div className="overflow-y-auto px-5 py-3 space-y-2">
+          {messages.map(m => (
+            <div key={m.id} className="text-sm text-gray-700 dark:text-slate-300 border border-gray-100 dark:border-slate-800 rounded-lg px-3 py-2">
+              {m.type === 'text' ? (
+                <p className="line-clamp-2 whitespace-pre-wrap break-words">{m.content}</p>
+              ) : (
+                <p className="text-gray-400 dark:text-slate-500">[{m.type}]</p>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100 dark:border-slate-800 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-sm px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={submitting}
+            className="text-sm px-4 py-2 rounded-lg bg-gradient-to-r from-aurora-teal to-aurora-purple text-white disabled:opacity-50"
+          >
+            {submitting ? 'กำลังส่ง...' : 'ยืนยัน'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatDayLabel(date) {
   if (isToday(date)) return 'วันนี้';
   if (isYesterday(date)) return 'เมื่อวาน';
@@ -273,6 +321,25 @@ function ViewerTags({ msg, isAdmin }) {
   return (
     <p className="text-[10px] text-amber-500 dark:text-amber-400 mt-1" title="เปิดอ่านแล้วแต่ยังไม่มีการตอบกลับข้อความนี้">
       👁 เปิดอ่านแล้วไม่ตอบ: {names.join(', ')}
+    </p>
+  );
+}
+
+// Shows a message's upsell-claim state to EVERYONE (not just while picking),
+// so "this one's already taken" is always visible — the actual exclusivity
+// lock lives server-side (UpsellSubmissionItem.messageId @unique), this is
+// just making that lock legible in the chat itself.
+const UPSELL_BADGE_TEXT = {
+  pending: '🔒 ส่งอัพเซลล์แล้ว (รอตรวจ)',
+  approved: '✅ อัพเซลล์ผ่านแล้ว',
+  rejected: '❌ อัพเซลล์ไม่ผ่าน',
+};
+function UpsellBadge({ msg }) {
+  if (!msg.upsellItem) return null;
+  const status = msg.upsellItem.submission?.status || 'pending';
+  return (
+    <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
+      {UPSELL_BADGE_TEXT[status] || UPSELL_BADGE_TEXT.pending}
     </p>
   );
 }
@@ -320,6 +387,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
             {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
+          <UpsellBadge msg={msg} />
         </div>
       </div>
     );
@@ -344,6 +412,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
             {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
+          <UpsellBadge msg={msg} />
         </div>
       </div>
     );
@@ -365,6 +434,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
             {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
+          <UpsellBadge msg={msg} />
         </div>
       </div>
     );
@@ -385,6 +455,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
             {!isUser && <DeliveryTick repliedTo={repliedTo} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
+          <UpsellBadge msg={msg} />
         </div>
       </div>
     );
@@ -398,6 +469,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
           {timeLabel}
         </div>
         <ViewerTags msg={msg} isAdmin={isAdmin} />
+        <UpsellBadge msg={msg} />
       </div>
     </div>
   );
@@ -876,6 +948,13 @@ export default function Inbox() {
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // Upsell claim tool — while true, clicking a message toggles it in/out of
+  // selectedUpsellIds instead of its normal behavior (already-claimed
+  // messages, i.e. msg.upsellItem != null, aren't selectable at all).
+  const [upsellMode, setUpsellMode] = useState(false);
+  const [selectedUpsellIds, setSelectedUpsellIds] = useState(() => new Set());
+  const [showUpsellConfirm, setShowUpsellConfirm] = useState(false);
+  const [submittingUpsell, setSubmittingUpsell] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null); // src of the image currently open in the in-app viewer
   const [typingMap, setTypingMap] = useState({}); // { [conversationId]: agentName } — who else is currently typing a reply
   const typingTimeoutsRef = useRef({});
@@ -1312,11 +1391,30 @@ export default function Inbox() {
         return filtered.length === m.views.length ? m : { ...m, views: filtered };
       }));
     });
+    // Room-scoped like 'new_message' above (see socket?.emit('join', ...)) —
+    // only agents who currently have THIS conversation open receive it, so no
+    // conversationId check is needed here to know it's relevant. Patches the
+    // claimed messages live so the lock (see UpsellBadge/MessageBubble) shows
+    // up instantly for every other agent viewing the same chat, and drops any
+    // of those ids from this agent's own in-progress selection so they can't
+    // still submit them.
+    socket.on('upsell_claimed', ({ messageIds }) => {
+      setMessages(prev => prev.map(m => (
+        messageIds.includes(m.id) ? { ...m, upsellItem: { submission: { status: 'pending' } } } : m
+      )));
+      setSelectedUpsellIds(prev => {
+        if (![...prev].some(id => messageIds.includes(id))) return prev;
+        const next = new Set(prev);
+        messageIds.forEach(id => next.delete(id));
+        return next;
+      });
+    });
     return () => {
       socket.off('new_message');
       socket.off('conversation_updated');
       socket.off('message_view');
       socket.off('message_view_cleared');
+      socket.off('upsell_claimed');
     };
   }, [socket, selected?.id, agent?.id, agent?.role]);
 
@@ -1391,6 +1489,37 @@ export default function Inbox() {
       }
     } finally {
       setSendingConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
+    }
+  }
+
+  function toggleUpsellSelect(msg) {
+    if (msg.upsellItem) return; // already claimed by someone — not selectable
+    setSelectedUpsellIds(prev => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
+      return next;
+    });
+  }
+
+  function exitUpsellMode() {
+    setUpsellMode(false);
+    setSelectedUpsellIds(new Set());
+  }
+
+  async function submitUpsellSelection() {
+    setSubmittingUpsell(true);
+    try {
+      await axios.post('/api/upsells', { messageIds: [...selectedUpsellIds] });
+      alert('ส่งรายการอัพเซลล์เรียบร้อยแล้ว รอการตรวจสอบ');
+    } catch (err) {
+      // A 409 here means someone else claimed one of these messages first —
+      // the 'upsell_claimed' socket handler above will patch the lock into
+      // view once their submit's broadcast arrives (we're in the same room).
+      alert(err.response?.data?.error || 'ไม่สามารถส่งรายการอัพเซลล์ได้');
+    } finally {
+      setSubmittingUpsell(false);
+      setShowUpsellConfirm(false);
+      exitUpsellMode();
     }
   }
 
@@ -1649,7 +1778,16 @@ export default function Inbox() {
                       {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
                       <div
                         data-message-id={msg.id}
-                        className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''}`}
+                        onClick={upsellMode ? () => toggleUpsellSelect(msg) : undefined}
+                        className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''} ${
+                          upsellMode
+                            ? msg.upsellItem
+                              ? 'opacity-40 cursor-not-allowed'
+                              : selectedUpsellIds.has(msg.id)
+                                ? 'cursor-pointer ring-2 ring-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                                : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800/60'
+                            : ''
+                        }`}
                       >
                         <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
                       </div>
@@ -1659,6 +1797,30 @@ export default function Inbox() {
               </div>
               <div ref={bottomRef} />
             </div>
+
+            {/* Upsell claim tool — active while picking messages/images to submit */}
+            {upsellMode && (
+              <div className="bg-emerald-50 dark:bg-emerald-500/10 border-t border-emerald-200 dark:border-emerald-500/20 px-4 py-2 flex items-center justify-between gap-2">
+                <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
+                  โหมดเลือกอัพเซลล์ — เลือกแล้ว {selectedUpsellIds.size} รายการ
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exitUpsellMode}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={() => setShowUpsellConfirm(true)}
+                    disabled={selectedUpsellIds.size === 0}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-aurora-teal to-aurora-purple text-white disabled:opacity-40"
+                  >
+                    ตกลง
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* AI suggestion */}
             {suggestion && (
@@ -1811,6 +1973,14 @@ export default function Inbox() {
                           }}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => { setUpsellMode(v => !v); setSelectedUpsellIds(new Set()); }}
+                        title="เครื่องมืออัพเซลล์"
+                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${upsellMode ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                      >
+                        <Wallet size={19} />
+                      </button>
                     </div>
                     <button
                       onClick={() => handleSend()}
@@ -1848,6 +2018,14 @@ export default function Inbox() {
         </div>
       )}
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      {showUpsellConfirm && (
+        <UpsellConfirmModal
+          messages={messages.filter(m => selectedUpsellIds.has(m.id))}
+          submitting={submittingUpsell}
+          onConfirm={submitUpsellSelection}
+          onCancel={() => setShowUpsellConfirm(false)}
+        />
+      )}
     </div>
   );
 }
