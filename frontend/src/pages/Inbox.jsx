@@ -35,6 +35,35 @@ const SEND_REQUEST_TIMEOUT_MS = 30000;
 // there's one place to update if a new filter field is ever added.
 const DEFAULT_FILTER = { status: 'open', channelIds: [], search: '', tagId: '', agentId: '', sort: 'newest' };
 
+// Whether `conv` matches Inbox's currently-active list filter — mirrors the
+// same criteria the backend applies for GET /api/conversations
+// (buildConversationWhere, backend/src/lib/conversationQuery.js). Needed
+// because a live 'conversation_updated' socket event fires for EVERY
+// conversation in the system, not just ones matching the filter someone
+// happens to have selected — without this check, a customer messaging a
+// channel/status/tag/agent outside the current filter would still pop into
+// the list and only disappear again on the next manual refresh or filter
+// change, since the raw socket payload was being spliced in unconditionally.
+function matchesFilter(conv, filter, myAgentId) {
+  if (filter.status && conv.status !== filter.status) return false;
+  if (filter.channelIds.length > 0 && !filter.channelIds.includes(conv.channelId)) return false;
+  if (filter.tagId && !conv.tags?.some(t => t.tagId === filter.tagId)) return false;
+  if (filter.agentId === 'me') {
+    if (conv.agentId !== myAgentId) return false;
+  } else if (filter.agentId === 'unassigned') {
+    if (conv.agentId) return false;
+  } else if (filter.agentId && conv.agentId !== filter.agentId) {
+    return false;
+  }
+  const q = filter.search?.trim().toLowerCase();
+  if (q) {
+    const name = (conv.displayName || '').toLowerCase();
+    const lineId = (conv.lineUserId || '').toLowerCase();
+    if (!name.includes(q) && !lineId.includes(q)) return false;
+  }
+  return true;
+}
+
 function Avatar({ name, pictureUrl, size = 10 }) {
   const sizeCls = AVATAR_SIZE_CLASSES[size] || AVATAR_SIZE_CLASSES[10];
   if (pictureUrl) return <img src={pictureUrl} className={`${sizeCls} rounded-full object-cover flex-shrink-0`} />;
@@ -823,6 +852,13 @@ export default function Inbox() {
     } catch { /* corrupted/missing — fall back to defaults below */ }
     return DEFAULT_FILTER;
   });
+  // Mirror of `filter`, read inside the 'conversation_updated' socket handler
+  // below (see matchesFilter) instead of depending on `filter` directly in
+  // that effect — a ref avoids re-subscribing all four socket listeners on
+  // every keystroke while typing a search query, while still always
+  // reflecting the current filter by the time an event actually arrives.
+  const filterRef = useRef(filter);
+  useEffect(() => { filterRef.current = filter; }, [filter]);
   const [showFilters, setShowFilters] = useState(false);
   // Persisted across conversation switches (and page reloads) so the panel stays
   // open/closed the same way no matter which chat you're looking at.
@@ -1224,8 +1260,16 @@ export default function Inbox() {
       // emits not tied to a new message (block/unblock, tag/assign changes)
       // don't include lastMessage, so this leaves those untouched.
       const conv = rawConv.lastMessage ? { ...rawConv, messages: [rawConv.lastMessage] } : rawConv;
+      const currentFilter = filterRef.current;
+      const matches = matchesFilter(conv, currentFilter, agent?.id);
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === conv.id);
+        // Doesn't (or no longer) belongs under the active filter — a customer
+        // on a different channel/status/tag/agent than what's selected right
+        // now shouldn't appear in the list at all, and one that fell out of
+        // the filter (e.g. someone else closed it while filtered to "เปิด")
+        // shouldn't linger in it either.
+        if (!matches) return idx === -1 ? prev : prev.filter(c => c.id !== conv.id);
         if (idx === -1) return [conv, ...prev];
         const next = [...prev];
         next[idx] = { ...next[idx], ...conv };
@@ -1235,9 +1279,12 @@ export default function Inbox() {
         // for ASCENDING order — so every local resort (message sent, status
         // changed, anything touching the conversation) flipped the whole list to
         // oldest-first. Comparing (a - b) here gives the correct sign in both cases.
-        const dir = filter.sort === 'oldest' ? 1 : -1;
+        const dir = currentFilter.sort === 'oldest' ? 1 : -1;
         return next.sort((a, b) => dir * (new Date(a.lastMessageAt) - new Date(b.lastMessageAt)));
       });
+      // The currently OPEN conversation stays open/updated regardless of the
+      // list filter — filters only govern the sidebar list, not whatever chat
+      // an agent is actively replying in.
       setSelected(prev => (prev?.id === conv.id ? { ...prev, ...conv } : prev));
     });
     // Admin-only audit trail, live update: someone else (or this agent, in another
@@ -1271,7 +1318,7 @@ export default function Inbox() {
       socket.off('message_view');
       socket.off('message_view_cleared');
     };
-  }, [socket, selected?.id, filter.sort, agent?.role]);
+  }, [socket, selected?.id, agent?.id, agent?.role]);
 
   // Typing indicator — deliberately NOT scoped to the currently open conversation
   // (unlike 'new_message'/'join' above), since the whole point is to show "someone's
