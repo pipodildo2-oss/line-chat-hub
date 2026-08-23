@@ -878,6 +878,19 @@ export default function Inbox() {
   // jumped-to message) hasn't finished settling yet.
   const initialScrollDoneRef = useRef(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // Customer-sent images/videos are fetched through an authenticated proxy
+  // (ImageMessage/VideoMessage) — they show a fixed-size placeholder first,
+  // then swap in the real media once it's finished loading a moment later,
+  // which is almost always AFTER the initial scroll-to-bottom has already
+  // fired. If the real media is taller than its placeholder, the container's
+  // content grows and the "true" bottom moves further down than where the
+  // view already settled — this ref + the ResizeObserver below re-pins the
+  // view to the bottom whenever that happens, but ONLY while the agent was
+  // already at/near the bottom (messageContentRef's resize handler checks
+  // this) — so it never yanks someone back down mid-way through reading
+  // older history just because a late image loaded further up.
+  const isNearBottomRef = useRef(true);
+  const messageContentRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
@@ -968,7 +981,15 @@ export default function Inbox() {
     const msgId = searchParams.get('msg');
     if (!convId) return;
     axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
-    if (msgId) jumpTargetRef.current = msgId;
+    if (msgId) {
+      jumpTargetRef.current = msgId;
+      // A jump is pending as soon as this is set, not just once the target is
+      // actually found — the ResizeObserver-driven "stick to bottom" (below)
+      // must stay off for the whole jump-search phase too, otherwise a
+      // late-loading image while still paging back through history would
+      // fight loadOlderMessages' own scroll-position restoration.
+      isNearBottomRef.current = false;
+    }
     setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); next.delete('msg'); return next; }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1005,6 +1026,11 @@ export default function Inbox() {
     if (!selected) return;
     hasMoreMessagesRef.current = true;
     initialScrollDoneRef.current = false;
+    // A freshly-opened chat starts pinned to the bottom — UNLESS a jump-to-
+    // message deep link is already pending for it (see the `msg` deep-link
+    // effect above), which explicitly turns this off itself since it's about
+    // to land somewhere in the middle of history instead.
+    if (!jumpTargetRef.current) isNearBottomRef.current = true;
     axios.get(`/api/messages/${selected.id}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
       if (r.data.length < MESSAGE_PAGE_LIMIT) hasMoreMessagesRef.current = false;
       setMessages(r.data);
@@ -1073,10 +1099,15 @@ export default function Inbox() {
 
   // Infinite-scroll-up: load older history once the user scrolls near the top
   // of the message list, independent of the jump-to-message feature below.
+  // Also tracks isNearBottomRef (used by the ResizeObserver further down) on
+  // every scroll, regardless of direction — an agent scrolling up to read
+  // history should stop being auto-stuck to the bottom, and scrolling back
+  // down to the bottom should turn that sticking back on.
   useEffect(() => {
     const container = messageListRef.current;
     if (!container) return;
     function handleScroll() {
+      isNearBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
       // Ignore scroll events until this conversation's initial positioning
       // has actually settled — see initialScrollDoneRef's declaration for why.
       if (initialScrollDoneRef.current && container.scrollTop < 100) loadOlderMessages();
@@ -1084,6 +1115,29 @@ export default function Inbox() {
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
   }, [selected?.id, loadOlderMessages]);
+
+  // Customer media (ImageMessage/VideoMessage) loads in and swaps out its
+  // placeholder asynchronously, after the scroll-to-bottom below has already
+  // run — if the real media is taller than the placeholder it replaced, the
+  // container grows and the view is left short of the actual newest message
+  // ("close to the bottom" with a bit of leftover gap/tugging as more images
+  // finish loading in). A ResizeObserver on the actual message content (not
+  // the scroll container itself, which has a fixed height regardless of
+  // overflow) re-pins the view to the bottom on every such growth — but only
+  // while isNearBottomRef says the agent was already there, so it never
+  // yanks someone back down while they're deliberately scrolled up reading
+  // older messages. `behavior: 'auto'` (instant) rather than 'smooth' — a
+  // smooth re-animation on every single image popping in over a couple
+  // seconds would itself look like stutter/tugging.
+  useEffect(() => {
+    const content = messageContentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (isNearBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [selected?.id]);
 
   // Normally just scrolls to the newest message on any change to `messages`.
   // When a jump target is pending (see the `msg` deep-link effect above and
@@ -1121,6 +1175,10 @@ export default function Inbox() {
         setFlashMessageId(targetId);
         jumpTargetRef.current = null;
         isPrependingRef.current = false;
+        // Landed in the middle of history, not at the newest message — a
+        // late-loading image elsewhere in the list shouldn't yank the view
+        // back down to the bottom while the agent is looking at this one.
+        isNearBottomRef.current = false;
         markSettledSoon();
         return () => clearTimeout(settleTimer);
       }
@@ -1535,21 +1593,23 @@ export default function Inbox() {
                   <Loader2 size={16} className="animate-spin text-gray-400 dark:text-slate-500" />
                 </div>
               )}
-              {messages.map((msg, i) => {
-                const prev = messages[i - 1];
-                const showDivider = !prev || !isSameDay(new Date(prev.createdAt), new Date(msg.createdAt));
-                return (
-                  <div key={msg.id}>
-                    {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
-                    <div
-                      data-message-id={msg.id}
-                      className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''}`}
-                    >
-                      <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
+              <div ref={messageContentRef}>
+                {messages.map((msg, i) => {
+                  const prev = messages[i - 1];
+                  const showDivider = !prev || !isSameDay(new Date(prev.createdAt), new Date(msg.createdAt));
+                  return (
+                    <div key={msg.id}>
+                      {showDivider && <DateDivider label={formatDayLabel(new Date(msg.createdAt))} />}
+                      <div
+                        data-message-id={msg.id}
+                        className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''}`}
+                      >
+                        <MessageBubble msg={msg} onImageClick={setLightboxSrc} isAdmin={agent?.role === 'admin'} repliedTo={repliedIds.has(msg.id)} />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
               <div ref={bottomRef} />
             </div>
 
