@@ -298,8 +298,22 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
 function UpsellReviewPage() {
   const [agents, setAgents] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
+  // Shared across every team box, same sortable-header idea as คะแนน —
+  // defaults to worklist-first (most รอตรวจ on top) since that's the whole
+  // point of this page.
+  const [sortKey, setSortKey] = useState('pending'); // 'name'|'total'|'pending'|'approved'|'rejected'|'approvedAmount'
+  const [sortDir, setSortDir] = useState('desc');
   const { socket } = useSocket();
   const navigate = useNavigate();
+
+  function handleSort(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  }
 
   function load() {
     axios.get('/api/upsells/agents').then(r => setAgents(r.data.agents));
@@ -316,6 +330,30 @@ function UpsellReviewPage() {
     };
   }, [socket]);
 
+  const teams = useMemo(() => {
+    if (!agents) return [];
+    const byTeam = {};
+    for (const a of agents) {
+      const key = a.categoryId || '__none__';
+      (byTeam[key] ||= { id: a.categoryId, name: a.categoryName || 'ไม่มีทีม', agents: [] }).agents.push(a);
+    }
+    const groups = Object.values(byTeam).map(g => ({
+      ...g,
+      pending: g.agents.reduce((s, a) => s + a.pending, 0),
+      total: g.agents.reduce((s, a) => s + a.total, 0),
+    }));
+    // Teams still carrying unreviewed work float to the top, same worklist
+    // priority the flat list used before team grouping was added.
+    groups.sort((x, y) => (y.pending - x.pending) || (y.total - x.total));
+    const dirMul = sortDir === 'asc' ? 1 : -1;
+    for (const g of groups) {
+      g.agents = [...g.agents].sort((a, b) => (
+        sortKey === 'name' ? dirMul * a.name.localeCompare(b.name) : dirMul * (a[sortKey] - b[sortKey])
+      ));
+    }
+    return groups;
+  }, [agents, sortKey, sortDir]);
+
   return (
     <div className="p-6 overflow-y-auto h-full">
       <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
@@ -323,58 +361,75 @@ function UpsellReviewPage() {
         ตรวจสอบอัพเซลล์
       </h1>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
-        {!agents ? (
-          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
-        ) : agents.length === 0 ? (
-          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานส่งรายการอัพเซลล์เข้ามา</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
-                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">ส่งมาแล้ว</th>
-                <th className="px-4 py-2.5 font-medium">รอตรวจ</th>
-                <th className="px-4 py-2.5 font-medium">ผ่าน</th>
-                <th className="px-4 py-2.5 font-medium">ไม่ผ่าน</th>
-                <th className="px-4 py-2.5 font-medium">ยอดที่ผ่านแล้ว</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map(a => (
-                <tr
-                  key={a.id}
-                  onClick={() => setSelectedAgentId(a.id)}
-                  className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 cursor-pointer"
-                >
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={a.name} />
-                      <div className="min-w-0">
-                        <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
-                        <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{a.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300">{a.total}</td>
-                  <td className="px-4 py-2.5">
-                    {a.pending > 0 ? (
-                      <span className="text-amber-600 dark:text-amber-400 font-medium">{a.pending}</span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-slate-500">0</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-emerald-600 dark:text-emerald-400">{a.approved}</td>
-                  <td className="px-4 py-2.5 text-rose-500 dark:text-rose-400">{a.rejected}</td>
-                  <td className="px-4 py-2.5 text-gray-800 dark:text-slate-200 font-medium">
-                    {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {!agents ? (
+        <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+      ) : teams.length === 0 ? (
+        <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานส่งรายการอัพเซลล์เข้ามา</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {teams.map(team => (
+            <div key={team.id || 'none'} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Users size={14} /> {team.name}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  {team.pending > 0 && <span className="text-amber-600 dark:text-amber-400 font-medium">{team.pending} รอตรวจ · </span>}
+                  {team.total} รายการทั้งหมด
+                </p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                    <SortableTh label="พนักงาน" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
+                    <SortableTh label="ส่งมาแล้ว" active={sortKey === 'total'} dir={sortDir} onClick={() => handleSort('total')} />
+                    <SortableTh label="รอตรวจ" active={sortKey === 'pending'} dir={sortDir} onClick={() => handleSort('pending')} />
+                    <SortableTh label="ผ่าน" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} />
+                    <SortableTh label="ไม่ผ่าน" active={sortKey === 'rejected'} dir={sortDir} onClick={() => handleSort('rejected')} />
+                    <SortableTh label="ยอดที่ผ่านแล้ว" active={sortKey === 'approvedAmount'} dir={sortDir} onClick={() => handleSort('approvedAmount')} align="right" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {team.agents.map(a => (
+                    <tr
+                      key={a.id}
+                      onClick={() => setSelectedAgentId(a.id)}
+                      className={`border-b border-gray-50 dark:border-slate-800/60 last:border-0 cursor-pointer transition-colors ${
+                        a.pending > 0
+                          ? 'bg-amber-50 dark:bg-amber-500/10 border-l-2 border-l-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20'
+                          : 'hover:bg-gray-50 dark:hover:bg-slate-800/40'
+                      }`}
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={a.name} />
+                          <div className="min-w-0">
+                            <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
+                            <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{a.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300">{a.total}</td>
+                      <td className="px-4 py-2.5">
+                        {a.pending > 0 ? (
+                          <span className="text-amber-600 dark:text-amber-400 font-semibold">{a.pending}</span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-slate-500">0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-emerald-600 dark:text-emerald-400">{a.approved}</td>
+                      <td className="px-4 py-2.5 text-rose-500 dark:text-rose-400">{a.rejected}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-800 dark:text-slate-200 font-medium whitespace-nowrap">
+                        {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
 
       {selectedAgentId && (
         <UpsellAgentModal
