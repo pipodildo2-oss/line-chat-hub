@@ -231,12 +231,12 @@ function SubmissionRow({ submission, onReview, navigate }) {
             {submission.reviewedBy && <span> · ตรวจโดย {submission.reviewedBy.name}</span>}
             {submission.reviewedAt && <span> · {format(new Date(submission.reviewedAt), 'd MMM yy HH:mm', { locale: th })}</span>}
           </div>
-          {submission.status === 'approved' && (
+          {(submission.status === 'approved' || submission.status === 'rejected') && (
             <button
               onClick={() => { setAmount(submission.amount ?? ''); setEditing(true); }}
               className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800"
             >
-              <Pencil size={12} /> แก้ไขยอด
+              <Pencil size={12} /> {submission.status === 'approved' ? 'แก้ไขยอด' : 'แก้ไข'}
             </button>
           )}
         </div>
