@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, X, ExternalLink, Check, Ban } from 'lucide-react';
+import { Wallet, X, ExternalLink, Check, Ban, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -77,16 +77,28 @@ function SubmissionItemPreview({ item }) {
 function SubmissionRow({ submission, onReview, navigate }) {
   const [amount, setAmount] = useState(submission.amount ?? '');
   const [saving, setSaving] = useState(false);
-  const conv = submission.items[0]?.message?.conversation;
+  // Lets a reviewer reopen the amount+ผ่าน/ไม่ผ่าน form after already
+  // approving a submission, in case they typed the wrong figure — without
+  // this there was no way to correct a mis-scored amount after the fact.
+  const [editing, setEditing] = useState(false);
+  // Backend now returns items sorted oldest-message-first (see
+  // GET /api/upsells/agents/:agentId), so items[0] is always the topmost
+  // claimed message in the actual chat — used both for the customer/channel
+  // header below and as the "ไปที่แชท" scroll target.
+  const topItem = submission.items[0];
+  const conv = topItem?.message?.conversation;
 
   async function act(status) {
     setSaving(true);
     try {
       await onReview(submission.id, status, amount);
+      setEditing(false);
     } finally {
       setSaving(false);
     }
   }
+
+  const showForm = submission.status === 'pending' || editing;
 
   return (
     <div className="border border-gray-100 dark:border-slate-800 rounded-xl p-4 space-y-3">
@@ -104,9 +116,9 @@ function SubmissionRow({ submission, onReview, navigate }) {
           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[submission.status]}`}>
             {STATUS_LABEL[submission.status]}
           </span>
-          {conv && (
+          {conv && topItem && (
             <button
-              onClick={() => navigate(`/inbox?conv=${conv.id}&msg=${submission.items[0].message.id}`)}
+              onClick={() => navigate(`/inbox?conv=${conv.id}&msg=${topItem.message.id}`)}
               title="ไปที่แชท"
               className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal"
             >
@@ -120,7 +132,7 @@ function SubmissionRow({ submission, onReview, navigate }) {
         {submission.items.map(item => <SubmissionItemPreview key={item.id} item={item} />)}
       </div>
 
-      {submission.status === 'pending' ? (
+      {showForm ? (
         <div className="flex items-center gap-2 pt-1 flex-wrap">
           <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
             <span>บาท</span>
@@ -148,16 +160,35 @@ function SubmissionRow({ submission, onReview, navigate }) {
           >
             <Ban size={14} /> ไม่ผ่าน
           </button>
+          {editing && (
+            <button
+              disabled={saving}
+              onClick={() => { setEditing(false); setAmount(submission.amount ?? ''); }}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50"
+            >
+              ยกเลิก
+            </button>
+          )}
         </div>
       ) : (
-        <div className="text-sm text-gray-500 dark:text-slate-400 pt-1">
+        <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+          <div className="text-sm text-gray-500 dark:text-slate-400">
+            {submission.status === 'approved' && (
+              <span className="font-medium text-gray-800 dark:text-slate-200">
+                {submission.amount != null ? `${submission.amount.toLocaleString()} บาท` : '—'}
+              </span>
+            )}
+            {submission.reviewedBy && <span> · ตรวจโดย {submission.reviewedBy.name}</span>}
+            {submission.reviewedAt && <span> · {format(new Date(submission.reviewedAt), 'd MMM yy HH:mm', { locale: th })}</span>}
+          </div>
           {submission.status === 'approved' && (
-            <span className="font-medium text-gray-800 dark:text-slate-200">
-              {submission.amount != null ? `${submission.amount.toLocaleString()} บาท` : '—'}
-            </span>
+            <button
+              onClick={() => { setAmount(submission.amount ?? ''); setEditing(true); }}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800"
+            >
+              <Pencil size={12} /> แก้ไขยอด
+            </button>
           )}
-          {submission.reviewedBy && <span> · ตรวจโดย {submission.reviewedBy.name}</span>}
-          {submission.reviewedAt && <span> · {format(new Date(submission.reviewedAt), 'd MMM yy HH:mm', { locale: th })}</span>}
         </div>
       )}
     </div>

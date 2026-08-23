@@ -141,6 +141,16 @@ router.get('/agents/:agentId', auth, requireAdmin, async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
 
+  // Prisma doesn't guarantee item order here (no orderBy on a to-many
+  // include), so a submission's items could come back in an arbitrary order
+  // even though they were all createMany'd together — sort by the underlying
+  // message's own createdAt so "the topmost claimed message" (oldest in the
+  // chat) is always items[0], which the frontend uses as its "ไปที่แชท"
+  // scroll target.
+  for (const s of submissions) {
+    s.items.sort((a, b) => new Date(a.message.createdAt) - new Date(b.message.createdAt));
+  }
+
   res.json({ agent, submissions });
 });
 
