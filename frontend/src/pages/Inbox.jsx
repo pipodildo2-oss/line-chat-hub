@@ -30,6 +30,11 @@ const MESSAGE_PAGE_LIMIT = 50;
 // broadcast targeting thousands of conversations, or a heavy report query).
 const SEND_REQUEST_TIMEOUT_MS = 30000;
 
+// Shape of Inbox's conversation-list filter — shared between the initial
+// state and the localStorage fallback (see the `filter` useState below), so
+// there's one place to update if a new filter field is ever added.
+const DEFAULT_FILTER = { status: 'open', channelIds: [], search: '', tagId: '', agentId: '', sort: 'newest' };
+
 function Avatar({ name, pictureUrl, size = 10 }) {
   const sizeCls = AVATAR_SIZE_CLASSES[size] || AVATAR_SIZE_CLASSES[10];
   if (pictureUrl) return <img src={pictureUrl} className={`${sizeCls} rounded-full object-cover flex-shrink-0`} />;
@@ -805,7 +810,19 @@ export default function Inbox() {
   const [agents, setAgents] = useState([]);
   const [channels, setChannels] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filter, setFilter] = useState({ status: 'open', channelIds: [], search: '', tagId: '', agentId: '', sort: 'newest' });
+  // Persisted across page reloads and navigating away/back, same as
+  // showDetail below — whatever an agent last set (status/channel/tag/agent/
+  // sort/search) stays set instead of silently resetting to the defaults
+  // every time they reopen Inbox. Read lazily (once, on mount) rather than in
+  // a useEffect, so the very first render already reflects the saved filter
+  // instead of flashing the defaults for a frame first.
+  const [filter, setFilter] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('inbox_filter'));
+      if (saved && typeof saved === 'object') return { ...DEFAULT_FILTER, ...saved };
+    } catch { /* corrupted/missing — fall back to defaults below */ }
+    return DEFAULT_FILTER;
+  });
   const [showFilters, setShowFilters] = useState(false);
   // Persisted across conversation switches (and page reloads) so the panel stays
   // open/closed the same way no matter which chat you're looking at.
@@ -853,6 +870,10 @@ export default function Inbox() {
   useEffect(() => {
     localStorage.setItem('inbox_showDetail', showDetail ? '1' : '0');
   }, [showDetail]);
+
+  useEffect(() => {
+    localStorage.setItem('inbox_filter', JSON.stringify(filter));
+  }, [filter]);
 
   // Composer is a <textarea> (was a single-line <input>, which can't hold a
   // line break at all — that's why Shift+Enter did nothing before) that
