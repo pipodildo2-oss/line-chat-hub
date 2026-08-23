@@ -51,7 +51,19 @@ function corsOriginCheck(origin, callback) {
   // No Origin header = same-origin request, or a non-browser client (curl,
   // server-to-server) — neither is something CORS applies to anyway.
   if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-  callback(new Error('Not allowed by CORS'));
+  // IMPORTANT: callback(null, false) — NOT callback(new Error(...)). Passing
+  // an Error here makes the `cors` middleware call next(err), which Express's
+  // default error handler turns into a 500 for the ENTIRE request before it
+  // ever reaches a route — this took the whole app down in production the
+  // first time, because the real deployed origin (Railway's domain) was
+  // never added to allowedOrigins/FRONTEND_URL, so EVERY request got
+  // rejected outright, not just genuinely cross-origin ones.
+  // callback(null, false) just skips adding the Access-Control-Allow-Origin
+  // response header — which only matters to the browser for a truly
+  // cross-origin request; a same-origin request (the production frontend
+  // served from this same backend) is completely unaffected either way,
+  // since the browser never consults that header for same-origin fetches.
+  callback(null, false);
 }
 
 const httpServer = createServer(app);
