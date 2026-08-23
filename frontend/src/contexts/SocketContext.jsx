@@ -11,7 +11,11 @@ export function SocketProvider({ children }) {
 
   useEffect(() => {
     if (!token) return;
-    const socket = io('/', { transports: ['websocket'] });
+    // Server now verifies this on connect (see index.js's io.use()) and
+    // rejects anyone without a currently-valid one — previously the socket
+    // required no authentication at all, so any client could connect and
+    // join any conversation's room to eavesdrop on live messages.
+    const socket = io('/', { transports: ['websocket'], auth: { token } });
     socketRef.current = socket;
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));

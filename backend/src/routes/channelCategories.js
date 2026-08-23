@@ -33,7 +33,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     res.status(201).json(category);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
-    res.status(500).json({ error: err.message });
+    console.error('Create channel category failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

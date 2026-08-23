@@ -21,7 +21,8 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(tag);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Tag already exists' });
-    res.status(500).json({ error: err.message });
+    console.error('Create tag failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -54,7 +55,8 @@ router.post('/:tagId/conversations/:conversationId', auth, async (req, res) => {
     });
     res.status(201).json(link);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Assign tag failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

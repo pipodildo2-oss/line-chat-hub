@@ -3,6 +3,7 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const helmet = require('helmet');
 const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
@@ -23,6 +24,8 @@ const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
+const { verifyAgentToken } = require('./middleware/auth');
+const { canAccessChannel } = require('./lib/conversationQuery');
 
 const prisma = new PrismaClient();
 const app = express();
@@ -31,6 +34,21 @@ const app = express();
 // req.ip reflects the real visitor IP instead of the proxy's — needed for
 // rate limiting (below) to key off the right client instead of blocking everyone at once.
 app.set('trust proxy', 1);
+
+// Sets X-Frame-Options, X-Content-Type-Options, a Referrer-Policy, HSTS, etc.
+// on every response — this app had NONE of these before, meaning it could be
+// embedded in a hidden/disguised iframe on any other site (clickjacking) and
+// tricked into e.g. sending a broadcast or deleting a channel via a click the
+// logged-in agent never intended. contentSecurityPolicy is explicitly
+// disabled here rather than left at helmet's default: a default CSP is
+// notorious for silently breaking an existing app (blocking the very scripts/
+// styles/connections — including this app's own Socket.io traffic — it
+// doesn't already have an allowlist for), and getting that allowlist right
+// needs deliberate testing rather than being turned on blind. The headers
+// enabled here (frame/clickjacking protection, MIME-sniffing protection,
+// HSTS) carry no such risk — they only restrict how OTHER sites can embed or
+// misuse responses FROM this app, not what this app itself is allowed to load.
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS was wide open (`origin: '*'`) on both the REST API and Socket.io —
 // with the JWT sent via an Authorization header rather than a cookie, that
@@ -72,6 +90,25 @@ const io = new Server(httpServer, {
 });
 
 setIo(io);
+
+// Socket.io had NO authentication at all — any anonymous client (no login,
+// no browser even required) could open a connection, emit 'join' with any
+// conversationId it wanted, and silently receive that conversation's live
+// 'new_message' events forever, completely bypassing the channel-visibility
+// restrictions the REST API enforces. This middleware runs during the
+// handshake, before 'connection' fires: the frontend sends its JWT via
+// `io('/', { auth: { token } })` (see SocketContext.jsx), and any socket that
+// doesn't present a currently-valid one is rejected before it ever connects.
+io.use(async (socket, next) => {
+  try {
+    const agent = await verifyAgentToken(socket.handshake.auth?.token);
+    if (!agent) return next(new Error('unauthorized'));
+    socket.agent = agent;
+    next();
+  } catch {
+    next(new Error('unauthorized'));
+  }
+});
 
 // If REDIS_URL is set, attach the Redis adapter so multiple Railway replicas
 // share Socket.io room broadcasts (required for safe horizontal scaling).
@@ -137,7 +174,14 @@ app.get('/health', async (req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'ok', db: 'ok' });
   } catch (err) {
-    res.status(503).json({ status: 'degraded', db: 'unreachable', error: err.message });
+    // This endpoint is deliberately unauthenticated (a monitor/load-balancer
+    // needs to hit it without a login) — so unlike an authenticated route,
+    // the raw error can't be shown here at all. A Postgres connection error
+    // typically includes the DB host/port, which is internal infra detail
+    // that has no business reaching an anonymous caller. Full detail still
+    // goes to the server log for whoever's actually debugging the outage.
+    console.error('Health check failed:', err.message);
+    res.status(503).json({ status: 'degraded', db: 'unreachable' });
   }
 });
 
@@ -163,18 +207,43 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// Socket.io
+// Socket.io — every socket reaching here has already passed the io.use()
+// handshake check above, so socket.agent is always a real, currently-valid
+// agent record.
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-  socket.on('join', (conversationId) => socket.join(conversationId));
+  console.log('Client connected:', socket.id, 'agent:', socket.agent.id);
+  // Joining a conversation's room is what actually grants access to its live
+  // 'new_message' events (see socket.service.js's emitToConversation) — the
+  // handshake check above only proves the caller is SOME logged-in agent, not
+  // that they're allowed to see THIS conversation. A channel-restricted agent
+  // must be blocked from joining a room for a conversation outside their
+  // assigned channels, the same way the REST routes already check
+  // canAccessChannel() before returning conversation-scoped data.
+  socket.on('join', async (conversationId) => {
+    if (typeof conversationId !== 'string' || !conversationId) return;
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { channelId: true },
+      });
+      if (!conversation) return;
+      if (!(await canAccessChannel(socket.agent, conversation.channelId))) return;
+      socket.join(conversationId);
+    } catch (err) {
+      console.error('socket join failed:', err.message);
+    }
+  });
   socket.on('leave', (conversationId) => socket.leave(conversationId));
   // Broadcast to every OTHER connected agent (not room-scoped, since an agent's
   // conversation list shows many conversations at once, not just the open one)
   // so a typing indicator can show up on the list itself — that's what actually
-  // helps prevent two agents replying to the same customer at once.
-  socket.on('typing', ({ conversationId, agentName }) => {
+  // helps prevent two agents replying to the same customer at once. Uses
+  // socket.agent.name (from the verified handshake) instead of trusting
+  // whatever agentName the client claims — otherwise any logged-in agent could
+  // broadcast a typing indicator under a co-worker's name.
+  socket.on('typing', ({ conversationId }) => {
     if (!conversationId) return;
-    socket.broadcast.emit('agent_typing', { conversationId, agentName });
+    socket.broadcast.emit('agent_typing', { conversationId, agentName: socket.agent.name });
   });
   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });

@@ -34,7 +34,8 @@ router.patch('/reorder', auth, requireAdmin, async (req, res) => {
     await Promise.all(ids.map((id, index) => prisma.agentCategory.update({ where: { id }, data: { order: index } })));
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Reorder agent categories failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -47,7 +48,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     res.status(201).json(category);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
-    res.status(500).json({ error: err.message });
+    console.error('Create agent category failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

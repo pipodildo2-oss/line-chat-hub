@@ -38,7 +38,12 @@ router.get('/content/:messageId', auth, async (req, res) => {
     res.set('Cache-Control', 'private, max-age=86400');
     stream.pipe(res);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Unlike sendMessage/sendImageMessage, getMessageContent doesn't wrap
+    // LINE SDK errors through describeLineError (line.service.js) — a raw
+    // HTTPFetchError here could include response detail that has no reason
+    // to reach the client, so this stays generic rather than forwarding it.
+    console.error('Fetch message content failed:', err.message);
+    res.status(500).json({ error: 'ไม่สามารถโหลดไฟล์นี้ได้' });
   }
 });
 
@@ -360,7 +365,10 @@ router.get('/:conversationId/suggest', auth, async (req, res) => {
     const suggestion = await suggestReply(messages.reverse(), conversation?.channel?.name || 'Support');
     res.json({ suggestion });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Raw Anthropic SDK errors (bad/missing API key, rate limit, etc.) have no
+    // reason to reach the client — this is just an internal AI helper feature.
+    console.error('AI suggestion failed:', err.message);
+    res.status(500).json({ error: 'ไม่สามารถสร้างคำแนะนำได้ในขณะนี้' });
   }
 });
 

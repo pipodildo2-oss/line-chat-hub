@@ -54,7 +54,8 @@ router.post('/categories', auth, requireAdmin, async (req, res) => {
     res.status(201).json(category);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
-    res.status(500).json({ error: err.message });
+    console.error('Create quick-reply category failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -131,7 +132,8 @@ router.patch('/reorder', auth, requireAdmin, async (req, res) => {
     await Promise.all(ids.map((id, index) => prisma.quickReply.update({ where: { id }, data: { order: index } })));
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Reorder quick replies failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -157,7 +159,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     const { imageData: _omit, ...safe } = quickReply;
     res.status(201).json({ ...safe, hasImage: !!quickReply.imageData });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Create quick reply failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -362,7 +365,8 @@ router.post('/:id/send', auth, async (req, res) => {
       })
       .catch(e => console.error('messageView cleanup failed (message already sent+recorded):', e.message));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Send quick reply failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

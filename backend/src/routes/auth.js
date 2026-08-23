@@ -41,7 +41,11 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     res.json({ token, agent: { id: agent.id, name: agent.name, email: agent.email, role: agent.role, language: agent.language, status: agent.status, avatarUrl: agent.avatarUrl } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Login is unauthenticated by nature — a raw error here (e.g. a DB
+    // connection failure) would reach a caller who hasn't proven they're a
+    // real agent yet, so it can't include any internal detail.
+    console.error('Login failed:', err.message);
+    res.status(500).json({ error: 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

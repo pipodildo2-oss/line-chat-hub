@@ -238,7 +238,8 @@ router.post('/', auth, requireAdmin, broadcastLimiter, async (req, res) => {
     processCampaign(campaign.id, targets, text, imageUrls, { id: req.agent.id, name: req.agent.name })
       .catch(err => console.error('Broadcast processing failed:', err));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Create broadcast failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 

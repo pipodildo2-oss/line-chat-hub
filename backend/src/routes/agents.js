@@ -54,7 +54,8 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(agent);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Email already exists' });
-    res.status(500).json({ error: err.message });
+    console.error('Create agent failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -78,7 +79,8 @@ router.patch('/me', auth, async (req, res) => {
     });
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Update own profile failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -103,7 +105,8 @@ router.patch('/me/avatar', auth, async (req, res) => {
     if (previous?.avatarUrl) deleteStoredImage(previous.avatarUrl);
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Update own avatar failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -121,7 +124,8 @@ router.patch('/me/password', auth, passwordChangeLimiter, async (req, res) => {
     await prisma.agent.update({ where: { id: req.agent.id }, data: { password: hashed } });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Change own password failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -142,7 +146,8 @@ router.patch('/:id', auth, async (req, res) => {
     });
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Admin update agent failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -158,7 +163,8 @@ router.patch('/:id/password', auth, passwordChangeLimiter, async (req, res) => {
     await prisma.agent.update({ where: { id: req.params.id }, data: { password: hashed } });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Admin reset agent password failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
@@ -184,7 +190,8 @@ router.put('/:id/channels', auth, async (req, res) => {
     ]);
     res.json({ success: true, channelIds });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Update agent channel restrictions failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
