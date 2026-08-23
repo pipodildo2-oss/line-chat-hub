@@ -21,6 +21,15 @@ const AVATAR_SIZE_CLASSES = {
 // matches the backend's own default `limit` there.
 const MESSAGE_PAGE_LIMIT = 50;
 
+// How long a send request waits before treating it as unconfirmed rather
+// than hanging forever — matches the backend's own SEND_TIMEOUT_MS
+// (line.service.js) with headroom for the backend's post-push work (DB
+// write, socket emit) to still land and respond first in the normal case.
+// Scoped to just the send calls below (not a global axios default) so it
+// doesn't affect unrelated slower requests elsewhere in the app (e.g. a
+// broadcast targeting thousands of conversations, or a heavy report query).
+const SEND_REQUEST_TIMEOUT_MS = 30000;
+
 function Avatar({ name, pictureUrl, size = 10 }) {
   const sizeCls = AVATAR_SIZE_CLASSES[size] || AVATAR_SIZE_CLASSES[10];
   if (pictureUrl) return <img src={pictureUrl} className={`${sizeCls} rounded-full object-cover flex-shrink-0`} />;
@@ -803,7 +812,13 @@ export default function Inbox() {
   const [showDetail, setShowDetail] = useState(() => localStorage.getItem('inbox_showDetail') === '1');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const [sending, setSending] = useState(false);
+  // Which conversationIds currently have a send in flight — a Set (not a
+  // single boolean) so a slow/stuck send in one conversation only disables
+  // that conversation's Send button, not every other chat's too (that used
+  // to happen: a single global `sending` boolean never got scoped or reset
+  // on conversation switch, so one stuck request could lock the whole app's
+  // composer until a page refresh).
+  const [sendingConvIds, setSendingConvIds] = useState(() => new Set());
   const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
@@ -1184,28 +1199,41 @@ export default function Inbox() {
   async function handleSend(text) {
     const content = (text ?? input).trim();
     const image = pendingImage;
-    if ((!content && !image) || !selected || sending) return;
-    setSending(true);
+    if ((!content && !image) || !selected || sendingConvIds.has(selected.id)) return;
+    const convId = selected.id;
+    setSendingConvIds(prev => new Set(prev).add(convId));
     try {
       // Only clear each piece (input / pendingImage) after IT actually succeeds —
       // clearing both upfront meant a failed send (e.g. LINE rejects the push
       // because the customer blocked the OA, or the access token is bad) silently
       // wiped what the agent typed with no error shown and nothing to retry.
       if (image) {
-        const { data } = await axios.post(`/api/messages/${selected.id}`, { imageData: image.base64 });
+        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64 }, { timeout: SEND_REQUEST_TIMEOUT_MS });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
         setPendingImage(null);
       }
       if (content) {
-        const { data } = await axios.post(`/api/messages/${selected.id}`, { content });
+        const { data } = await axios.post(`/api/messages/${convId}`, { content }, { timeout: SEND_REQUEST_TIMEOUT_MS });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
         setInput('');
       }
       setSuggestion('');
     } catch (err) {
-      alert(err.response?.data?.error || 'ส่งข้อความไม่สำเร็จ ลองใหม่อีกครั้ง');
+      // `uncertain` (backend flag, set when it gave up waiting on LINE — see
+      // line.service.js's SendTimeoutError) or no response at all (our own
+      // axios timeout above, a dropped connection, etc.) both mean the same
+      // thing: we genuinely don't know if this reached the customer. Telling
+      // the agent to just "try again" in that case is exactly what causes a
+      // real duplicate send if it actually did go through — so this case
+      // gets a distinct warning instead of the normal retry prompt, which is
+      // only shown when the backend has confirmed nothing was sent.
+      if (err.response?.data?.uncertain || !err.response) {
+        alert('ไม่สามารถยืนยันได้ว่าข้อความนี้ส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชทก่อนส่งซ้ำ');
+      } else {
+        alert(err.response?.data?.error || 'ส่งข้อความไม่สำเร็จ ลองใหม่อีกครั้ง');
+      }
     } finally {
-      setSending(false);
+      setSendingConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
     }
   }
 
@@ -1216,7 +1244,11 @@ export default function Inbox() {
 
   async function sendQuickReply(quickReplyId) {
     try {
-      const { data } = await axios.post(`/api/quick-replies/${quickReplyId}/send`, { conversationId: selected.id });
+      const { data } = await axios.post(
+        `/api/quick-replies/${quickReplyId}/send`,
+        { conversationId: selected.id },
+        { timeout: SEND_REQUEST_TIMEOUT_MS },
+      );
       setMessages(prev => {
         let next = prev;
         for (const m of data.messages) {
@@ -1224,8 +1256,24 @@ export default function Inbox() {
         }
         return next;
       });
+      // 207 (partial) — an image+text quick reply where only one half went
+      // out (see quickReplies.js POST /:id/send). What did send is already
+      // appended above; this just makes sure the agent notices the rest
+      // didn't, rather than assuming the whole thing went through.
+      if (data.partial) {
+        alert(data.uncertain
+          ? 'ส่งได้บางส่วน และไม่สามารถยืนยันได้ว่าส่วนที่เหลือส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชท'
+          : 'ส่งได้บางส่วนเท่านั้น กรุณาตรวจสอบในแชทว่าต้องส่งส่วนที่เหลือซ้ำหรือไม่');
+      }
     } catch (err) {
-      alert(err.response?.data?.error || 'ส่งข้อความลัดไม่สำเร็จ ลองใหม่อีกครั้ง');
+      // Same "don't imply it's safe to blindly retry" rule as handleSend
+      // above — a timeout/no-response here means we don't know whether the
+      // push actually reached the customer.
+      if (err.response?.data?.uncertain || !err.response) {
+        alert('ไม่สามารถยืนยันได้ว่าข้อความลัดนี้ส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชทก่อนส่งซ้ำ');
+      } else {
+        alert(err.response?.data?.error || 'ส่งข้อความลัดไม่สำเร็จ ลองใหม่อีกครั้ง');
+      }
       throw err; // re-throw so the picker (handlePick) knows not to close itself
     }
   }
@@ -1607,7 +1655,7 @@ export default function Inbox() {
                     </div>
                     <button
                       onClick={() => handleSend()}
-                      disabled={(!input.trim() && !pendingImage) || sending}
+                      disabled={(!input.trim() && !pendingImage) || sendingConvIds.has(selected?.id)}
                       className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-full w-8 h-8 flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
                     >
                       <Send size={15} />

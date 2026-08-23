@@ -5,7 +5,7 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
-const { saveBase64Image, isStoredPath, thumbPathFor } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -176,7 +176,31 @@ router.post('/:conversationId', auth, async (req, res) => {
       // (see the route above), so this still resolves to the right file — it
       // just goes through one extra redirect hop instead of a direct static URL.
       const previewUrl = `${req.protocol}://${req.get('host')}/api/messages/image/${message.id}?preview=1`;
-      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
+      try {
+        await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
+      } catch (err) {
+        // A CONFIRMED failure (LINE rejected it outright — bad token, user
+        // blocked, etc.) means nothing was delivered, so the row above (which
+        // only exists to give LINE something to fetch) would otherwise show a
+        // "sent" image bubble in OUR OWN UI for something the customer never
+        // received — roll it back so this has the same all-or-nothing
+        // semantics as a failed text send below.
+        //
+        // An AMBIGUOUS failure (isSendTimeout — see line.service.js) is
+        // different: we don't know if LINE already accepted the push and
+        // will fetch imageUrl shortly after. Deleting the file here would
+        // turn "maybe it's fine" into "definitely broken" — if the push did
+        // land, LINE's fetch would 404 and the customer would see a
+        // permanently broken image. So on a timeout specifically, leave the
+        // row and file in place; the agent's "check the chat before
+        // resending" (see the uncertain-flag response below) will show it
+        // there if a reload reveals the send actually went through.
+        if (!err.isSendTimeout) {
+          await prisma.message.delete({ where: { id: message.id } }).catch(() => {});
+          deleteStoredImage(storedPath);
+        }
+        throw err;
+      }
       message = await prisma.message.update({
         where: { id: message.id },
         data: { metadata: JSON.stringify({ url: imageUrl }) },
@@ -198,32 +222,34 @@ router.post('/:conversationId', auth, async (req, res) => {
       });
     }
 
-    // Update conversation lastMessageAt. Sending a reply also clears THIS agent's
-    // own audit-trail tags on EVERY customer message in this conversation, not
-    // just the newest one — if this agent ends up being the one who actually
-    // replies, they didn't "view it and leave it for someone else," even if a
-    // newer customer message had already arrived between their view and their
-    // reply. Other agents' tags are untouched, since they still haven't replied.
+    // From here on, the message is confirmed sent (real row exists, LINE push
+    // already succeeded) — emit + respond to the agent IMMEDIATELY, before
+    // touching anything else. Everything below this point is bookkeeping
+    // (updating lastMessageAt, clearing this agent's own audit-trail tags)
+    // that's useful but not required for the agent to see their message went
+    // through; if any of it fails, the agent shouldn't be told the send
+    // itself failed (that used to trigger the exact double-send this
+    // reordering closes — see line.service.js's comment on SendTimeoutError
+    // for the other half of this fix). It runs fire-and-forget after the
+    // response instead of being awaited inline.
+    // `conversation` was fetched before any of this, so lastMessageAt is
+    // stale on it — patch it locally (not yet persisted) so the broadcast
+    // below reflects the new value immediately instead of the old one.
     const now = new Date();
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: now },
-    });
-    const cleared = await prisma.messageView.deleteMany({
-      where: { agentId: req.agent.id, message: { conversationId: conversation.id } },
-    });
-    if (cleared.count > 0) {
-      emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
-    }
-    // `conversation` was fetched before the update above, so lastMessageAt is
-    // stale on it. Patch it locally before broadcasting — otherwise the inbox
-    // list briefly shows the old value until the next full refetch.
     conversation.lastMessageAt = now;
 
     emitToConversation(conversation.id, 'new_message', { message, conversation });
     emitToAll('conversation_updated', { ...conversation, lastMessage: message });
 
     res.status(201).json(message);
+
+    prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: now } })
+      .catch(e => console.error('lastMessageAt update failed (message already sent+recorded):', e.message));
+    prisma.messageView.deleteMany({ where: { agentId: req.agent.id, message: { conversationId: conversation.id } } })
+      .then(cleared => {
+        if (cleared.count > 0) emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
+      })
+      .catch(e => console.error('messageView cleanup failed (message already sent+recorded):', e.message));
 
     // AI moderation check — freely-typed text only (not images, not canned quick
     // replies, which go through a separate route and are pre-approved by an
@@ -260,6 +286,12 @@ router.post('/:conversationId', auth, async (req, res) => {
         .catch((e) => console.warn('Moderation follow-up failed:', e.message));
     }
   } catch (err) {
+    // A timeout waiting on LINE (see line.service.js) means we genuinely
+    // don't know whether the message went through — `uncertain: true` tells
+    // the frontend not to offer its normal "failed, try again" messaging,
+    // since blindly retrying here is exactly what causes a real duplicate
+    // send if the original push actually did land.
+    if (err.isSendTimeout) return res.status(504).json({ error: err.message, uncertain: true });
     res.status(500).json({ error: err.message });
   }
 });

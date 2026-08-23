@@ -251,55 +251,71 @@ router.post('/:id/send', auth, async (req, res) => {
     }
 
     const created = [];
+    // A quick reply's image and text are two separate LINE pushes — if the
+    // first (image) succeeds but the second (text) fails, the image really
+    // was delivered and its row is real, not an orphan. sendErr tracks
+    // whichever push failed so the response below can tell the agent exactly
+    // what did and didn't go out, instead of either (a) throwing away a
+    // legitimately-sent image because the unrelated text push errored, or
+    // (b) silently treating "half sent" the same as "fully sent."
+    let sendErr = null;
 
     if (quickReply.imageData) {
       const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image`;
       const previewUrl = `${imageUrl}?preview=1`;
-      await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
-      const imgMessage = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          sender: 'agent',
-          senderName: req.agent.name,
-          senderId: req.agent.id,
-          type: 'image',
-          content: '[Image]',
-          metadata: JSON.stringify({ url: imageUrl }),
-          read: true,
-        },
-      });
-      created.push(imgMessage);
+      try {
+        await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
+        created.push(await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            sender: 'agent',
+            senderName: req.agent.name,
+            senderId: req.agent.id,
+            type: 'image',
+            content: '[Image]',
+            metadata: JSON.stringify({ url: imageUrl }),
+            read: true,
+          },
+        }));
+      } catch (err) {
+        sendErr = err; // image push itself failed — nothing created, nothing to roll back
+      }
     }
 
-    await sendMessage(conversation.channel, conversation.lineUserId, quickReply.content);
-    const textMessage = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        sender: 'agent',
-        senderName: req.agent.name,
-        senderId: req.agent.id,
-        type: 'text',
-        content: quickReply.content,
-        read: true,
-      },
-    });
-    created.push(textMessage);
+    // Only attempt the text half if the image (when there is one) actually
+    // went out — if it failed, stop here rather than sending the text alone,
+    // which would leave a caption with no image and confuse the customer.
+    if (!sendErr) {
+      try {
+        await sendMessage(conversation.channel, conversation.lineUserId, quickReply.content);
+        created.push(await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            sender: 'agent',
+            senderName: req.agent.name,
+            senderId: req.agent.id,
+            type: 'text',
+            content: quickReply.content,
+            read: true,
+          },
+        }));
+      } catch (err) {
+        sendErr = err;
+      }
+    }
 
-    // An outgoing message (even a canned quick reply) clears this agent's own
-    // audit-trail tags across the WHOLE conversation — same rule as a normal
-    // typed reply (see messages.js POST /:conversationId).
+    if (created.length === 0) {
+      // Nothing went out at all — clean, safe-to-retry failure, same as
+      // messages.js POST /:conversationId.
+      if (sendErr.isSendTimeout) return res.status(504).json({ error: sendErr.message, uncertain: true });
+      return res.status(500).json({ error: sendErr.message });
+    }
+
+    // At least one piece is confirmed sent + recorded — emit + respond right
+    // away, same "tell the agent ASAP, do bookkeeping after" principle as
+    // messages.js POST /:conversationId.
     const now = new Date();
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: now },
-    });
-    const cleared = await prisma.messageView.deleteMany({
-      where: { agentId: req.agent.id, message: { conversationId: conversation.id } },
-    });
-    if (cleared.count > 0) {
-      emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
-    }
-    // `conversation` was fetched before the update above — patch this field
+    // `conversation` was fetched before any of this — patch this field
     // locally before broadcasting, otherwise the inbox list briefly shows a
     // stale value (jumping backward in sort order).
     conversation.lastMessageAt = now;
@@ -309,7 +325,25 @@ router.post('/:id/send', auth, async (req, res) => {
     }
     emitToAll('conversation_updated', { ...conversation, lastMessage: created[created.length - 1] });
 
-    res.status(201).json({ messages: created });
+    if (sendErr) {
+      // 207 (not 201) — the frontend keys off this to warn the agent only the
+      // failed piece needs resending, not the whole quick reply again.
+      res.status(207).json({ messages: created, partial: true, error: sendErr.message, uncertain: !!sendErr.isSendTimeout });
+    } else {
+      res.status(201).json({ messages: created });
+    }
+
+    // An outgoing message (even a canned quick reply) clears this agent's own
+    // audit-trail tags across the WHOLE conversation — same rule as a normal
+    // typed reply. Fire-and-forget after the response: this is bookkeeping,
+    // not confirmation the agent needs before seeing their message went through.
+    prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: now } })
+      .catch(e => console.error('lastMessageAt update failed (message already sent+recorded):', e.message));
+    prisma.messageView.deleteMany({ where: { agentId: req.agent.id, message: { conversationId: conversation.id } } })
+      .then(cleared => {
+        if (cleared.count > 0) emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
+      })
+      .catch(e => console.error('messageView cleanup failed (message already sent+recorded):', e.message));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

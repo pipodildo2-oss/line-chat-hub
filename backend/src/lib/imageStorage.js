@@ -47,18 +47,23 @@ async function saveBase64Image(dataUrl) {
   const thumbPath = path.join(UPLOAD_DIR, `${id}_thumb.jpg`);
 
   try {
-    await sharp(buffer)
-      .rotate() // respect EXIF orientation before resizing (phone photos especially)
-      .resize({ width: FULL_MAX_DIMENSION, height: FULL_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
-      .flatten({ background: '#ffffff' }) // drop alpha (e.g. transparent PNG) onto white — JPEG has no alpha channel
-      .jpeg({ quality: FULL_QUALITY, mozjpeg: true })
-      .toFile(fullPath);
-    await sharp(buffer)
-      .rotate()
-      .resize({ width: THUMB_MAX_DIMENSION, height: THUMB_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
-      .flatten({ background: '#ffffff' })
-      .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
-      .toFile(thumbPath);
+    // Full-size and thumbnail are independent outputs from the same input
+    // buffer — running them in parallel instead of one-after-another roughly
+    // halves the wall-clock time this adds to every image send.
+    await Promise.all([
+      sharp(buffer)
+        .rotate() // respect EXIF orientation before resizing (phone photos especially)
+        .resize({ width: FULL_MAX_DIMENSION, height: FULL_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
+        .flatten({ background: '#ffffff' }) // drop alpha (e.g. transparent PNG) onto white — JPEG has no alpha channel
+        .jpeg({ quality: FULL_QUALITY, mozjpeg: true })
+        .toFile(fullPath),
+      sharp(buffer)
+        .rotate()
+        .resize({ width: THUMB_MAX_DIMENSION, height: THUMB_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
+        .toFile(thumbPath),
+    ]);
   } catch (err) {
     // Malformed/unsupported image data — clean up any partial output and bail
     // so the caller can fall back to storing the raw data URL instead.

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const line = require('@line/bot-sdk');
 const { PrismaClient } = require('@prisma/client');
 const { emitToConversation, emitToAll } = require('./socket.service');
@@ -6,6 +7,38 @@ const prisma = new PrismaClient();
 
 function getClient(accessToken) {
   return new line.messagingApi.MessagingApiClient({ channelAccessToken: accessToken });
+}
+
+// How long we're willing to wait for LINE's push API before giving up on
+// this HTTP request and telling the caller "we can't confirm" (see
+// SendTimeoutError below) — LINE is occasionally slow/unreachable, and
+// without this a hung request could block an agent's send indefinitely
+// (nothing else in this SDK enforces a timeout; see http-fetch.js).
+const SEND_TIMEOUT_MS = 20000;
+
+// IMPORTANT LIMITATION: the LINE SDK (@line/bot-sdk) doesn't expose any way
+// to pass an AbortSignal into pushMessage — so this timeout only bounds how
+// long WE wait for a response; it can't actually cancel the underlying HTTP
+// request to LINE. If it fires, the push may still be in flight and could
+// still succeed a moment later, entirely outside our knowledge. That's why a
+// timeout here is surfaced as SendTimeoutError ("we don't know") rather than
+// a normal failure ("this definitely didn't go through") — callers must NOT
+// treat a timeout as safe-to-retry the same way a normal rejection is.
+class SendTimeoutError extends Error {
+  constructor() {
+    super('ไม่สามารถยืนยันได้ว่าข้อความนี้ส่งถึงลูกค้าหรือไม่ (LINE ตอบสนองช้าเกินไป) กรุณาตรวจสอบในแชทก่อนส่งซ้ำ');
+    this.isSendTimeout = true;
+  }
+}
+
+function withSendTimeout(promise) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new SendTimeoutError()), SEND_TIMEOUT_MS);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
 }
 
 // The LINE SDK throws HTTPFetchError with a useless generic message (e.g.
@@ -184,8 +217,17 @@ async function processLineEvent(channel, event) {
 async function sendMessage(channel, lineUserId, text) {
   const client = getClient(channel.accessToken);
   try {
-    await client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] });
+    // xLineRetryKey: LINE de-dupes a push that reuses the same retry key, so
+    // if our own request to LINE gets silently retried at a lower network
+    // layer (e.g. a proxy or keep-alive connection reissuing it) LINE won't
+    // deliver the message twice. Freshly generated per call — this protects
+    // against that specific low-level retry case, not against an agent
+    // manually clicking send again (that's a genuinely new request/key by
+    // design, and is instead addressed by not treating an uncertain outcome
+    // as "safe to retry" — see SendTimeoutError above).
+    await withSendTimeout(client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] }, crypto.randomUUID()));
   } catch (err) {
+    if (err.isSendTimeout) throw err;
     throw new Error(describeLineError(err));
   }
 }
@@ -201,11 +243,12 @@ async function sendMessage(channel, lineUserId, text) {
 async function sendImageMessage(channel, lineUserId, imageUrl, previewUrl = imageUrl) {
   const client = getClient(channel.accessToken);
   try {
-    await client.pushMessage({
+    await withSendTimeout(client.pushMessage({
       to: lineUserId,
       messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: previewUrl }],
-    });
+    }, crypto.randomUUID()));
   } catch (err) {
+    if (err.isSendTimeout) throw err;
     throw new Error(describeLineError(err));
   }
 }
