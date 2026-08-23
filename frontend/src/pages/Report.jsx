@@ -116,6 +116,15 @@ function UnansweredSection({ channels, agents }) {
   // chats on a paused channel aren't the urgent kind (see channels.js/schema.prisma
   // for the soft-disable flag). "ทั้งหมด" is still one select away if needed.
   const [channelActive, setChannelActive] = useState('true');
+  // 'newest' = the customer message that arrived most recently floats to the
+  // top ("ล่าสุด") — the default, since a chat that just went unanswered a
+  // moment ago is the one most worth catching before it gets stale. 'oldest'
+  // ("นานสุด") is the original behavior — whoever's been waiting longest on
+  // top, i.e. most urgent by wait time rather than by recency. The backend
+  // always returns oldest-waiting-first (reports.js), so this is applied
+  // client-side rather than re-fetching — the full (capped) list is already
+  // in memory either way.
+  const [sort, setSort] = useState('newest');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const lastReloadRef = useRef(0);
@@ -132,8 +141,17 @@ function UnansweredSection({ channels, agents }) {
   // Any filter change invalidates the current page (e.g. page 3 might not
   // exist anymore under a narrower filter) — same reset-on-filter-change
   // pattern as every other filtered table in this app.
-  useEffect(() => { setPage(1); }, [channelIds, agentId, channelActive]);
-  const pagedConversations = data ? data.conversations.slice((page - 1) * pageSize, page * pageSize) : [];
+  useEffect(() => { setPage(1); }, [channelIds, agentId, channelActive, sort]);
+  const sortedConversations = useMemo(() => {
+    if (!data) return [];
+    const list = [...data.conversations];
+    list.sort((a, b) => {
+      const diff = new Date(a.waitingSince) - new Date(b.waitingSince);
+      return sort === 'newest' ? -diff : diff;
+    });
+    return list;
+  }, [data, sort]);
+  const pagedConversations = sortedConversations.slice((page - 1) * pageSize, page * pageSize);
 
   useEffect(() => { load(); }, [load]);
 
@@ -171,7 +189,7 @@ function UnansweredSection({ channels, agents }) {
         </h2>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-        แชทที่ข้อความล่าสุดยังเป็นของลูกค้าอยู่และรอมาแล้วอย่างน้อย 10 นาที (พนักงานควรเป็นคนตอบล่าสุดเสมอ) — เรียงจากรอนานสุดก่อน
+        แชทที่ข้อความล่าสุดยังเป็นของลูกค้าอยู่และรอมาแล้วอย่างน้อย 10 นาที (พนักงานควรเป็นคนตอบล่าสุดเสมอ)
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -233,6 +251,14 @@ function UnansweredSection({ channels, agents }) {
           <option value="">ทุกสถานะช่องทาง</option>
           <option value="true">ไลน์ที่เปิดใช้งานอยู่</option>
           <option value="false">ไลน์ที่ปิดใช้งานอยู่</option>
+        </select>
+        <select
+          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={sort}
+          onChange={e => setSort(e.target.value)}
+        >
+          <option value="newest">ล่าสุดก่อน</option>
+          <option value="oldest">นานสุดก่อน</option>
         </select>
         {data && (
           <span className="text-sm text-gray-500 dark:text-slate-400 ml-1">
