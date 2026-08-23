@@ -865,6 +865,18 @@ export default function Inbox() {
   const selectedRef = useRef(null); // lets loadOlderMessages notice it should discard a stale response after a conversation switch mid-fetch
   const loadingOlderRef = useRef(false);
   const isPrependingRef = useRef(false); // true for exactly one render right after loadOlderMessages prepends, so the bottom-scroll effect skips that update
+  // Guards the infinite-scroll-up listener below against firing on its own
+  // opening conversation's newest messages: `scrollIntoView({ behavior:
+  // 'smooth' })` animates the scroll position over time, so `scrollTop`
+  // legitimately passes through values under 100 WHILE that animation is
+  // still running — the scroll listener can't tell that apart from a real
+  // user scroll-to-top and was calling loadOlderMessages() mid-animation,
+  // which forcibly overwrites scrollTop to preserve the prepended content's
+  // position and cancels the still-running scroll-to-bottom, leaving the
+  // chat open somewhere in the middle instead of at the newest message.
+  // False while a conversation's initial scroll (to the bottom, or to a
+  // jumped-to message) hasn't finished settling yet.
+  const initialScrollDoneRef = useRef(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   useEffect(() => {
@@ -992,6 +1004,7 @@ export default function Inbox() {
   useEffect(() => {
     if (!selected) return;
     hasMoreMessagesRef.current = true;
+    initialScrollDoneRef.current = false;
     axios.get(`/api/messages/${selected.id}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
       if (r.data.length < MESSAGE_PAGE_LIMIT) hasMoreMessagesRef.current = false;
       setMessages(r.data);
@@ -1064,7 +1077,9 @@ export default function Inbox() {
     const container = messageListRef.current;
     if (!container) return;
     function handleScroll() {
-      if (container.scrollTop < 100) loadOlderMessages();
+      // Ignore scroll events until this conversation's initial positioning
+      // has actually settled — see initialScrollDoneRef's declaration for why.
+      if (initialScrollDoneRef.current && container.scrollTop < 100) loadOlderMessages();
     }
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
@@ -1082,6 +1097,19 @@ export default function Inbox() {
   // infinite-scroll-up path or a jump-search step that just gave up), which
   // already restored the right scroll position, so skip bottom-scrolling.
   useEffect(() => {
+    // A `scrollIntoView({ behavior: 'smooth' })` call below takes a few
+    // hundred ms to actually finish animating — the infinite-scroll-up
+    // listener must stay disabled (initialScrollDoneRef.current === false)
+    // for that whole stretch, not just until this synchronous effect body
+    // returns, otherwise it can still catch the animation mid-flight. This
+    // timer is what actually flips it back on once the animation has had
+    // time to settle; cleared/replaced on every re-run so a burst of rapid
+    // message updates doesn't re-enable it prematurely partway through.
+    let settleTimer;
+    function markSettledSoon() {
+      settleTimer = setTimeout(() => { initialScrollDoneRef.current = true; }, 600);
+    }
+
     if (jumpTargetRef.current) {
       const targetId = jumpTargetRef.current;
       const found = messages.some(m => m.id === targetId);
@@ -1093,7 +1121,8 @@ export default function Inbox() {
         setFlashMessageId(targetId);
         jumpTargetRef.current = null;
         isPrependingRef.current = false;
-        return;
+        markSettledSoon();
+        return () => clearTimeout(settleTimer);
       }
       if (messages.length === 0) return; // first page for this conversation hasn't arrived yet
       if (hasMoreMessagesRef.current) {
@@ -1107,6 +1136,8 @@ export default function Inbox() {
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    markSettledSoon();
+    return () => clearTimeout(settleTimer);
   }, [messages, loadOlderMessages]);
 
   useEffect(() => {
