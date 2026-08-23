@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users } from 'lucide-react';
+import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users, CheckCircle2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -388,6 +388,39 @@ function UpsellReviewPage() {
   );
 }
 
+// One consistent card style for both the overall totals and each team's
+// subtotal, so they read as one uniform row instead of two different-looking
+// groups of boxes.
+function ScoreStatCard({ icon: Icon, label, value, caption }) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
+      <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 flex items-center gap-1.5 mb-1.5 truncate">
+        {Icon && <Icon size={13} className="flex-shrink-0" />} <span className="truncate">{label}</span>
+      </p>
+      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{value}</p>
+      {caption && <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{caption}</p>}
+    </div>
+  );
+}
+
+// Clickable column header — click to sort by this column, click again to
+// flip direction. Purely a display affordance; UpsellScorePage owns the
+// actual sort state and re-orders each team's agents by it.
+function SortableTh({ label, active, dir, onClick, align = 'left' }) {
+  return (
+    <th className={`px-4 py-2.5 font-medium select-none ${align === 'right' ? 'text-right' : 'text-left'}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-slate-200 ${active ? 'text-gray-800 dark:text-slate-100 font-semibold' : ''} ${align === 'right' ? 'flex-row-reverse' : ''}`}
+      >
+        {label}
+        {active ? (dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} className="opacity-40" />}
+      </button>
+    </th>
+  );
+}
+
 const RANK_STYLE = [
   'text-amber-500', // 1st — gold
   'text-slate-400', // 2nd — silver
@@ -403,7 +436,21 @@ function UpsellScorePage() {
   const [preset, setPreset] = useState('thisMonth');
   const [[from, to], setDateRange] = useState(DATE_PRESETS[1].range());
   const [agents, setAgents] = useState(null);
+  // Which column each team's table is currently ordered by — click a header
+  // to change it (see handleSort below). Shared across every team box so
+  // "highest/lowest" reads consistently no matter which team you're looking at.
+  const [sortKey, setSortKey] = useState('amount'); // 'name' | 'approved' | 'amount'
+  const [sortDir, setSortDir] = useState('desc');
   const { socket } = useSocket();
+
+  function handleSort(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  }
 
   function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
   function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
@@ -440,8 +487,19 @@ function UpsellScorePage() {
       approvedAmount: g.agents.reduce((s, a) => s + a.approvedAmount, 0),
     }));
     groups.sort((x, y) => y.approvedAmount - x.approvedAmount);
+    // Row order within each team follows whichever column was last clicked —
+    // the rank badge itself (rankById, computed above) always stays the
+    // fixed org-wide standing regardless of how the rows are currently sorted.
+    const dirMul = sortDir === 'asc' ? 1 : -1;
+    for (const g of groups) {
+      g.agents = [...g.agents].sort((a, b) => {
+        if (sortKey === 'name') return dirMul * a.name.localeCompare(b.name);
+        if (sortKey === 'approved') return dirMul * (a.approved - b.approved);
+        return dirMul * (a.approvedAmount - b.approvedAmount);
+      });
+    }
     return groups;
-  }, [overallRanked]);
+  }, [overallRanked, sortKey, sortDir]);
 
   const totalApproved = overallRanked.reduce((s, a) => s + a.approved, 0);
   const totalAmount = overallRanked.reduce((s, a) => s + a.approvedAmount, 0);
@@ -455,34 +513,33 @@ function UpsellScorePage() {
 
       <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
 
-      <div className="grid grid-cols-2 gap-4 mb-5 max-w-lg">
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
-          <p className="text-gray-500 dark:text-slate-400 text-sm">รายการที่ผ่านทั้งหมด</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalApproved}</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
-          <p className="text-gray-500 dark:text-slate-400 text-sm">ยอดอัพเซลล์รวม</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalAmount.toLocaleString()} บาท</p>
-        </div>
-      </div>
-
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
       ) : teams.length === 0 ? (
-        <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบในช่วงนี้</p>
+        <>
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} />
+            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} />
+          </div>
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบในช่วงนี้</p>
+        </>
       ) : (
         <>
-          {/* Per-team subtotals up top — "ทีมไหนทำเป้าได้เท่าไหร่" at a glance
-              before drilling into the per-agent breakdown below. */}
-          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+          {/* Totals + every team's subtotal, all in one uniform row of
+              identically-styled cards — "ทีมไหนทำเป้าได้เท่าไหร่" sits right
+              next to the org-wide totals instead of in a separately-styled
+              row below. */}
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+            <ScoreStatCard icon={CheckCircle2} label="รายการที่ผ่านทั้งหมด" value={totalApproved} />
+            <ScoreStatCard icon={Wallet} label="ยอดอัพเซลล์รวม" value={`${totalAmount.toLocaleString()} บาท`} />
             {teams.map(t => (
-              <div key={t.id || 'none'} className="bg-gradient-to-br from-aurora-teal/10 to-aurora-purple/10 dark:from-aurora-teal/15 dark:to-aurora-purple/15 rounded-xl p-4 border border-aurora-teal/20">
-                <p className="text-xs font-semibold text-aurora-tealDeep dark:text-aurora-teal flex items-center gap-1.5 mb-1.5">
-                  <Users size={13} /> {t.name}
-                </p>
-                <p className="text-lg font-bold text-gray-900 dark:text-slate-100">{t.approvedAmount.toLocaleString()} บาท</p>
-                <p className="text-xs text-gray-500 dark:text-slate-400">{t.approved} รายการ · {t.agents.length} คน</p>
-              </div>
+              <ScoreStatCard
+                key={t.id || 'none'}
+                icon={Users}
+                label={t.name}
+                value={`${t.approvedAmount.toLocaleString()} บาท`}
+                caption={`${t.approved} รายการ · ${t.agents.length} คน`}
+              />
             ))}
           </div>
 
@@ -503,9 +560,9 @@ function UpsellScorePage() {
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
                       <th className="px-4 py-2.5 font-medium w-10 text-center">อันดับ</th>
-                      <th className="px-4 py-2.5 font-medium">ชื่อ</th>
-                      <th className="px-4 py-2.5 font-medium">รายการ</th>
-                      <th className="px-4 py-2.5 font-medium text-right">ยอดเงิน</th>
+                      <SortableTh label="ชื่อ" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
+                      <SortableTh label="รายการ" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} />
+                      <SortableTh label="ยอดเงิน" active={sortKey === 'amount'} dir={sortDir} onClick={() => handleSort('amount')} align="right" />
                     </tr>
                   </thead>
                   <tbody>
