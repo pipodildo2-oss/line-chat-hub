@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -48,7 +48,8 @@ export default function Sidebar() {
 
   const upsellChildren = [
     { to: '/upsell/review', icon: ClipboardCheck, label: 'ตรวจสอบ' },
-    { to: '/upsell/report', icon: TrendingUp, label: 'รายงาน' },
+    { to: '/upsell/score', icon: TrendingUp, label: 'คะแนน' },
+    { to: '/upsell/report', icon: FileText, label: 'รายงาน' },
   ];
 
   const linkCls = ({ isActive }) =>

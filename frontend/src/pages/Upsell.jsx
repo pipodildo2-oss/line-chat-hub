@@ -1,10 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy } from 'lucide-react';
-import { format } from 'date-fns';
+import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
+
+function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
+
+// Same horizontal quick-pick pattern as Report.jsx's AgentConductPage, plus
+// an explicit "ทั้งหมด" (all-time) option — [null, null] sends no from/to at
+// all, so the backend applies no date filter.
+const DATE_PRESETS = [
+  { key: 'today', label: 'วันนี้', range: () => { const d = toISODate(new Date()); return [d, d]; } },
+  { key: 'thisMonth', label: 'เดือนนี้', range: () => [toISODate(startOfMonth(new Date())), toISODate(new Date())] },
+  { key: 'lastMonth', label: 'เดือนที่แล้ว', range: () => {
+    const d = subMonths(new Date(), 1);
+    return [toISODate(startOfMonth(d)), toISODate(endOfMonth(d))];
+  } },
+  { key: 'all', label: 'ทั้งหมด', range: () => [null, null] },
+];
+
+function DateRangeFilter({ preset, from, to, onPreset, onCustom }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {DATE_PRESETS.map(p => (
+          <button
+            key={p.key}
+            onClick={() => onPreset(p)}
+            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
+        <input
+          type="date"
+          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+          value={from || ''}
+          max={to || undefined}
+          onChange={e => onCustom('from', e.target.value)}
+        />
+        <span>ถึง</span>
+        <input
+          type="date"
+          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+          value={to || ''}
+          min={from || undefined}
+          onChange={e => onCustom('to', e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
 
 function Avatar({ name }) {
   return (
@@ -338,39 +388,75 @@ function UpsellReviewPage() {
   );
 }
 
-// "รายงาน" — a score leaderboard pulled from the same per-agent data the
+const RANK_STYLE = [
+  'text-amber-500', // 1st — gold
+  'text-slate-400', // 2nd — silver
+  'text-amber-700 dark:text-amber-600', // 3rd — bronze
+];
+
+// "คะแนน" — a score leaderboard pulled from the same per-agent data the
 // ตรวจสอบ tab already reviews: 1 ผ่าน = 1 รายการ, plus the running total of
-// all approved upsell amounts. Read-only — no review actions here, that's
-// ตรวจสอบ's job; this is just the scoreboard.
-function UpsellReportPage() {
+// approved upsell amounts — grouped by team so a supervisor can see which
+// team is hitting target, not just individuals. Read-only — no review
+// actions here, that's ตรวจสอบ's job; this is just the scoreboard.
+function UpsellScorePage() {
+  const [preset, setPreset] = useState('thisMonth');
+  const [[from, to], setDateRange] = useState(DATE_PRESETS[1].range());
   const [agents, setAgents] = useState(null);
   const { socket } = useSocket();
 
+  function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
+  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
+
   function load() {
-    axios.get('/api/upsells/agents').then(r => setAgents(r.data.agents));
+    axios.get('/api/upsells/agents', { params: { from: from || undefined, to: to || undefined } }).then(r => setAgents(r.data.agents));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [from, to]);
 
   useEffect(() => {
     if (!socket) return;
     socket.on('upsell_reviewed', load);
     return () => socket.off('upsell_reviewed', load);
-  }, [socket]);
+  }, [socket, from, to]);
 
-  const ranked = agents
-    ? [...agents].filter(a => a.approved > 0).sort((a, b) => b.approvedAmount - a.approvedAmount || b.approved - a.approved)
-    : [];
-  const totalApproved = ranked.reduce((s, a) => s + a.approved, 0);
-  const totalAmount = ranked.reduce((s, a) => s + a.approvedAmount, 0);
+  // Overall (org-wide) rank, computed once across every agent regardless of
+  // team, so the medal/rank number shown next to a name inside its team
+  // section still reflects how they stack up company-wide.
+  const overallRanked = useMemo(() => (
+    agents ? [...agents].filter(a => a.approved > 0).sort((a, b) => b.approvedAmount - a.approvedAmount || b.approved - a.approved) : []
+  ), [agents]);
+  const rankById = useMemo(() => Object.fromEntries(overallRanked.map((a, i) => [a.id, i])), [overallRanked]);
+
+  const teams = useMemo(() => {
+    if (!overallRanked.length) return [];
+    const byTeam = {};
+    for (const a of overallRanked) {
+      const key = a.categoryId || '__none__';
+      (byTeam[key] ||= { id: a.categoryId, name: a.categoryName || 'ไม่มีทีม', agents: [] }).agents.push(a);
+    }
+    const groups = Object.values(byTeam).map(g => ({
+      ...g,
+      approved: g.agents.reduce((s, a) => s + a.approved, 0),
+      approvedAmount: g.agents.reduce((s, a) => s + a.approvedAmount, 0),
+    }));
+    groups.sort((x, y) => y.approvedAmount - x.approvedAmount);
+    return groups;
+  }, [overallRanked]);
+
+  const totalApproved = overallRanked.reduce((s, a) => s + a.approved, 0);
+  const totalAmount = overallRanked.reduce((s, a) => s + a.approvedAmount, 0);
+  const maxAgentAmount = Math.max(1, ...overallRanked.map(a => a.approvedAmount));
 
   return (
     <div className="p-6 overflow-y-auto h-full">
       <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
         <TrendingUp size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
-        รายงานคะแนนอัพเซลล์
+        คะแนนอัพเซลล์
       </h1>
 
-      <div className="grid grid-cols-2 gap-4 mb-4 max-w-lg">
+      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
+
+      <div className="grid grid-cols-2 gap-4 mb-5 max-w-lg">
         <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-800">
           <p className="text-gray-500 dark:text-slate-400 text-sm">รายการที่ผ่านทั้งหมด</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalApproved}</p>
@@ -381,35 +467,202 @@ function UpsellReportPage() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
-        {!agents ? (
+      {!agents ? (
+        <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+      ) : teams.length === 0 ? (
+        <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบในช่วงนี้</p>
+      ) : (
+        <>
+          {/* Per-team subtotals up top — "ทีมไหนทำเป้าได้เท่าไหร่" at a glance
+              before drilling into the per-agent breakdown below. */}
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+            {teams.map(t => (
+              <div key={t.id || 'none'} className="bg-gradient-to-br from-aurora-teal/10 to-aurora-purple/10 dark:from-aurora-teal/15 dark:to-aurora-purple/15 rounded-xl p-4 border border-aurora-teal/20">
+                <p className="text-xs font-semibold text-aurora-tealDeep dark:text-aurora-teal flex items-center gap-1.5 mb-1.5">
+                  <Users size={13} /> {t.name}
+                </p>
+                <p className="text-lg font-bold text-gray-900 dark:text-slate-100">{t.approvedAmount.toLocaleString()} บาท</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400">{t.approved} รายการ · {t.agents.length} คน</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-5">
+            {teams.map(team => (
+              <div key={team.id || 'none'} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Users size={14} /> {team.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">{team.approved} รายการ · {team.approvedAmount.toLocaleString()} บาท</p>
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {team.agents.map(a => {
+                      const rank = rankById[a.id];
+                      const barPct = Math.max(4, Math.round((a.approvedAmount / maxAgentAmount) * 100));
+                      return (
+                        <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0">
+                          <td className="px-4 py-2.5 w-10 text-center">
+                            {rank < 3 ? <Trophy size={15} className={`inline ${RANK_STYLE[rank]}`} /> : <span className="text-gray-400 dark:text-slate-500">{rank + 1}</span>}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar name={a.name} />
+                              <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">{a.approved} รายการ</td>
+                          <td className="px-4 py-2.5 w-1/3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-800 overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-aurora-teal to-aurora-purple rounded-full" style={{ width: `${barPct}%` }} />
+                              </div>
+                              <span className="text-gray-900 dark:text-slate-100 font-semibold whitespace-nowrap">{a.approvedAmount.toLocaleString()} บาท</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const REPORT_STATUS_TABS = [
+  { key: '', label: 'ทั้งหมด' },
+  { key: 'pending', label: 'รอตรวจ' },
+  { key: 'approved', label: 'ผ่าน' },
+  { key: 'rejected', label: 'ไม่ผ่าน' },
+];
+
+// "รายงาน" — the detailed, filterable log behind the คะแนน rollup: every
+// submission across every agent/team, one row each, for record-keeping and
+// spot-checking rather than scoring at a glance.
+function UpsellReportPage() {
+  const [preset, setPreset] = useState('thisMonth');
+  const [[from, to], setDateRange] = useState(DATE_PRESETS[1].range());
+  const [status, setStatus] = useState('');
+  const [teamFilter, setTeamFilter] = useState('');
+  const [teams, setTeams] = useState([]);
+  const [rows, setRows] = useState(null);
+  const { socket } = useSocket();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    axios.get('/api/agent-categories').then(r => setTeams(r.data)).catch(() => {});
+  }, []);
+
+  function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
+  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
+
+  function load() {
+    axios.get('/api/upsells', {
+      params: { from: from || undefined, to: to || undefined, status: status || undefined, agentCategoryId: teamFilter || undefined },
+    }).then(r => setRows(r.data.submissions));
+  }
+  useEffect(() => { load(); }, [from, to, status, teamFilter]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('upsell_reviewed', load);
+    socket.on('upsell_claimed', load);
+    return () => {
+      socket.off('upsell_reviewed', load);
+      socket.off('upsell_claimed', load);
+    };
+  }, [socket, from, to, status, teamFilter]);
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+        <FileText size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
+        รายงานอัพเซลล์
+      </h1>
+
+      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 rounded-lg p-1">
+          {REPORT_STATUS_TABS.map(s => (
+            <button
+              key={s.key}
+              onClick={() => setStatus(s.key)}
+              className={`text-sm px-3 py-1.5 rounded-md transition-colors ${status === s.key ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm' : 'text-gray-500 dark:text-slate-400'}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <select
+          className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
+          value={teamFilter}
+          onChange={e => setTeamFilter(e.target.value)}
+        >
+          <option value="">ทุกทีม</option>
+          <option value="none">ไม่มีทีม</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {rows && <span className="text-sm text-gray-500 dark:text-slate-400">พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{rows.length}</span> รายการ</span>}
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden overflow-x-auto">
+        {!rows ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
-        ) : ranked.length === 0 ? (
-          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีรายการอัพเซลล์ที่ผ่านการตรวจสอบ</p>
+        ) : rows.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ไม่พบรายการในช่วงที่เลือก</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
-                <th className="px-4 py-2.5 font-medium">อันดับ</th>
+                <th className="px-4 py-2.5 font-medium whitespace-nowrap">วันที่</th>
                 <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">รายการที่ผ่าน</th>
-                <th className="px-4 py-2.5 font-medium">ยอดอัพเซลล์รวม</th>
+                <th className="px-4 py-2.5 font-medium">ทีม</th>
+                <th className="px-4 py-2.5 font-medium">ลูกค้า</th>
+                <th className="px-4 py-2.5 font-medium">รายการ</th>
+                <th className="px-4 py-2.5 font-medium">ยอดเงิน</th>
+                <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                <th className="px-4 py-2.5 font-medium">ตรวจโดย</th>
+                <th className="px-4 py-2.5 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {ranked.map((a, i) => (
-                <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60">
-                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
-                    {i === 0 ? <Trophy size={15} className="text-amber-500 inline" /> : i + 1}
+              {rows.map(r => (
+                <tr key={r.id} className="border-b border-gray-50 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40">
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                    {format(new Date(r.createdAt), 'd MMM yy HH:mm', { locale: th })}
                   </td>
+                  <td className="px-4 py-2.5 text-gray-800 dark:text-slate-200 whitespace-nowrap">{r.agent.name}</td>
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.agent.categoryName || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 max-w-[160px] truncate">
+                    {r.conversation?.displayName || r.conversation?.lineUserId || '—'}
+                    {r.conversation?.channel?.name && <span className="text-gray-400 dark:text-slate-500"> · {r.conversation.channel.name}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">{r.itemCount} รายการ</td>
+                  <td className="px-4 py-2.5 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap">
+                    {r.status === 'approved' && r.amount != null ? `${r.amount.toLocaleString()} บาท` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.reviewedBy?.name || '—'}</td>
                   <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={a.name} />
-                      <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
-                    </div>
+                    {r.conversation && r.topMessageId && (
+                      <button
+                        onClick={() => navigate(`/inbox?conv=${r.conversation.id}&msg=${r.topMessageId}`)}
+                        title="ไปที่แชท"
+                        className="text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep dark:hover:text-aurora-teal"
+                      >
+                        <ExternalLink size={15} />
+                      </button>
+                    )}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300 font-medium">{a.approved}</td>
-                  <td className="px-4 py-2.5 text-gray-900 dark:text-slate-100 font-semibold">{a.approvedAmount.toLocaleString()} บาท</td>
                 </tr>
               ))}
             </tbody>
@@ -422,6 +675,7 @@ function UpsellReportPage() {
 
 export default function Upsell() {
   const { tab } = useParams();
+  if (tab === 'score') return <UpsellScorePage />;
   if (tab === 'report') return <UpsellReportPage />;
   return <UpsellReviewPage />;
 }

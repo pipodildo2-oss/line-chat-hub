@@ -11,6 +11,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// `from`/`to` are plain "YYYY-MM-DD" strings computed in the BROWSER's local
+// timezone (Thailand, UTC+7) — same convention as reports.js/analytics.js.
+// Parsing with no offset would interpret them in the SERVER's timezone
+// (UTC on Railway), silently shifting the day boundary — see those files'
+// comments for the full failure mode this avoids.
+function dayStart(dateStr) { return new Date(`${dateStr}T00:00:00.000+07:00`); }
+function dayEnd(dateStr) { return new Date(`${dateStr}T23:59:59.999+07:00`); }
+
 const SUBMISSION_ITEM_SELECT = {
   id: true,
   message: {
@@ -90,12 +98,26 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/upsells/agents — admin overview, one row per agent who has submitted.
+// GET /api/upsells/agents?from=&to= — admin overview, one row per agent who
+// has submitted. from/to (optional) scope every count to submissions
+// CREATED in that range — i.e. "upsells made during this period," which is
+// what a team target/leaderboard for a given day/month should reflect,
+// regardless of when each one happened to get reviewed.
 router.get('/agents', auth, requireAdmin, async (req, res) => {
+  const { from, to } = req.query;
+  const dateWhere = {};
+  if (from || to) {
+    dateWhere.createdAt = {};
+    if (from) dateWhere.createdAt.gte = dayStart(from);
+    if (to) dateWhere.createdAt.lte = dayEnd(to);
+  }
+
   const [agents, statusGroups, amountGroups] = await Promise.all([
-    prisma.agent.findMany({ select: { id: true, name: true, email: true } }),
-    prisma.upsellSubmission.groupBy({ by: ['agentId', 'status'], _count: { _all: true } }),
-    prisma.upsellSubmission.groupBy({ by: ['agentId'], where: { status: 'approved' }, _sum: { amount: true } }),
+    prisma.agent.findMany({
+      select: { id: true, name: true, email: true, categoryId: true, category: { select: { id: true, name: true } } },
+    }),
+    prisma.upsellSubmission.groupBy({ by: ['agentId', 'status'], where: dateWhere, _count: { _all: true } }),
+    prisma.upsellSubmission.groupBy({ by: ['agentId'], where: { ...dateWhere, status: 'approved' }, _sum: { amount: true } }),
   ]);
 
   const byAgent = {}; // agentId -> { total, pending, approved, rejected }
@@ -115,6 +137,8 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
       id: a.id,
       name: a.name,
       email: a.email,
+      categoryId: a.categoryId,
+      categoryName: a.category?.name || null,
       total: byAgent[a.id].total,
       pending: byAgent[a.id].pending,
       approved: byAgent[a.id].approved,
@@ -125,6 +149,66 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
     .sort((x, y) => (y.pending - x.pending) || (y.total - x.total));
 
   res.json({ agents: summary });
+});
+
+// GET /api/upsells?from=&to=&status=&agentCategoryId= — admin flat log of
+// every submission across every agent, for the detailed รายงาน page (the
+// score/leaderboard page above is the rollup; this is what backs it).
+router.get('/', auth, requireAdmin, async (req, res) => {
+  const { from, to, status, agentCategoryId } = req.query;
+  const where = {};
+  if (status) where.status = status;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = dayStart(from);
+    if (to) where.createdAt.lte = dayEnd(to);
+  }
+  if (agentCategoryId) {
+    where.agent = agentCategoryId === 'none' ? { categoryId: null } : { categoryId: agentCategoryId };
+  }
+
+  const submissions = await prisma.upsellSubmission.findMany({
+    where,
+    select: {
+      id: true, status: true, amount: true, createdAt: true, reviewedAt: true,
+      agent: { select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } } },
+      reviewedBy: { select: { id: true, name: true } },
+      items: {
+        select: {
+          message: {
+            select: {
+              id: true, createdAt: true,
+              conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { name: true } } } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 1000,
+  });
+
+  // Flatten each submission down to the one row this table needs — item
+  // order isn't guaranteed by Prisma (same reason as GET /agents/:agentId
+  // above), so pick the earliest-message item for the conversation/link.
+  const rows = submissions.map(s => {
+    const sortedItems = [...s.items].sort((a, b) => new Date(a.message.createdAt) - new Date(b.message.createdAt));
+    const topMessage = sortedItems[0]?.message;
+    return {
+      id: s.id,
+      status: s.status,
+      amount: s.amount,
+      createdAt: s.createdAt,
+      reviewedAt: s.reviewedAt,
+      agent: { id: s.agent.id, name: s.agent.name, categoryId: s.agent.categoryId, categoryName: s.agent.category?.name || null },
+      reviewedBy: s.reviewedBy,
+      itemCount: s.items.length,
+      conversation: topMessage?.conversation || null,
+      topMessageId: topMessage?.id || null,
+    };
+  });
+
+  res.json({ submissions: rows });
 });
 
 // GET /api/upsells/agents/:agentId — admin drill-down for one agent's submissions.
