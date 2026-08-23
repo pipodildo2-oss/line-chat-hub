@@ -326,20 +326,18 @@ function ViewerTags({ msg, isAdmin }) {
 }
 
 // Shows a message's upsell-claim state to EVERYONE (not just while picking),
-// so "this one's already taken" is always visible — the actual exclusivity
-// lock lives server-side (UpsellSubmissionItem.messageId @unique), this is
-// just making that lock legible in the chat itself.
-const UPSELL_BADGE_TEXT = {
-  pending: '🔒 ส่งอัพเซลล์แล้ว (รอตรวจ)',
-  approved: '✅ อัพเซลล์ผ่านแล้ว',
-  rejected: '❌ อัพเซลล์ไม่ผ่าน',
-};
+// so "this one's already taken, by so-and-so" is always visible — the actual
+// exclusivity lock lives server-side (UpsellSubmissionItem.messageId
+// @unique), this is just making that lock legible in the chat itself.
+// Deliberately does NOT show ผ่าน/ไม่ผ่าน — that verdict belongs on the
+// ตรวจสอบ review page, not broadcast in the chat (and messages.js's
+// MESSAGE_SELECT doesn't even send it here, so there's nothing to leak).
 function UpsellBadge({ msg }) {
   if (!msg.upsellItem) return null;
-  const status = msg.upsellItem.submission?.status || 'pending';
+  const agentName = msg.upsellItem.submission?.agent?.name;
   return (
     <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
-      {UPSELL_BADGE_TEXT[status] || UPSELL_BADGE_TEXT.pending}
+      🔒 {agentName ? `${agentName} ` : ''}ส่งอัพเซลล์แล้ว
     </p>
   );
 }
@@ -1398,9 +1396,9 @@ export default function Inbox() {
     // up instantly for every other agent viewing the same chat, and drops any
     // of those ids from this agent's own in-progress selection so they can't
     // still submit them.
-    socket.on('upsell_claimed', ({ messageIds }) => {
+    socket.on('upsell_claimed', ({ messageIds, agentName }) => {
       setMessages(prev => prev.map(m => (
-        messageIds.includes(m.id) ? { ...m, upsellItem: { submission: { status: 'pending' } } } : m
+        messageIds.includes(m.id) ? { ...m, upsellItem: { submission: { agent: { name: agentName } } } } : m
       )));
       setSelectedUpsellIds(prev => {
         if (![...prev].some(id => messageIds.includes(id))) return prev;

@@ -15,7 +15,12 @@ const prisma = new PrismaClient();
 const MESSAGE_SELECT = {
   id: true, conversationId: true, sender: true, senderName: true, type: true,
   content: true, metadata: true, read: true, lineMessageId: true, createdAt: true,
-  upsellItem: { select: { id: true, submissionId: true, submission: { select: { status: true } } } },
+  // Inbox only ever shows "claimed / by whom" (see UpsellBadge in
+  // Inbox.jsx), never the ผ่าน/ไม่ผ่าน review outcome — that's the
+  // ตรวจสอบ page's job. Kept out of this select entirely (not just hidden
+  // in the UI) so a claimed-but-not-yet-reviewed message can't leak its
+  // eventual verdict to the chat just by inspecting the API response.
+  upsellItem: { select: { id: true, submissionId: true, submission: { select: { agent: { select: { name: true } } } } } },
 };
 
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
