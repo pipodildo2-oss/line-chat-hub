@@ -21,17 +21,51 @@ const STATUS_BADGE = {
 };
 const STATUS_LABEL = { pending: 'รอตรวจ', approved: 'ผ่าน', rejected: 'ไม่ผ่าน' };
 
+// Customer-sent images need our Channel Access Token to fetch from LINE, so
+// they're served through an authenticated proxy (/api/messages/content/:id)
+// and can't be linked directly via <img src> — same blob-fetch pattern as
+// ImageMessage in Inbox.jsx. Agent-sent images (quick-reply/composer) have no
+// lineMessageId and are a plain, unauthenticated /uploads/... link instead.
+function CustomerImagePreview({ messageId }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let objectUrl;
+    let cancelled = false;
+    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
+      .then(res => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [messageId]);
+
+  if (failed) return <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>;
+  if (!src) return <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
+  return <img src={src} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />;
+}
+
+function AgentImagePreview({ msg }) {
+  let url = null;
+  try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
+  return url ? (
+    <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+  ) : (
+    <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>
+  );
+}
+
 function SubmissionItemPreview({ item }) {
   const msg = item.message;
   if (!msg) return null;
   if (msg.type === 'image') {
-    let url = null;
-    try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
-    return url ? (
-      <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
-    ) : (
-      <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>
-    );
+    return msg.lineMessageId ? <CustomerImagePreview messageId={msg.lineMessageId} /> : <AgentImagePreview msg={msg} />;
   }
   return (
     <p className="text-sm text-gray-700 dark:text-slate-300 line-clamp-3 whitespace-pre-wrap break-words">

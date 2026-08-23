@@ -15,7 +15,11 @@ const SUBMISSION_ITEM_SELECT = {
   id: true,
   message: {
     select: {
-      id: true, type: true, content: true, metadata: true, createdAt: true,
+      // lineMessageId distinguishes a customer-sent image (fetched through the
+      // authenticated /api/messages/content/:lineMessageId proxy, see
+      // messages.js) from an agent-sent one (metadata.url is a direct,
+      // unauthenticated link) — the frontend needs it to know which to use.
+      id: true, type: true, content: true, metadata: true, lineMessageId: true, createdAt: true,
       conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { id: true, name: true } } } },
     },
   },
