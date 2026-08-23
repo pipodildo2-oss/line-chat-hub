@@ -940,7 +940,13 @@ export default function Settings() {
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [showAgentPassword, setShowAgentPassword] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
-  const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
+  const [channelForm, setChannelForm] = useState({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '', categoryId: '' });
+  // "__new__" is a sentinel value for the category <select> below — picking it
+  // reveals a plain text input for typing a brand-new category name instead
+  // of choosing an existing one. Kept separate from channelForm.categoryId
+  // (which only ever holds a real id or '') so the sentinel never accidentally
+  // gets sent to the backend as a categoryId.
+  const [newChannelCategoryName, setNewChannelCategoryName] = useState('');
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent', categoryId: '' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
   const [saving, setSaving] = useState(false);
@@ -1123,11 +1129,25 @@ export default function Settings() {
 
   async function addChannel(e) {
     e.preventDefault();
+    if (channelForm.categoryId === '__new__' && !newChannelCategoryName.trim()) {
+      setError('กรุณาใส่ชื่อหมวดหมู่ใหม่');
+      return;
+    }
     setSaving(true); setError('');
     try {
-      const { data } = await axios.post('/api/channels', channelForm);
+      let categoryId = channelForm.categoryId;
+      // Picked "+ เพิ่มหมวดหมู่ใหม่" — create the category first so the
+      // channel can be created with a real categoryId in the same submit,
+      // instead of making the admin create the category separately first.
+      if (categoryId === '__new__') {
+        const { data: newCategory } = await axios.post('/api/channel-categories', { name: newChannelCategoryName.trim() });
+        setChannelCategories(prev => [...prev, { ...newCategory, _count: { channels: 0 } }]);
+        categoryId = newCategory.id;
+      }
+      const { data } = await axios.post('/api/channels', { ...channelForm, categoryId: categoryId || undefined });
       setChannels(prev => [...prev, data]);
-      setChannelForm({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '' });
+      setChannelForm({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '', categoryId: '' });
+      setNewChannelCategoryName('');
       setShowAddChannel(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -1410,6 +1430,28 @@ export default function Settings() {
                 <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
                 <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
                 <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
+                <div>
+                  <select
+                    className={inputCls}
+                    value={channelForm.categoryId}
+                    onChange={e => { setChannelForm(f => ({ ...f, categoryId: e.target.value })); setNewChannelCategoryName(''); }}
+                  >
+                    <option value="">ไม่มีหมวดหมู่</option>
+                    {channelCategories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                    <option value="__new__">+ เพิ่มหมวดหมู่ใหม่...</option>
+                  </select>
+                  {channelForm.categoryId === '__new__' && (
+                    <input
+                      autoFocus
+                      className={`${inputCls} mt-2`}
+                      placeholder="ชื่อหมวดหมู่ใหม่"
+                      value={newChannelCategoryName}
+                      onChange={e => setNewChannelCategoryName(e.target.value)}
+                    />
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
