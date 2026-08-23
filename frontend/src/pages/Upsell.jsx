@@ -402,15 +402,20 @@ function UpsellReviewPage() {
                   {team.total} รายการทั้งหมด
                 </p>
               </div>
+              {/* overflow-x-auto is the safety net — without it, nowrap cells
+                  in a narrow (half-width, 2-column grid) box would get
+                  silently clipped by the card's own overflow-hidden right at
+                  the ยอด column instead of ever being reachable. */}
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
                     <SortableTh label="พนักงาน" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
-                    <SortableTh label="ส่งมาแล้ว" active={sortKey === 'total'} dir={sortDir} onClick={() => handleSort('total')} align="center" />
+                    <SortableTh label="ส่งมา" active={sortKey === 'total'} dir={sortDir} onClick={() => handleSort('total')} align="center" />
                     <SortableTh label="รอตรวจ" active={sortKey === 'pending'} dir={sortDir} onClick={() => handleSort('pending')} align="center" />
                     <SortableTh label="ผ่าน" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} align="center" />
                     <SortableTh label="ไม่ผ่าน" active={sortKey === 'rejected'} dir={sortDir} onClick={() => handleSort('rejected')} align="center" />
-                    <SortableTh label="ยอดที่ผ่านแล้ว" active={sortKey === 'approvedAmount'} dir={sortDir} onClick={() => handleSort('approvedAmount')} align="right" />
+                    <SortableTh label="ยอดผ่าน" active={sortKey === 'approvedAmount'} dir={sortDir} onClick={() => handleSort('approvedAmount')} align="right" />
                   </tr>
                 </thead>
                 <tbody>
@@ -424,32 +429,33 @@ function UpsellReviewPage() {
                           : 'hover:bg-gray-50 dark:hover:bg-slate-800/40'
                       }`}
                     >
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2.5">
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
                           <Avatar name={a.name} />
                           <div className="min-w-0">
-                            <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
-                            <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{a.email}</p>
+                            <p className="text-gray-800 dark:text-slate-200 truncate max-w-[110px]">{a.name}</p>
+                            <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate max-w-[110px]">{a.email}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.total}</td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-2 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.total}</td>
+                      <td className="px-2 py-2.5 text-center">
                         {a.pending > 0 ? (
                           <span className="text-amber-600 dark:text-amber-400 font-semibold">{a.pending}</span>
                         ) : (
                           <span className="text-gray-400 dark:text-slate-500">0</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-center text-emerald-600 dark:text-emerald-400">{a.approved}</td>
-                      <td className="px-4 py-2.5 text-center text-rose-500 dark:text-rose-400">{a.rejected}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-800 dark:text-slate-200 font-medium whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-center text-emerald-600 dark:text-emerald-400">{a.approved}</td>
+                      <td className="px-2 py-2.5 text-center text-rose-500 dark:text-rose-400">{a.rejected}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-800 dark:text-slate-200 font-medium whitespace-nowrap">
                         {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ))}
         </div>
@@ -498,7 +504,7 @@ const TEAM_CARD_COLORS = ['bg-amber-500', 'bg-sky-500', 'bg-rose-500', 'bg-viole
 const TH_ALIGN_CLS = { left: 'text-left', center: 'text-center', right: 'text-right' };
 function SortableTh({ label, active, dir, onClick, align = 'left' }) {
   return (
-    <th className={`px-4 py-2.5 font-medium select-none whitespace-nowrap ${TH_ALIGN_CLS[align]}`}>
+    <th className={`px-3 py-2.5 font-medium select-none whitespace-nowrap ${TH_ALIGN_CLS[align]}`}>
       <button
         type="button"
         onClick={onClick}
