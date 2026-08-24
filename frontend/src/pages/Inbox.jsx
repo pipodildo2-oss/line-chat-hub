@@ -1606,22 +1606,43 @@ export default function Inbox() {
     }
   }
 
+  // Shared by assignAgent/changeStatus/updateConv below — applies a patched
+  // conversation to the sidebar list the same way the live 'conversation_updated'
+  // socket handler does: drop it if it no longer matches the active filter
+  // (closing one while filtered to "เปิด", assigning one while filtered to
+  // "ยังไม่ได้ assign", etc.), otherwise merge the new fields in place. Each
+  // of the three callers used to do its own ad-hoc map/filter — changeStatus's
+  // version unconditionally removed the row on ANY status change (so
+  // re-opening a case while filtered to "เปิด" incorrectly hid it too), and
+  // assignAgent/updateConv never removed a row that fell out of the filter at
+  // all. This is the single place that gets it right for every field.
+  function applyConversationPatch(data) {
+    setSelected(data);
+    const merged = { ...(conversations.find(c => c.id === data.id) || {}), ...data };
+    const matches = matchesFilter(merged, filter, agent?.id);
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === data.id);
+      if (!matches) return idx === -1 ? prev : prev.filter(c => c.id !== data.id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...data };
+      return next;
+    });
+  }
+
   async function assignAgent(agentId) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, { agentId: agentId || null });
-    setSelected(data);
-    setConversations(prev => prev.map(c => c.id === data.id ? { ...c, agent: data.agent, agentId: data.agentId } : c));
+    applyConversationPatch(data);
   }
 
   async function changeStatus(status) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, { status });
-    setSelected(data);
-    setConversations(prev => prev.filter(c => c.id !== data.id));
+    applyConversationPatch(data);
   }
 
   async function updateConv(fields) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, fields);
-    setSelected(data);
-    setConversations(prev => prev.map(c => c.id === data.id ? { ...c, ...data } : c));
+    applyConversationPatch(data);
   }
 
   async function addTag(tagId) {
