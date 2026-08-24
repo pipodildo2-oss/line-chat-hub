@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
+import { Send, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -1702,11 +1702,6 @@ export default function Inbox() {
     });
   }
 
-  async function assignAgent(agentId) {
-    const { data } = await axios.patch(`/api/conversations/${selected.id}`, { agentId: agentId || null });
-    applyConversationPatch(data);
-  }
-
   async function changeStatus(status) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, { status });
     if (status === 'closed') {
@@ -1863,17 +1858,18 @@ export default function Inbox() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <UserCheck size={16} className="text-gray-400 dark:text-slate-500" />
-                <select
-                  className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1 focus:outline-none"
-                  value={selected.agentId || ''}
-                  onChange={e => assignAgent(e.target.value)}
-                >
-                  <option value="">ไม่ได้ assign</option>
-                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
+              <button
+                onClick={() => { setUpsellMode(v => !v); setSelectedUpsellIds(new Set()); }}
+                title="เครื่องมืออัพเซลล์"
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white transition-all flex-shrink-0 ${
+                  upsellMode
+                    ? 'bg-emerald-600 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/50'
+                    : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 shadow-sm shadow-emerald-500/30'
+                }`}
+              >
+                <Wallet size={15} />
+                อัพเซลล์
+              </button>
               <select
                 className={`text-xs px-2 py-1 rounded-full border-0 font-medium ${STATUS_COLORS[selected.status]}`}
                 value={selected.status}
@@ -2109,14 +2105,6 @@ export default function Inbox() {
                           <EmojiPicker onPick={insertEmoji} onClose={() => setShowEmojiPicker(false)} />
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => { setUpsellMode(v => !v); setSelectedUpsellIds(new Set()); }}
-                        title="เครื่องมืออัพเซลล์"
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 text-emerald-500 dark:text-emerald-400 ${upsellMode ? 'bg-emerald-500/15' : 'hover:bg-emerald-500/10'}`}
-                      >
-                        <Wallet size={19} />
-                      </button>
                     </div>
                     <button
                       onClick={() => handleSend()}
