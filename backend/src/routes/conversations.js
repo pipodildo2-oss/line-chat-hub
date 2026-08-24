@@ -104,6 +104,20 @@ router.get('/', auth, async (req, res) => {
   res.json({ conversations: withDaysInactive(conversations), total, page: Number(page), limit: Number(limit) });
 });
 
+// GET /api/conversations/unread-count — powers the red badge next to the
+// Inbox sidebar item. "Unread" here matches the same rule as each
+// conversation's own unread badge in the list (GET / above): at least one
+// customer message with read:false. Respects the same channel-visibility
+// restriction as everything else in this file. Declared before GET /:id so
+// "unread-count" isn't swallowed as an :id value.
+router.get('/unread-count', auth, async (req, res) => {
+  const visibleChannelIds = await getVisibleChannelIds(req.agent);
+  const where = { messages: { some: { sender: 'user', read: false } } };
+  if (visibleChannelIds) where.channelId = { in: visibleChannelIds };
+  const count = await prisma.conversation.count({ where });
+  res.json({ count });
+});
+
 // GET /api/conversations/summary — aggregate counts for the Customers directory
 // overview cards. Respects the same channel-visibility restriction as the list
 // above. "unanswered" uses a fixed 10-minute threshold as a quick at-a-glance

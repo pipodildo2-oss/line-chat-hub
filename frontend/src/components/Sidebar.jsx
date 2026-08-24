@@ -1,13 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useSocket } from '../contexts/SocketContext';
 import ProfileModal from './ProfileModal';
 
 const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
 const STATUS_LABEL_TH = { online: 'ออนไลน์', break: 'พัก', offline: 'ออฟไลน์' };
+
+// Small red count badge for the sidebar — Inbox (unread conversations) and
+// รายงาน/ตรวจสอบ (messages flagged today). Renders nothing at 0 so a quiet
+// day doesn't leave a stray "0" sitting in the nav.
+function NavBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span className="ml-auto flex-shrink-0 bg-rose-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
 
 export default function Sidebar() {
   const { agent, logout, updateAgent } = useAuth();
@@ -24,6 +37,47 @@ export default function Sidebar() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const status = agent?.status || 'online';
+  const { socket } = useSocket();
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [flaggedTodayCount, setFlaggedTodayCount] = useState(0);
+  // Coalesces a burst of socket events (a busy inbox can fire new_message/
+  // conversation_updated many times a second) into one refetch instead of
+  // hammering the count endpoints on every single event.
+  const refetchTimerRef = useRef(null);
+
+  function loadUnreadCount() {
+    axios.get('/api/conversations/unread-count').then(r => setUnreadCount(r.data.count)).catch(() => {});
+  }
+  function loadFlaggedTodayCount() {
+    if (!isAdmin) return;
+    axios.get('/api/reports/flagged-today-count').then(r => setFlaggedTodayCount(r.data.count)).catch(() => {});
+  }
+  function scheduleRefetch() {
+    if (refetchTimerRef.current) return;
+    refetchTimerRef.current = setTimeout(() => {
+      refetchTimerRef.current = null;
+      loadUnreadCount();
+      loadFlaggedTodayCount();
+    }, 1000);
+  }
+
+  useEffect(() => {
+    loadUnreadCount();
+    loadFlaggedTodayCount();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('new_message', scheduleRefetch);
+    socket.on('conversation_updated', scheduleRefetch);
+    socket.on('message_flagged', scheduleRefetch);
+    return () => {
+      socket.off('new_message', scheduleRefetch);
+      socket.off('conversation_updated', scheduleRefetch);
+      socket.off('message_flagged', scheduleRefetch);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+    };
+  }, [socket, isAdmin]);
 
   async function handleStatusChange(next) {
     setStatusOpen(false);
@@ -78,6 +132,7 @@ export default function Sidebar() {
             <NavLink to="/inbox" className={linkCls}>
               <MessageSquare size={17} />
               {t('nav_inbox')}
+              <NavBadge count={unreadCount} />
             </NavLink>
           </div>
         </div>
@@ -98,6 +153,7 @@ export default function Sidebar() {
               >
                 <ShieldAlert size={17} />
                 <span className="flex-1 text-left">{t('nav_report')}</span>
+                <NavBadge count={flaggedTodayCount} />
                 <ChevronDown size={15} className={`transition-transform ${reportOpen ? 'rotate-180' : ''}`} />
               </button>
               {reportOpen && (
@@ -106,6 +162,7 @@ export default function Sidebar() {
                     <NavLink key={to} to={to} className={linkCls}>
                       <Icon size={14} />
                       <span className="text-[13px]">{label}</span>
+                      {to === '/report/audit' && <NavBadge count={flaggedTodayCount} />}
                     </NavLink>
                   ))}
                 </div>
