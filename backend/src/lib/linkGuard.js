@@ -20,12 +20,25 @@ function extractHost(rawMatch) {
     .toLowerCase();
 }
 
+// The label before the domain's first dot — e.g. "money87" for both
+// "money87.com" and "money87.co.th". Used below to treat different
+// TLD/suffix variants of the same registered name as equivalent, per an
+// explicit admin request: a business that owns money87.com but not every
+// other TLD of the same name (money87.co.th, .net, ...) doesn't want each
+// variant separately whitelisted.
+function firstLabel(domain) {
+  return domain.split('.')[0];
+}
+
 // approvedDomains already lowercased, no protocol/www (see approvedLinks.js,
-// which normalizes on save). A host matches if it's exactly an approved
-// domain OR a subdomain of one — "promo.mysite.com" is fine when
-// "mysite.com" is approved, but "notmysite.com" (no dot boundary) is not.
+// which normalizes on save). A host matches an approved domain if any of:
+//  - exactly equal, or
+//  - a subdomain of it ("promo.mysite.com" when "mysite.com" is approved —
+//    "notmysite.com", no dot boundary, still isn't), or
+//  - same first label regardless of what follows the first dot
+//    ("money87.co.th" when "money87.com" is approved).
 function isApprovedHost(host, approvedDomains) {
-  return approvedDomains.some(d => host === d || host.endsWith(`.${d}`));
+  return approvedDomains.some(d => host === d || host.endsWith(`.${d}`) || firstLabel(host) === firstLabel(d));
 }
 
 // Returns the first unauthorized link found in `text`, or null if every
