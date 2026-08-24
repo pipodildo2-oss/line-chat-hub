@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
-const { reconcileFlaggedLinks } = require('../src/lib/linkGuard');
+const { reconcileFlaggedLinks, recoverLinkFlagsMissedByTldAllowlistBug } = require('../src/lib/linkGuard');
 
 const prisma = new PrismaClient();
 
@@ -63,6 +63,14 @@ async function main() {
   // re-flags. No-op once nothing is left to clear.
   const clearedLinkIds = await reconcileFlaggedLinks(prisma);
   if (clearedLinkIds.length > 0) console.log(`Cleared ${clearedLinkIds.length} link flag(s) that are no longer violations under the current approved-domain rules.`);
+
+  // Incident recovery (see linkGuard.js's own comment for the full story): a
+  // short-lived deploy's TLD-allowlist bug caused the reconciliation above to
+  // wrongly clear some genuine unauthorized-link flags. Re-flags any recent
+  // message that's currently missing a flag it should actually have, under
+  // the now-fixed rules.
+  const recoveredLinkIds = await recoverLinkFlagsMissedByTldAllowlistBug(prisma);
+  if (recoveredLinkIds.length > 0) console.log(`Recovered ${recoveredLinkIds.length} link flag(s) wrongly cleared by the TLD-allowlist bug.`);
 
   console.log('Seed complete. Login: admin@example.com / admin1234');
 }
