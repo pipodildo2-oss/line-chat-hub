@@ -351,7 +351,7 @@ function UpsellBadge({ msg }) {
 // this particular message).
 function DeliveryTick({ repliedTo, onBubble }) {
   const Icon = repliedTo ? CheckCheck : Check;
-  const activeCls = onBubble ? 'text-teal-200' : 'text-aurora-tealDeep dark:text-aurora-teal';
+  const activeCls = onBubble ? 'text-indigo-200' : 'text-aurora-tealDeep dark:text-aurora-teal';
   const inactiveCls = onBubble ? 'text-white/50' : 'text-gray-400 dark:text-slate-500';
   return (
     <span
@@ -462,7 +462,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
-        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-aurora-teal text-white rounded-tr-sm'}`}>
+        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-[#4C3EDE] text-white rounded-tr-sm'}`}>
           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
           {timeLabel}
         </div>
