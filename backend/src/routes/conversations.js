@@ -294,4 +294,19 @@ router.patch('/:id/notes/:noteId', auth, async (req, res) => {
   res.json(note);
 });
 
+// DELETE /api/conversations/:id/notes/:noteId — remove a note.
+router.delete('/:id/notes/:noteId', auth, async (req, res) => {
+  const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!(await canAccessChannel(req.agent, existing.channelId))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const result = await prisma.conversationNote.deleteMany({ where: { id: req.params.noteId, conversationId: req.params.id } });
+  if (result.count === 0) return res.status(404).json({ error: 'Not found' });
+
+  emitToAll('conversation_note_deleted', { conversationId: req.params.id, noteId: req.params.noteId });
+  res.json({ success: true });
+});
+
 module.exports = router;

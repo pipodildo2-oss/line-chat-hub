@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
+import { Send, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet, Trash2 } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -713,11 +713,17 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       if (conversationId !== conv.id) return;
       setNoteEntries(prev => prev.map(n => (n.id === note.id ? note : n)));
     }
+    function onNoteDeleted({ conversationId, noteId }) {
+      if (conversationId !== conv.id) return;
+      setNoteEntries(prev => prev.filter(n => n.id !== noteId));
+    }
     socket.on('conversation_note_added', onNoteAdded);
     socket.on('conversation_note_updated', onNoteUpdated);
+    socket.on('conversation_note_deleted', onNoteDeleted);
     return () => {
       socket.off('conversation_note_added', onNoteAdded);
       socket.off('conversation_note_updated', onNoteUpdated);
+      socket.off('conversation_note_deleted', onNoteDeleted);
     };
   }, [socket, conv.id]);
 
@@ -754,6 +760,13 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       setEditingText('');
     } catch { /* ignore */ }
     setSavingEdit(false);
+  }
+
+  async function deleteNote(noteId) {
+    try {
+      await axios.delete(`/api/conversations/${conv.id}/notes/${noteId}`);
+      setNoteEntries(prev => prev.filter(n => n.id !== noteId));
+    } catch { /* ignore */ }
   }
 
   const assignedTagIds = new Set((conv.tags || []).map(t => t.tagId));
@@ -944,13 +957,22 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
                 <>
                   <div className="flex items-start justify-between gap-1.5">
                     <p className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words flex-1">{n.content}</p>
-                    <button
-                      onClick={() => startEditNote(n)}
-                      title="แก้ไขโน้ต"
-                      className="flex-shrink-0 text-gray-300 dark:text-slate-600 hover:text-aurora-tealDeep dark:hover:text-aurora-teal opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Pencil size={12} />
-                    </button>
+                    <div className="flex-shrink-0 flex items-center gap-1">
+                      <button
+                        onClick={() => startEditNote(n)}
+                        title="แก้ไขโน้ต"
+                        className="p-1 rounded text-gray-500 dark:text-slate-400 hover:text-aurora-tealDeep dark:hover:text-aurora-teal hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={() => deleteNote(n.id)}
+                        title="ลบโน้ต"
+                        className="p-1 rounded text-gray-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
                     {n.agent?.name ? `${n.agent.name} · ` : ''}
