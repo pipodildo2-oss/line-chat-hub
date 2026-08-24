@@ -104,44 +104,6 @@ router.get('/', auth, async (req, res) => {
   res.json({ conversations: withDaysInactive(conversations), total, page: Number(page), limit: Number(limit) });
 });
 
-// GET /api/conversations/unread-count — powers the red badge next to the
-// Inbox sidebar item. Deliberately PERSONAL (per requesting agent, via
-// ConversationSeen — see schema.prisma), not based on the shared
-// Message.read flag: that flag never gets set for an admin (see messages.js
-// GET /:conversationId, which skips marking read for admins on purpose, so
-// the per-conversation badge stays accurate for whichever agent actually
-// needs to reply) — using it here would leave an admin's own sidebar badge
-// stuck forever. "Unread for me" = the conversation's latest message is
-// from the customer AND is newer than the last time I personally opened it
-// (or I've never opened it) — a customer sending several messages in one
-// chat still only counts as ONE unread conversation, matching the badge's
-// whole point. 'pending' conversations are excluded, same as /unanswered
-// below — intentionally parked, not something that should nag this badge.
-router.get('/unread-count', auth, async (req, res) => {
-  const visibleChannelIds = await getVisibleChannelIds(req.agent);
-  const where = { status: { in: ['open', 'closed'] } };
-  if (visibleChannelIds) where.channelId = { in: visibleChannelIds };
-
-  const [conversations, seenRows] = await Promise.all([
-    prisma.conversation.findMany({
-      where,
-      select: { id: true, messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { sender: true, createdAt: true } } },
-      take: 5000,
-    }),
-    prisma.conversationSeen.findMany({ where: { agentId: req.agent.id }, select: { conversationId: true, seenAt: true } }),
-  ]);
-  const seenMap = new Map(seenRows.map(s => [s.conversationId, s.seenAt]));
-
-  const count = conversations.filter(c => {
-    const last = c.messages[0];
-    if (!last || last.sender !== 'user') return false;
-    const seenAt = seenMap.get(c.id);
-    return !seenAt || new Date(last.createdAt) > new Date(seenAt);
-  }).length;
-
-  res.json({ count });
-});
-
 // GET /api/conversations/summary — aggregate counts for the Customers directory
 // overview cards. Respects the same channel-visibility restriction as the list
 // above. "unanswered" uses a fixed 10-minute threshold as a quick at-a-glance

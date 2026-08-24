@@ -30,7 +30,6 @@ model Agent {
   broadcastCampaigns BroadcastCampaign[]
   upsellSubmissions UpsellSubmission[] @relation("UpsellSubmitter")
   upsellReviews     UpsellSubmission[] @relation("UpsellReviewer")
-  conversationsSeen ConversationSeen[]
 
   @@index([categoryId])
 }
@@ -188,7 +187,6 @@ model Conversation {
   lastMessageAt DateTime?
   broadcastRecipients BroadcastRecipient[]
   upsellSubmissions UpsellSubmission[]
-  seenBy      ConversationSeen[]
 
   @@unique([lineUserId, channelId])
   @@index([channelId])
@@ -295,27 +293,6 @@ model MessageView {
 
   @@unique([messageId, agentId])
   @@index([messageId])
-}
-
-// Per-agent "have I personally opened this conversation" tracker — powers
-// the Inbox sidebar badge (unread-count in conversations.js), which needs a
-// genuinely personal read state. Deliberately separate from Message.read
-// (a SHARED flag agents rely on to see "has anyone handled this yet" — see
-// messages.js's isAdmin check) and from MessageView above (the "avoided a
-// reply" audit trail, which excludes admins on purpose for accountability).
-// Written for every agent AND admin on every chat open, unlike either of
-// those — an admin opening a chat updates their own seenAt here without
-// touching the shared read flag other agents depend on.
-model ConversationSeen {
-  id             String       @id @default(cuid())
-  agentId        String
-  agent          Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  seenAt         DateTime     @default(now())
-
-  @@unique([agentId, conversationId])
-  @@index([conversationId])
 }
 
 // Admin-registered domains an agent is allowed to send a customer — anything

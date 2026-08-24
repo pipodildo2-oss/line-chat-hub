@@ -21,22 +21,6 @@ function requireAdmin(req, res, next) {
 // unambiguous regardless of what timezone the server process itself runs in.
 function dayStart(dateStr) { return new Date(`${dateStr}T00:00:00.000+07:00`); }
 function dayEnd(dateStr) { return new Date(`${dateStr}T23:59:59.999+07:00`); }
-// 'sv-SE' locale formats as YYYY-MM-DD — an easy way to get "today" as a
-// plain date string in a specific timezone without a date library.
-function todayBangkok() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }); }
-
-// GET /api/reports/flagged-today-count — powers the red badge next to the
-// รายงาน/ตรวจสอบ sidebar items. Scoped to TODAY (not all-time) since flagged
-// messages have no "reviewed/dismissed" state to clear a badge with —
-// resetting daily is what keeps this meaningful as a notification count
-// instead of a number that only ever grows.
-router.get('/flagged-today-count', auth, requireAdmin, async (req, res) => {
-  const today = todayBangkok();
-  const count = await prisma.message.count({
-    where: { flagged: true, createdAt: { gte: dayStart(today), lte: dayEnd(today) } },
-  });
-  res.json({ count });
-});
 
 // GET /api/reports/flagged-messages?from=&to=&severity=&category=&agentId=
 // Admin-only — powers the KPI review Report page. Only ever contains messages
