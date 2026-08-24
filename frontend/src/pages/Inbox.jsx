@@ -785,14 +785,35 @@ const QR_KIND_TABS = [
   { key: 'promotion', label: 'โปรโมชั่น' },
 ];
 
-// Small curated set rather than a full picker library/dependency — covers
-// the common cases for a customer-service chat (reactions, hands, status
-// marks) without pulling in an emoji-data package just for this.
+// Curated set rather than a full picker library/dependency — covers the
+// common cases for a customer-service chat (faces, hand gestures/reactions,
+// hearts, status/celebration marks, and order/payment/shipping symbols)
+// without pulling in an emoji-data package just for this.
 const EMOJI_LIST = [
-  '😀', '😁', '😊', '🙂', '😉', '😍', '🥰', '😘', '😎', '🤔',
-  '😅', '😢', '😭', '😡', '😱', '🙏', '👍', '👎', '👏', '🙌',
-  '💪', '🤝', '❤️', '💛', '💚', '💙', '💜', '🔥', '✨', '🎉',
-  '🎁', '✅', '❌', '⚠️', '⏰', '💰', '📦', '🚚', '💳', '📱',
+  // Faces
+  '😀', '😁', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌',
+  '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜',
+  '🤪', '🤨', '🧐', '🤓', '😎', '🥳', '😏', '😒', '😞', '😔',
+  '😟', '😕', '🙁', '😣', '😖', '😫', '😩', '🥺', '😢', '😭',
+  '😤', '😠', '😡', '🤬', '😳', '🥵', '🥶', '😱', '😨', '😰',
+  '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑',
+  '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '😴', '🤤', '😪',
+  '😵', '🤯', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑',
+  // Hand gestures / reactions
+  '👍', '👎', '👏', '🙌', '🙏', '🤝', '💪', '✌️', '🤞', '🤟',
+  '🤘', '👌', '🤙', '👋', '🤚', '✋', '👊', '✊', '👉', '👈',
+  '👆', '👇', '☝️', '👀',
+  // Hearts
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+  '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝',
+  // Status / celebration
+  '🎉', '🎊', '🎁', '✨', '🌟', '⭐', '🔥', '💯', '⚡', '🆕',
+  '🆗', '✅', '❌', '⚠️', '❗', '❓', '‼️', '⁉️', '🚫', '⏰',
+  '⏳', '📌', '📍',
+  // Orders / payment / shipping / office
+  '💰', '💵', '💳', '🧾', '📦', '🚚', '🛍️', '🏷️', '📱', '💻',
+  '📧', '📞', '☎️', '💬', '📝', '📅', '📆', '🎯', '🚀', '🔔',
+  '📢', '🎫', '🛒',
 ];
 
 // Simple static grid — no fetch/state beyond what the parent already tracks.
@@ -800,12 +821,12 @@ const EMOJI_LIST = [
 // drop in several emoji in a row without reopening it each time.
 function EmojiPicker({ onPick, onClose }) {
   return (
-    <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-xl z-20 overflow-hidden">
+    <div className="absolute bottom-full left-0 mb-2 w-72 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-xl z-20 overflow-hidden">
       <div className="px-3 py-2 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
         <p className="text-sm font-medium text-gray-700 dark:text-slate-200">อิโมจิ</p>
         <button onClick={onClose}><X size={14} className="text-gray-400 dark:text-slate-500" /></button>
       </div>
-      <div className="grid grid-cols-8 gap-0.5 p-2 max-h-48 overflow-y-auto">
+      <div className="grid grid-cols-8 gap-0.5 p-2 max-h-64 overflow-y-auto">
         {EMOJI_LIST.map(e => (
           <button
             key={e}
@@ -1080,7 +1101,15 @@ export default function Inbox() {
   }, [messages]);
 
   const loadConversations = useCallback(async () => {
-    const params = {};
+    // Without an explicit limit, GET /api/conversations falls back to its
+    // own default of 30 — fine for the paginated Customers/Report tables,
+    // but this sidebar list has no pagination UI at all, so anything past
+    // #30 (e.g. older closed chats) would silently never show up no matter
+    // how far an agent scrolled. A high cap effectively means "all of them"
+    // for any realistic team's conversation volume, matching the same
+    // "just fetch generously instead of paginating" pattern already used by
+    // the flagged-messages/unanswered lists elsewhere in this app.
+    const params = { limit: 1000 };
     Object.entries(filter).forEach(([k, v]) => {
       if (k === 'channelIds') { if (v.length > 0) params.channelIds = v.join(','); return; }
       if (v) params[k] = v;
