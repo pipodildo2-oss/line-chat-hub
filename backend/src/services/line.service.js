@@ -130,7 +130,7 @@ async function processLineEvent(channel, event) {
     // jump to the top of the inbox as if it just happened.
     const existingConv = await prisma.conversation.findUnique({
       where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
-      select: { lastMessageAt: true, displayNameCustomized: true },
+      select: { lastMessageAt: true, displayNameCustomized: true, status: true },
     });
     const bumpLastMessageAt = !existingConv?.lastMessageAt || sentAt > existingConv.lastMessageAt;
 
@@ -142,7 +142,12 @@ async function processLineEvent(channel, event) {
         // name in if nobody has customized it for this conversation yet.
         ...(existingConv?.displayNameCustomized ? {} : { displayName }),
         pictureUrl,
-        status: 'open',
+        // A closed conversation reopens on a new message — it was "done",
+        // this is a fresh inquiry. "รอ" (pending) is different: an agent put
+        // it there on purpose (waiting on something), not because it's
+        // resolved, so a follow-up message shouldn't yank it back to "เปิด"
+        // out from under them — leave status untouched while pending.
+        ...(existingConv?.status === 'pending' ? {} : { status: 'open' }),
         // If they're messaging us, they're obviously not blocking us — covers
         // the edge case where an 'unfollow'-then-'follow' pair happened but a
         // 'follow' webhook delivery got lost somehow.
