@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import ProfileModal from './ProfileModal';
@@ -38,6 +38,7 @@ export default function Sidebar() {
     { to: '/settings/agents', icon: Users, label: t('settings_agents') },
     { to: '/settings/tags', icon: Tag, label: t('settings_tags') },
     { to: '/settings/quick-replies', icon: Zap, label: t('settings_quick_replies') },
+    { to: '/settings/approved-links', icon: Link2, label: 'ลิงค์ที่อนุญาต' },
   ];
 
   const reportChildren = [

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus, Link2 } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -24,6 +24,12 @@ const SEVERITY_TABS = [
   { key: '', label: 'ทั้งหมด' },
   { key: 'severe', label: 'รุนแรง' },
   { key: 'minor', label: 'เล็กน้อย' },
+];
+
+const CATEGORY_TABS = [
+  { key: '', label: 'ทั้งหมด' },
+  { key: 'moderation', label: 'คำไม่เหมาะสม' },
+  { key: 'link', label: 'ลิงค์ไม่ได้รับอนุญาต' },
 ];
 
 function StatCard({ icon: Icon, label, value, color }) {
@@ -774,6 +780,7 @@ function AuditReport() {
   const [preset, setPreset] = useState('thisMonth');
   const [[from, to], setDateRange] = useState(PRESETS[2].range());
   const [severity, setSeverity] = useState('');
+  const [category, setCategory] = useState('');
   const [agentId, setAgentId] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -791,10 +798,11 @@ function AuditReport() {
   const load = useCallback(async () => {
     const params = { from, to };
     if (severity) params.severity = severity;
+    if (category) params.category = category;
     if (agentId) params.agentId = agentId;
     const { data } = await axios.get('/api/reports/flagged-messages', { params });
     setData(data);
-  }, [from, to, severity, agentId]);
+  }, [from, to, severity, category, agentId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -803,7 +811,7 @@ function AuditReport() {
   }, []);
   // Any filter change invalidates the current page — reset back to page 1
   // rather than risk landing on an empty page under a narrower filter.
-  useEffect(() => { setPage(1); }, [from, to, severity, agentId]);
+  useEffect(() => { setPage(1); }, [from, to, severity, category, agentId]);
   const pagedMessages = data ? data.messages.slice((page - 1) * pageSize, page * pageSize) : [];
 
   // Live-append when a new message gets flagged elsewhere in the app, so the
@@ -816,8 +824,9 @@ function AuditReport() {
       // Loosely trust the current date-range filter here (no live event carries
       // enough info to re-derive it precisely) — a message flagged "now" is
       // always within "today", and the common case is viewing today/this month
-      // anyway. Severity/agent filters are checked exactly since we have both.
+      // anyway. Severity/category/agent filters are checked exactly since we have all three.
       if (severity && payload.severity !== severity) return;
+      if (category && payload.category !== category) return;
       if (agentId && payload.agentId !== agentId) return;
       setData(prev => {
         if (!prev) return prev;
@@ -828,6 +837,7 @@ function AuditReport() {
           content: payload.content,
           flagSeverity: payload.severity,
           flagReason: payload.reason,
+          flagCategory: payload.category,
           createdAt: payload.createdAt,
           senderName: payload.agentName,
           senderId: payload.agentId,
@@ -839,12 +849,14 @@ function AuditReport() {
           totalFlagged: prev.totalFlagged + 1,
           severeCount: prev.severeCount + (payload.severity === 'severe' ? 1 : 0),
           minorCount: prev.minorCount + (payload.severity === 'minor' ? 1 : 0),
+          linkCount: prev.linkCount + (payload.category === 'link' ? 1 : 0),
+          moderationCount: prev.moderationCount + (payload.category !== 'link' ? 1 : 0),
         };
       });
     }
     socket.on('message_flagged', handleFlagged);
     return () => socket.off('message_flagged', handleFlagged);
-  }, [socket, severity, agentId]);
+  }, [socket, severity, category, agentId]);
 
   const rangeLabel = useMemo(() => {
     const activePreset = PRESETS.find(p => p.key === preset);
@@ -906,10 +918,24 @@ function AuditReport() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <StatCard icon={AlertTriangle} label={`ข้อความที่ถูกตี (${rangeLabel})`} value={data.totalFlagged} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
         <StatCard icon={ShieldAlert} label="รุนแรง" value={data.severeCount} color="bg-rose-500" />
         <StatCard icon={ShieldQuestion} label="เล็กน้อย" value={data.minorCount} color="bg-amber-500" />
+        <StatCard icon={Link2} label="ลิงค์ไม่ได้รับอนุญาต" value={data.linkCount} color="bg-fuchsia-600" />
+      </div>
+
+      {/* Category tabs */}
+      <div className="flex gap-1.5 mb-2">
+        {CATEGORY_TABS.map(tab => (
+          <button
+            key={tab.key || 'all'}
+            onClick={() => setCategory(tab.key)}
+            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${category === tab.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Severity tabs */}
@@ -963,9 +989,16 @@ function AuditReport() {
                     <p className="line-clamp-3 whitespace-pre-wrap break-words">{m.content}</p>
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${SEVERITY_BADGE[m.flagSeverity] || 'bg-gray-100 text-gray-500'}`}>
-                      {SEVERITY_LABEL[m.flagSeverity] || m.flagSeverity}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${SEVERITY_BADGE[m.flagSeverity] || 'bg-gray-100 text-gray-500'}`}>
+                        {SEVERITY_LABEL[m.flagSeverity] || m.flagSeverity}
+                      </span>
+                      {m.flagCategory === 'link' && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 flex items-center gap-1">
+                          <Link2 size={10} /> ลิงค์
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 max-w-[160px]">
                     <p className="line-clamp-3">{m.flagReason || '—'}</p>

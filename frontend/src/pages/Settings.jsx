@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus, ChevronUp, ChevronDown, Search } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Zap, ImagePlus, ChevronUp, ChevronDown, Search, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -949,6 +949,12 @@ export default function Settings() {
   const [newChannelCategoryName, setNewChannelCategoryName] = useState('');
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'agent', categoryId: '' });
   const [tagForm, setTagForm] = useState({ name: '', color: TAG_COLOR_PRESETS[0] });
+  // "ลิงค์ที่อนุญาต" — the whitelist linkGuard.js checks outgoing agent
+  // messages against (see backend/src/lib/linkGuard.js), so a supervisor
+  // gets flagged in รายงาน > ตรวจสอบ if an agent sends a customer a link to
+  // an unregistered site.
+  const [approvedLinks, setApprovedLinks] = useState([]);
+  const [approvedLinkForm, setApprovedLinkForm] = useState({ domain: '', label: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -984,6 +990,7 @@ export default function Settings() {
     axios.get('/api/channel-categories').then(r => setChannelCategories(r.data));
     axios.get('/api/channel-category-groups').then(r => setChannelCategoryGroups(r.data));
     axios.get('/api/agent-categories').then(r => setAgentCategories(r.data));
+    axios.get('/api/approved-links').then(r => setApprovedLinks(r.data)).catch(() => {});
   }, []);
 
   async function addChannelCategory(e) {
@@ -1267,6 +1274,24 @@ export default function Settings() {
     if (!confirm('ลบแท็กนี้? แท็กจะถูกลบออกจากทุกการสนทนาที่ติดไว้ (การสนทนาและข้อความไม่ถูกลบ)')) return;
     await axios.delete(`/api/tags/${id}`);
     setTags(prev => prev.filter(t => t.id !== id));
+  }
+
+  async function addApprovedLink(e) {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try {
+      const { data } = await axios.post('/api/approved-links', approvedLinkForm);
+      setApprovedLinks(prev => [...prev, data]);
+      setApprovedLinkForm({ domain: '', label: '' });
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setSaving(false); }
+  }
+
+  async function deleteApprovedLink(id) {
+    if (!confirm('ลบโดเมนนี้ออกจากรายการที่อนุญาต? ข้อความที่ส่งลิงค์นี้ในอนาคตจะถูกแจ้งเตือนว่าเป็นลิงค์ไม่ได้รับอนุญาต')) return;
+    await axios.delete(`/api/approved-links/${id}`);
+    setApprovedLinks(prev => prev.filter(l => l.id !== id));
   }
 
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
@@ -1744,6 +1769,54 @@ export default function Settings() {
       {/* Quick Replies */}
       {tab === 'quick-replies' && (
         <QuickRepliesSettings isAdmin={agent?.role === 'admin'} channels={channels} />
+      )}
+
+      {/* Approved links — whitelist linkGuard.js checks outgoing agent messages
+          against, flagging anything else in รายงาน > ตรวจสอบ. */}
+      {tab === 'approved-links' && (
+        <div className="space-y-4 max-w-2xl">
+          <p className="text-sm text-slate-400">
+            ระบบจะแจ้งเตือนในหน้ารายงาน &gt; ตรวจสอบ ทันทีที่พนักงานส่งลิงค์ที่ไม่อยู่ในรายการนี้ให้ลูกค้า — ใส่แค่โดเมนก็พอ (ไม่ต้องมี https:// หรือ path) ระบบจะอนุญาตทุก path/subdomain ของโดเมนนั้นให้อัตโนมัติ
+          </p>
+          <div className="space-y-2">
+            {approvedLinks.map(l => (
+              <div key={l.id} className={`${cardCls} flex items-center justify-between`}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Link2 size={16} className="text-aurora-teal flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-slate-100 truncate">{l.domain}</p>
+                    {l.label && <p className="text-xs text-slate-500 truncate">{l.label}</p>}
+                  </div>
+                </div>
+                <button onClick={() => deleteApprovedLink(l.id)} className="text-slate-500 hover:text-rose-400 flex-shrink-0">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {approvedLinks.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีโดเมนที่อนุญาต — ทุกลิงค์ที่พนักงานส่งจะถูกแจ้งเตือน</p>}
+          </div>
+
+          <form onSubmit={addApprovedLink} className={`${cardCls} space-y-3`}>
+            <h3 className="font-medium text-slate-100">เพิ่มโดเมนที่อนุญาต</h3>
+            <input
+              className={inputCls}
+              placeholder="โดเมน เช่น mysite.com"
+              value={approvedLinkForm.domain}
+              onChange={e => setApprovedLinkForm(f => ({ ...f, domain: e.target.value }))}
+              required
+            />
+            <input
+              className={inputCls}
+              placeholder="หมายเหตุ (ถ้ามี) เช่น เว็บหลัก"
+              value={approvedLinkForm.label}
+              onChange={e => setApprovedLinkForm(f => ({ ...f, label: e.target.value }))}
+            />
+            {error && <p className="text-sm text-rose-400">{error}</p>}
+            <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">
+              เพิ่มโดเมน
+            </button>
+          </form>
+        </div>
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />

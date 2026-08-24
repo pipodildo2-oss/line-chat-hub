@@ -22,16 +22,19 @@ function requireAdmin(req, res, next) {
 function dayStart(dateStr) { return new Date(`${dateStr}T00:00:00.000+07:00`); }
 function dayEnd(dateStr) { return new Date(`${dateStr}T23:59:59.999+07:00`); }
 
-// GET /api/reports/flagged-messages?from=&to=&severity=&agentId=
+// GET /api/reports/flagged-messages?from=&to=&severity=&category=&agentId=
 // Admin-only — powers the KPI review Report page. Only ever contains messages
-// flagged by the AI moderation check going forward from when that feature
-// shipped (see moderation.service.js) — no historical backfill.
+// flagged by a check going forward from when that check shipped — no
+// historical backfill. Two categories share this list: "moderation" (bad
+// words/spam, moderation.service.js) and "link" (unauthorized link,
+// linkGuard.js) — rows flagged before flagCategory existed are null, treated
+// as "moderation" everywhere below since that was the only category then.
 router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
-  const { from, to, severity, agentId } = req.query;
+  const { from, to, severity, category, agentId } = req.query;
 
-  // baseWhere excludes the severity tab filter, so the severity summary counts
-  // below always reflect the true totals for the selected date/agent regardless
-  // of which severity tab is currently active — otherwise switching to the
+  // baseWhere excludes the severity/category tab filters, so the summary
+  // counts below always reflect the true totals for the selected date/agent
+  // regardless of which tab is currently active — otherwise switching to the
   // "minor" tab would make the "severe" stat card show 0.
   const baseWhere = { flagged: true };
   if (agentId) baseWhere.senderId = agentId;
@@ -40,13 +43,16 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
     if (from) baseWhere.createdAt.gte = dayStart(from);
     if (to) baseWhere.createdAt.lte = dayEnd(to);
   }
-  const where = severity ? { ...baseWhere, flagSeverity: severity } : baseWhere;
+  const where = { ...baseWhere };
+  if (severity) where.flagSeverity = severity;
+  if (category === 'link') where.flagCategory = 'link';
+  else if (category === 'moderation') where.OR = [{ flagCategory: 'moderation' }, { flagCategory: null }];
 
-  const [messages, totalFlagged, severeCount, minorCount] = await Promise.all([
+  const [messages, totalFlagged, severeCount, minorCount, linkCount] = await Promise.all([
     prisma.message.findMany({
       where,
       select: {
-        id: true, content: true, flagSeverity: true, flagReason: true, createdAt: true,
+        id: true, content: true, flagSeverity: true, flagReason: true, flagCategory: true, createdAt: true,
         senderName: true, senderId: true,
         senderAgent: { select: { id: true, name: true } },
         conversation: {
@@ -59,9 +65,10 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
     prisma.message.count({ where: baseWhere }),
     prisma.message.count({ where: { ...baseWhere, flagSeverity: 'severe' } }),
     prisma.message.count({ where: { ...baseWhere, flagSeverity: 'minor' } }),
+    prisma.message.count({ where: { ...baseWhere, flagCategory: 'link' } }),
   ]);
 
-  res.json({ messages, totalFlagged, severeCount, minorCount });
+  res.json({ messages, totalFlagged, severeCount, minorCount, linkCount, moderationCount: totalFlagged - linkCount });
 });
 
 const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a customer message the team hasn't had a fair chance to answer yet

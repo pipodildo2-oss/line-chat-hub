@@ -5,6 +5,7 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
+const { findUnauthorizedLink } = require('../lib/linkGuard');
 const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
 const { canAccessChannel } = require('../lib/conversationQuery');
 
@@ -302,39 +303,63 @@ router.post('/:conversationId', auth, async (req, res) => {
       })
       .catch(e => console.error('messageView cleanup failed (message already sent+recorded):', e.message));
 
-    // AI moderation check — freely-typed text only (not images, not canned quick
-    // replies, which go through a separate route and are pre-approved by an
-    // admin). Deliberately fired AFTER the response above so the agent's send
-    // isn't held up waiting on an AI call; the Report page picks it up a moment
-    // later via the 'message_flagged' event or its next fetch. Recent history is
-    // passed along so the AI can judge tone (arguing with the customer) and
-    // repetition (spam), not just this one message in isolation.
+    // Unauthorized-link check + AI moderation check — freely-typed text only
+    // (not images, not canned quick replies, which go through a separate
+    // route and are pre-approved by an admin). Deliberately fired AFTER the
+    // response above so the agent's send isn't held up; the Report page
+    // picks it up a moment later via 'message_flagged' or its next fetch.
+    // Link check runs first (cheap, deterministic — no need for message
+    // history) since it's the more serious violation (steering a customer to
+    // an unapproved site); only falls through to the word/spam check if the
+    // message is clean of that.
     if (!imageData && content) {
-      prisma.message.findMany({
-        where: { conversationId: conversation.id, id: { not: message.id } },
-        orderBy: { createdAt: 'desc' },
-        take: 6,
-        select: { sender: true, content: true },
-      })
-        .then(history => checkMessage(content, history.reverse()))
-        .then(async (result) => {
-          if (!result) return;
+      (async () => {
+        const approvedLinks = await prisma.approvedLink.findMany({ select: { domain: true } });
+        const badLink = findUnauthorizedLink(content, approvedLinks.map(l => l.domain));
+        if (badLink) {
+          const reason = `ส่งลิงค์ที่ไม่ได้รับอนุญาต: ${badLink}`;
           await prisma.message.update({
             where: { id: message.id },
-            data: { flagged: true, flagSeverity: result.severity, flagReason: result.reason },
+            data: { flagged: true, flagSeverity: 'severe', flagReason: reason, flagCategory: 'link' },
           });
           emitToAll('message_flagged', {
             messageId: message.id,
             conversationId: conversation.id,
-            severity: result.severity,
-            reason: result.reason,
+            severity: 'severe',
+            category: 'link',
+            reason,
             agentId: req.agent.id,
             agentName: req.agent.name,
             content,
             createdAt: message.createdAt,
           });
-        })
-        .catch((e) => console.warn('Moderation follow-up failed:', e.message));
+          return;
+        }
+
+        const history = await prisma.message.findMany({
+          where: { conversationId: conversation.id, id: { not: message.id } },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+          select: { sender: true, content: true },
+        });
+        const result = await checkMessage(content, history.reverse());
+        if (!result) return;
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { flagged: true, flagSeverity: result.severity, flagReason: result.reason, flagCategory: 'moderation' },
+        });
+        emitToAll('message_flagged', {
+          messageId: message.id,
+          conversationId: conversation.id,
+          severity: result.severity,
+          category: 'moderation',
+          reason: result.reason,
+          agentId: req.agent.id,
+          agentName: req.agent.name,
+          content,
+          createdAt: message.createdAt,
+        });
+      })().catch((e) => console.warn('Moderation follow-up failed:', e.message));
     }
   } catch (err) {
     // A timeout waiting on LINE (see line.service.js) means we genuinely

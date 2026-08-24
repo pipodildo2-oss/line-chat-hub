@@ -265,6 +265,11 @@ model Message {
   flagged        Boolean      @default(false)
   flagSeverity   String?      // "minor" | "severe" — only set when flagged
   flagReason     String?      // short Thai explanation from the AI, shown on the Report page
+  // Which check flagged this — "moderation" (bad words/spam, moderation.service.js)
+  // or "link" (unauthorized link, linkGuard.js). Null for rows flagged before
+  // this field existed — the ตรวจสอบ report treats null the same as "moderation"
+  // for display, since that's the only category that existed back then.
+  flagCategory   String?
 
   @@index([conversationId, createdAt])
   @@index([flagged])
@@ -288,6 +293,20 @@ model MessageView {
 
   @@unique([messageId, agentId])
   @@index([messageId])
+}
+
+// Admin-registered domains an agent is allowed to send a customer — anything
+// else found in an outgoing agent text message gets flagged (see
+// backend/src/lib/linkGuard.js), so a supervisor can catch an agent quietly
+// steering a customer toward an unauthorized site. Matching is domain-based
+// (a message linking to any subdomain of an approved domain is fine), not
+// exact-URL, so path/query params on an otherwise-approved link never
+// trigger a false flag.
+model ApprovedLink {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  label     String?
+  createdAt DateTime @default(now())
 }
 
 // ---------- Upsell ("อัพเซลล์") submissions ----------
