@@ -138,10 +138,15 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
   // distinct-conversation count via plain Prisma groupBy). Conditionally
   // date-bounded the same way dateWhere is above, so omitting from/to still
   // means "all time" for callers that rely on that (ตรวจสอบ's worklist).
+  // "createdAt" AT TIME ZONE 'UTC' (rather than comparing the naive column
+  // to the bind param directly) — see analytics.js's recentActivity query
+  // for why: a plain comparison implicitly casts using the Postgres
+  // SESSION's timezone, which isn't guaranteed to be UTC, and would then
+  // silently shift this boundary by that session's offset.
   const msgParams = [];
   let msgDateSql = '';
-  if (from) { msgParams.push(dayStart(from)); msgDateSql += ` AND "createdAt" >= $${msgParams.length}`; }
-  if (to) { msgParams.push(dayEnd(to)); msgDateSql += ` AND "createdAt" <= $${msgParams.length}`; }
+  if (from) { msgParams.push(dayStart(from)); msgDateSql += ` AND ("createdAt" AT TIME ZONE 'UTC') >= $${msgParams.length}`; }
+  if (to) { msgParams.push(dayEnd(to)); msgDateSql += ` AND ("createdAt" AT TIME ZONE 'UTC') <= $${msgParams.length}`; }
 
   const [agents, statusGroups, amountGroups, activityRows] = await Promise.all([
     prisma.agent.findMany({

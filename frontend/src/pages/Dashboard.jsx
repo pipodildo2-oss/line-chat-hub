@@ -66,8 +66,12 @@ export default function Dashboard() {
 
   if (!data) return <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 h-full">กำลังโหลด...</div>;
 
+  // For a single selected day the backend already returns hour-of-day labels
+  // ("14:00") ready to display as-is — only the multi-day case needs the
+  // "YYYY-MM-DD" rows turned into a formatted date label (see analytics.js's
+  // activityGranularity).
   const activityData = data.recentActivity.map(row => ({
-    date: new Date(row.date).toLocaleDateString('th', { month: 'short', day: 'numeric' }),
+    date: data.activityGranularity === 'hour' ? row.date : new Date(row.date).toLocaleDateString('th', { month: 'short', day: 'numeric' }),
     messages: Number(row.count),
   }));
 
@@ -125,7 +129,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Activity chart */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_messages_per_day')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
+          <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{data.activityGranularity === 'hour' ? 'ข้อความต่อชั่วโมง' : t('dashboard_messages_per_day')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={activityData}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />

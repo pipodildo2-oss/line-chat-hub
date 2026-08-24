@@ -30,6 +30,12 @@ router.get('/summary', auth, async (req, res) => {
   // what timezone the server process itself happens to be running in.
   const toDate = to ? new Date(`${to}T23:59:59.999+07:00`) : new Date();
   const fromDate = from ? new Date(`${from}T00:00:00.000+07:00`) : new Date(toDate.getTime() - 6 * 24 * 60 * 60 * 1000);
+  // A single selected day ("วันนี้"/"เมื่อวาน", or the same custom date picked
+  // twice) only has one day-level bucket to plot — not a useful bar chart —
+  // so the activity chart switches to hourly buckets for just that day
+  // instead. `activityGranularity` in the response tells the frontend which
+  // shape `recentActivity` is in so it labels the X-axis correctly.
+  const isSingleDay = !!(from && to && from === to);
 
   const [
     totalConversations,
@@ -51,13 +57,43 @@ router.get('/summary', auth, async (req, res) => {
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
     }),
-    // Messages per day within the selected range (PostgreSQL)
-    prisma.$queryRawUnsafe(
-      `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') as date, COUNT(*)::int as count
-       FROM "Message" WHERE "createdAt" >= $1 AND "createdAt" <= $2
-       GROUP BY date_trunc('day', "createdAt") ORDER BY date_trunc('day', "createdAt") ASC`,
-      fromDate, toDate
-    ),
+    // Messages per day (or per hour, for a single selected day) within the
+    // selected range.
+    //
+    // "createdAt" is a `timestamp` column with NO time zone attached, but
+    // Prisma always writes/reads it as raw UTC digits regardless of the
+    // Postgres session's own timezone setting (confirmed against this app's
+    // actual DB — the session defaults to Asia/Bangkok locally, yet the
+    // stored literal for a message sent at 23:35 UTC is "23:35", not the
+    // Bangkok wall-clock "06:35"). That mismatch matters here because a bind
+    // parameter ($1/$2, always `timestamptz`) compared directly against a
+    // naive column gets implicitly cast using the SESSION timezone, not UTC
+    // — under a non-UTC session (as here) that silently shifts the WHERE
+    // boundary by the session's offset. Wrapping the column in
+    // `AT TIME ZONE 'UTC'` first (a single-step conversion, whose source
+    // interpretation is always the explicitly named zone, never the session
+    // default) turns it into a real instant, making the comparison correct
+    // regardless of what timezone the session happens to be in.
+    //
+    // Separately, `date_trunc('day', ...)` on the naive column would bucket
+    // by literal UTC calendar day — wrong for "what day was this in
+    // Thailand," where a message sent at 1am Bangkok (6pm UTC the day
+    // before) belongs to the NEXT calendar day locally. The day query below
+    // converts to Bangkok wall-clock first for the same reason the hour
+    // query already needs to.
+    isSingleDay
+      ? prisma.$queryRawUnsafe(
+          `SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'HH24:00') as date, COUNT(*)::int as count
+           FROM "Message" WHERE ("createdAt" AT TIME ZONE 'UTC') >= $1 AND ("createdAt" AT TIME ZONE 'UTC') <= $2
+           GROUP BY date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ORDER BY date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ASC`,
+          fromDate, toDate
+        )
+      : prisma.$queryRawUnsafe(
+          `SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'YYYY-MM-DD') as date, COUNT(*)::int as count
+           FROM "Message" WHERE ("createdAt" AT TIME ZONE 'UTC') >= $1 AND ("createdAt" AT TIME ZONE 'UTC') <= $2
+           GROUP BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ORDER BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ASC`,
+          fromDate, toDate
+        ),
   ]);
 
   // Attach channel names to groupBy result
@@ -80,6 +116,7 @@ router.get('/summary', auth, async (req, res) => {
       count: r._count.id,
     })),
     recentActivity,
+    activityGranularity: isSingleDay ? 'hour' : 'day',
   });
 });
 
