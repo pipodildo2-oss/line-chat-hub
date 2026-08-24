@@ -30,6 +30,34 @@ const TWO_LABEL_SUFFIXES = new Set([
   'co.uk', 'co.jp', 'co.kr', 'co.nz', 'co.id', 'com.au', 'com.sg',
 ]);
 
+// Real domains end in a recognized TLD — restricting to this set (rather
+// than accepting ANY 2+ letter word after a dot, which the LINK_REGEX shape
+// alone allows) avoids false-flagging ordinary text that merely LOOKS like
+// "word.word", e.g. "MR.TOEK" (a title + nickname typed with no space after
+// the period) being mistaken for the domain "mr.toek". Generous rather than
+// exhaustive — scoped to what's realistic in this app's Thai-business chat
+// context, erring toward including a TLD rather than missing a real one.
+const KNOWN_TLDS = new Set([
+  'com', 'net', 'org', 'info', 'biz', 'name', 'pro', 'co',
+  'io', 'me', 'tv', 'cc', 'gg', 'vip', 'bet', 'win', 'casino', 'live',
+  'app', 'shop', 'store', 'online', 'site', 'xyz', 'click', 'link', 'top',
+  'club', 'asia', 'world', 'fun', 'game', 'games', 'run', 'party', 'agency',
+  'company', 'solutions', 'services', 'network', 'systems', 'digital',
+  'media', 'news', 'blog', 'cloud', 'finance', 'tech', 'dev', 'work', 'life',
+  'group', 'email', 'download',
+  'th', 'uk', 'us', 'sg', 'cn', 'jp', 'kr', 'au', 'in', 'hk', 'tw', 'my',
+  'vn', 'id', 'ph', 'nz', 'ca', 'de', 'fr',
+]);
+
+// Whether host's final label (or, for a compound suffix like "co.th", its
+// final two labels) is a real TLD — see KNOWN_TLDS above.
+function hasKnownTld(host) {
+  const labels = host.split('.');
+  if (labels.length < 2) return false;
+  if (TWO_LABEL_SUFFIXES.has(labels.slice(-2).join('.'))) return true;
+  return KNOWN_TLDS.has(labels[labels.length - 1]);
+}
+
 // The name a domain is actually "sold under" — e.g. "sure87" for
 // "sure87.com", "sure87.co.th", and "m.sure87.com" alike (a subdomain
 // prefix or a different TLD/suffix don't change whose name it is). Used
@@ -75,6 +103,10 @@ function findUnauthorizedLink(text, approvedDomains) {
     // segment is already enforced by the regex ([a-z]{2,}), so this is just
     // a defensive re-check against an empty/degenerate host.
     if (!host) continue;
+    // Not a recognizable domain shape (e.g. "MR.TOEK") — a real TLD is
+    // required before this is even treated as a link at all, let alone
+    // checked against the approved list.
+    if (!hasKnownTld(host)) continue;
     if (!isApprovedHost(host, approvedDomains)) return raw;
   }
   return null;
