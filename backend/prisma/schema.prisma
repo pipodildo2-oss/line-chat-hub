@@ -129,7 +129,8 @@ model QuickReplyRequest {
   kind          String    @default("reply")
   name          String
   content       String
-  imageData     String?   // same stored-path convention as QuickReply.imageData (imageStorage.js)
+  imageData     String?   // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images        String[]  @default([]) // up to 5 stored image paths (imageStorage.js), same convention as QuickReply.images
   status        String    @default("pending") // pending | needs_revision | approved | rejected
   requestedById String
   requestedBy   Agent     @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
@@ -148,10 +149,11 @@ model QuickReply {
   id         String             @id @default(cuid())
   categoryId String
   category   QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind       String             @default("reply") // "ประเภท" — fixed choice: reply | promotion
+  kind       String             @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
   name       String             // internal shortcut name/title agents see in the picker
   content    String             // message text
-  imageData  String?            // optional attached image, stored as a base64 data URL
+  imageData  String?            // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images     String[]           @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
   order      Int                @default(0) // display position within its category, agent-controlled
   createdAt  DateTime           @default(now())
 

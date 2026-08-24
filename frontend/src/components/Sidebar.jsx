@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useSocket } from '../contexts/SocketContext';
 import ProfileModal from './ProfileModal';
 
 const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
@@ -24,6 +25,29 @@ export default function Sidebar() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const status = agent?.status || 'online';
+  const { socket } = useSocket();
+  // "Things needing MY action" on quick-reply requests — admins count pending
+  // (awaiting their review), agents count needs_revision (awaiting their own
+  // fix + resubmit). Kept live via socket events rather than polling.
+  const [qrRequestCount, setQrRequestCount] = useState(0);
+
+  useEffect(() => {
+    if (!agent?.id) return;
+    function loadCount() {
+      const status = isAdmin ? 'pending' : 'needs_revision';
+      axios.get('/api/quick-replies/requests', { params: { status } })
+        .then(r => setQrRequestCount(r.data.length))
+        .catch(() => {});
+    }
+    loadCount();
+    if (!socket) return;
+    socket.on('quick_reply_request_created', loadCount);
+    socket.on('quick_reply_request_reviewed', loadCount);
+    return () => {
+      socket.off('quick_reply_request_created', loadCount);
+      socket.off('quick_reply_request_reviewed', loadCount);
+    };
+  }, [socket, isAdmin, agent?.id]);
 
   async function handleStatusChange(next) {
     setStatusOpen(false);
@@ -78,9 +102,14 @@ export default function Sidebar() {
               <MessageSquare size={17} />
               {t('nav_inbox')}
             </NavLink>
-            <NavLink to="/quick-replies" className={linkCls}>
+            <NavLink to={qrRequestCount > 0 ? '/quick-replies/requests' : '/quick-replies/catalog'} className={linkCls}>
               <Zap size={17} />
-              {t('settings_quick_replies')}
+              <span className="flex-1">{t('settings_quick_replies')}</span>
+              {qrRequestCount > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-semibold rounded-full px-1.5 min-w-[18px] text-center">
+                  {qrRequestCount}
+                </span>
+              )}
             </NavLink>
           </div>
         </div>

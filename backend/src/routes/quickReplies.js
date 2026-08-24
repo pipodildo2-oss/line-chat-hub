@@ -8,11 +8,72 @@ const { canAccessChannel } = require('../lib/conversationQuery');
 
 const prisma = new PrismaClient();
 
-const KINDS = ['reply', 'promotion'];
+const KINDS = ['reply', 'howto', 'promotion'];
+const KIND_ERROR = 'kind ต้องเป็น reply, howto หรือ promotion';
+const MAX_IMAGES = 5;
+const TOO_MANY_IMAGES_ERROR = `แนบรูปได้สูงสุด ${MAX_IMAGES} รูป`;
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
+}
+
+// Saves each fresh base64 data URL to disk (see imageStorage.js) — used by
+// both the CREATE routes (whole array is new) and the edit/resubmit routes'
+// incremental `addImages`. Caller is responsible for validating each entry
+// with isValidImageDataUrl first; this only does the actual write.
+async function saveImages(dataUrls) {
+  const saved = [];
+  for (const url of (dataUrls || [])) saved.push((await saveBase64Image(url)) || url);
+  return saved;
+}
+
+// Splits an existing images[] array into what survives a `removeImageIndexes`
+// edit vs. what's now orphaned and needs deleting off disk. Kept as a plain
+// helper (not throwing/validating) so each route can decide its own error
+// messages around it.
+function splitImageEdits(currentImages, removeImageIndexes) {
+  const toRemove = new Set(Array.isArray(removeImageIndexes) ? removeImageIndexes.map(Number) : []);
+  const kept = currentImages.filter((_, i) => !toRemove.has(i));
+  const removed = currentImages.filter((_, i) => toRemove.has(i));
+  return { kept, removed };
+}
+
+// Never ships raw stored paths/base64 to the client — just how many images
+// exist, so the frontend can request each one by index (GET .../image/:index).
+// Falls back to the legacy single `imageData` column for rows written before
+// the `images` array existed.
+function imageMeta(row) {
+  const { imageData, images, ...rest } = row;
+  const imageCount = images && images.length > 0 ? images.length : (imageData ? 1 : 0);
+  return { ...rest, imageCount };
+}
+
+// Shared by every image-serving route below (live QuickReply and request,
+// legacy bare route and new indexed route alike) — redirects to the stored
+// file (or its thumbnail, ?preview=1) for new-style rows, or decodes+streams
+// inline for legacy rows that still hold the raw base64 blob.
+function respondWithImage(res, storedValueOrDataUrl, preview) {
+  if (!storedValueOrDataUrl) return res.status(404).end();
+  if (isStoredPath(storedValueOrDataUrl)) {
+    return res.redirect(preview ? thumbPathFor(storedValueOrDataUrl) : storedValueOrDataUrl);
+  }
+  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(storedValueOrDataUrl);
+  if (!match) return res.status(404).end();
+  const [, ext, base64] = match;
+  res.set('Content-Type', `image/${ext}`);
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.send(Buffer.from(base64, 'base64'));
+}
+
+// Resolves the image at `index` for a row that may have a populated `images[]`
+// array, or (for rows written before it existed) only the legacy single
+// `imageData` column — index 0 falls back to that so old rows keep working
+// through the same indexed URL the frontend now always uses.
+function imageAt(row, index) {
+  if (row.images && row.images.length > 0) return row.images[index] ?? null;
+  return index === 0 ? row.imageData : null;
 }
 
 // ---------- Quick Reply Categories ("หมวดหมู่") ----------
@@ -85,11 +146,14 @@ router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
     // The cascade delete below removes the QuickReply rows, but not their image
     // files on disk — grab those first so they can be cleaned up afterward.
     const withImages = await prisma.quickReply.findMany({
-      where: { categoryId: req.params.id, imageData: { not: null } },
-      select: { imageData: true },
+      where: { categoryId: req.params.id },
+      select: { imageData: true, images: true },
     });
     await prisma.quickReplyCategory.delete({ where: { id: req.params.id } });
-    withImages.forEach(qr => deleteStoredImage(qr.imageData));
+    withImages.forEach(qr => {
+      if (qr.imageData) deleteStoredImage(qr.imageData);
+      qr.images.forEach(deleteStoredImage);
+    });
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -118,8 +182,9 @@ router.get('/', auth, async (req, res) => {
     include: { category: { select: { id: true, name: true } } },
     orderBy: [{ order: 'asc' }, { name: 'asc' }],
   });
-  // Don't ship the full base64 blob in list views — just whether an image exists.
-  res.json(quickReplies.map(({ imageData, ...qr }) => ({ ...qr, hasImage: !!imageData })));
+  // Don't ship the full stored paths in list views — just how many images
+  // exist. The frontend fetches each one by index via GET /:id/image/:index.
+  res.json(quickReplies.map(qr => imageMeta(qr)));
 });
 
 // PATCH /api/quick-replies/reorder — admin only. Body: { categoryId, ids: [...] }
@@ -140,24 +205,26 @@ router.patch('/reorder', auth, requireAdmin, async (req, res) => {
 // POST /api/quick-replies — admin only
 router.post('/', auth, requireAdmin, async (req, res) => {
   try {
-    const { categoryId, kind, name, content, imageData } = req.body;
+    const { categoryId, kind, name, content, images } = req.body;
     if (!categoryId || !name?.trim() || !content?.trim()) {
       return res.status(400).json({ error: 'categoryId, name and content required' });
     }
-    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !isValidImageDataUrl(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
+    if (images !== undefined) {
+      if (!Array.isArray(images) || images.length > MAX_IMAGES) return res.status(400).json({ error: TOO_MANY_IMAGES_ERROR });
+      for (const img of images) {
+        if (!isValidImageDataUrl(img)) return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+      }
     }
     // New items go to the end of their category's list by default.
     const count = await prisma.quickReply.count({ where: { categoryId } });
-    // Write the image to disk instead of storing the base64 blob in Postgres
+    // Write each image to disk instead of storing the base64 blob in Postgres
     // (see imageStorage.js).
-    const storedImage = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    const storedImages = await saveImages(images);
     const quickReply = await prisma.quickReply.create({
-      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), imageData: storedImage, order: count },
+      data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), images: storedImages, order: count },
     });
-    const { imageData: _omit, ...safe } = quickReply;
-    res.status(201).json({ ...safe, hasImage: !!quickReply.imageData });
+    res.status(201).json(imageMeta(quickReply));
   } catch (err) {
     console.error('Create quick reply failed:', err.message);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
@@ -165,32 +232,47 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 });
 
 // PATCH /api/quick-replies/:id — admin only
+// Images are edited incrementally, not by resending the whole set: body may
+// include `removeImageIndexes` (indexes into the item's CURRENT images[] to
+// drop) and/or `addImages` (new base64 data URLs to append). Omitting both
+// leaves the images untouched — same "not present = don't touch" convention
+// the rest of this route already uses for name/content/etc. This sidesteps
+// ever needing to hand the client a real stored path to echo back.
 router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const { name, content, imageData, categoryId, kind } = req.body;
-    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !isValidImageDataUrl(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    const { name, content, categoryId, kind, removeImageIndexes, addImages } = req.body;
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
+    if (addImages !== undefined) {
+      if (!Array.isArray(addImages)) return res.status(400).json({ error: 'ข้อมูลรูปภาพไม่ถูกต้อง' });
+      for (const img of addImages) {
+        if (!isValidImageDataUrl(img)) return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+      }
     }
+
     const data = {};
     if (categoryId) data.categoryId = categoryId;
     if (kind) data.kind = kind;
     if (name?.trim()) data.name = name.trim();
     if (content?.trim()) data.content = content.trim();
-    // Allow explicit removal with "". New images get written to disk instead of
-    // stored as a base64 blob (see imageStorage.js).
-    let previousImage = null;
-    if (imageData !== undefined) {
-      // Fetch the current file (if any) BEFORE overwriting, so it can be cleaned
-      // up off disk after the update succeeds — otherwise every re-upload leaves
-      // an orphaned file behind, permanently wasting space.
-      previousImage = (await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } }))?.imageData;
-      data.imageData = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+
+    let removedFiles = [];
+    let legacyImageToClean = null;
+    if (removeImageIndexes !== undefined || addImages !== undefined) {
+      const existing = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { images: true, imageData: true } });
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      const { kept, removed } = splitImageEdits(existing.images, removeImageIndexes);
+      if (kept.length + (addImages?.length || 0) > MAX_IMAGES) return res.status(400).json({ error: TOO_MANY_IMAGES_ERROR });
+      data.images = [...kept, ...(await saveImages(addImages))];
+      removedFiles = removed;
+      // This row is being actively edited now — fully migrate off the legacy
+      // single-image column instead of leaving it dangling alongside `images`.
+      if (existing.imageData) { data.imageData = null; legacyImageToClean = existing.imageData; }
     }
+
     const quickReply = await prisma.quickReply.update({ where: { id: req.params.id }, data });
-    if (previousImage && previousImage !== quickReply.imageData) deleteStoredImage(previousImage);
-    const { imageData: _omit, ...safe } = quickReply;
-    res.json({ ...safe, hasImage: !!quickReply.imageData });
+    removedFiles.forEach(deleteStoredImage);
+    if (legacyImageToClean) deleteStoredImage(legacyImageToClean);
+    res.json(imageMeta(quickReply));
   } catch {
     res.status(404).json({ error: 'Not found' });
   }
@@ -200,9 +282,10 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
 router.delete('/:id', auth, requireAdmin, async (req, res) => {
   try {
     const quickReply = await prisma.quickReply.delete({ where: { id: req.params.id } });
-    // Clean up the associated image file off disk — Prisma only removes the DB
-    // row, so without this the file would sit orphaned in the uploads volume forever.
+    // Clean up the associated image files off disk — Prisma only removes the DB
+    // row, so without this the files would sit orphaned in the uploads volume forever.
     if (quickReply.imageData) deleteStoredImage(quickReply.imageData);
+    quickReply.images.forEach(deleteStoredImage);
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -223,11 +306,9 @@ const REQUEST_INCLUDE = {
   reviewedBy: { select: { id: true, name: true } },
 };
 
-// Never ships the raw base64/stored-path value — same "hasImage flag, fetch
-// via a dedicated image route" convention as the live QuickReply list above.
+// Same imageCount convention as the live QuickReply list above.
 function safeRequest(r) {
-  const { imageData, ...rest } = r;
-  return { ...rest, hasImage: !!imageData };
+  return imageMeta(r);
 }
 
 // GET /api/quick-replies/requests?status=
@@ -251,19 +332,22 @@ router.get('/requests', auth, async (req, res) => {
 // POST /api/quick-replies/requests — any authenticated agent.
 router.post('/requests', auth, async (req, res) => {
   try {
-    const { categoryId, kind, name, content, imageData } = req.body;
+    const { categoryId, kind, name, content, images } = req.body;
     if (!categoryId || !name?.trim() || !content?.trim()) {
       return res.status(400).json({ error: 'กรุณาเลือกหมวดหมู่และกรอกชื่อ/รายละเอียดข้อความ' });
     }
-    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !isValidImageDataUrl(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
+    if (images !== undefined) {
+      if (!Array.isArray(images) || images.length > MAX_IMAGES) return res.status(400).json({ error: TOO_MANY_IMAGES_ERROR });
+      for (const img of images) {
+        if (!isValidImageDataUrl(img)) return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+      }
     }
-    const storedImage = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    const storedImages = await saveImages(images);
     const request = await prisma.quickReplyRequest.create({
       data: {
         categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(),
-        imageData: storedImage, requestedById: req.agent.id,
+        images: storedImages, requestedById: req.agent.id,
       },
       include: REQUEST_INCLUDE,
     });
@@ -288,26 +372,33 @@ router.patch('/requests/:id', auth, async (req, res) => {
       return res.status(409).json({ error: 'แก้ไขได้เฉพาะคำขอที่แอดมินส่งกลับมาให้แก้ไขเท่านั้น' });
     }
 
-    const { categoryId, kind, name, content, imageData } = req.body;
-    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
-    if (imageData && !isValidImageDataUrl(imageData)) {
-      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    const { categoryId, kind, name, content, removeImageIndexes, addImages } = req.body;
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
+    if (addImages !== undefined) {
+      if (!Array.isArray(addImages)) return res.status(400).json({ error: 'ข้อมูลรูปภาพไม่ถูกต้อง' });
+      for (const img of addImages) {
+        if (!isValidImageDataUrl(img)) return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+      }
     }
     const data = { status: 'pending', reviewedById: null, reviewedAt: null, reviewNote: null };
     if (categoryId) data.categoryId = categoryId;
     if (kind) data.kind = kind;
     if (name?.trim()) data.name = name.trim();
     if (content?.trim()) data.content = content.trim();
-    // Same "fetch the old file before overwriting, clean it up after" pattern
-    // as PATCH /:id above — otherwise every re-upload on resubmit leaves an
-    // orphaned file behind.
-    let previousImage = null;
-    if (imageData !== undefined) {
-      previousImage = existing.imageData;
-      data.imageData = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    // Same "diff against the current set, clean up what falls out" pattern as
+    // PATCH /:id above — otherwise every resubmit leaves orphaned files behind.
+    let removedFiles = [];
+    let legacyImageToClean = null;
+    if (removeImageIndexes !== undefined || addImages !== undefined) {
+      const { kept, removed } = splitImageEdits(existing.images, removeImageIndexes);
+      if (kept.length + (addImages?.length || 0) > MAX_IMAGES) return res.status(400).json({ error: TOO_MANY_IMAGES_ERROR });
+      data.images = [...kept, ...(await saveImages(addImages))];
+      removedFiles = removed;
+      if (existing.imageData) { data.imageData = null; legacyImageToClean = existing.imageData; }
     }
     const updated = await prisma.quickReplyRequest.update({ where: { id: req.params.id }, data, include: REQUEST_INCLUDE });
-    if (previousImage && previousImage !== updated.imageData) deleteStoredImage(previousImage);
+    removedFiles.forEach(deleteStoredImage);
+    if (legacyImageToClean) deleteStoredImage(legacyImageToClean);
     emitToAll('quick_reply_request_created', { id: updated.id, requestedById: req.agent.id, requestedByName: req.agent.name });
     res.json(safeRequest(updated));
   } catch (err) {
@@ -336,7 +427,7 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
         await tx.quickReply.create({
           data: {
             categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
-            content: existing.content, imageData: existing.imageData, order: count,
+            content: existing.content, imageData: existing.imageData, images: existing.images, order: count,
           },
         });
         return tx.quickReplyRequest.update({
@@ -355,7 +446,10 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
       // QuickReply, so the stored file can be cleaned up now instead of
       // sitting orphaned forever. "แก้ไข" (needs_revision) keeps it — the
       // requester's resubmit form still needs it as the current value.
-      if (status === 'rejected' && existing.imageData) deleteStoredImage(existing.imageData);
+      if (status === 'rejected') {
+        if (existing.imageData) deleteStoredImage(existing.imageData);
+        existing.images.forEach(deleteStoredImage);
+      }
     }
 
     emitToAll('quick_reply_request_reviewed', { id: request.id, status, requestedById: existing.requestedById });
@@ -377,55 +471,46 @@ router.delete('/requests/:id', auth, async (req, res) => {
   if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว ไม่สามารถยกเลิกได้' });
   await prisma.quickReplyRequest.delete({ where: { id: req.params.id } });
   if (existing.imageData) deleteStoredImage(existing.imageData);
+  existing.images.forEach(deleteStoredImage);
   res.status(204).end();
 });
 
-// GET /api/quick-replies/requests/:id/image — same public/unauthenticated
-// pattern as /:id/image below; the review queue loads this directly as an
-// <img src>.
+// GET /api/quick-replies/requests/:id/image — legacy bare route, kept
+// unchanged for backward compatibility. New code (the review queue, the
+// resubmit form) uses the indexed route below instead.
 router.get('/requests/:id/image', async (req, res) => {
   const request = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
-  if (!request?.imageData) return res.status(404).end();
-  if (isStoredPath(request.imageData)) {
-    const target = req.query.preview ? thumbPathFor(request.imageData) : request.imageData;
-    return res.redirect(target);
-  }
-  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(request.imageData);
-  if (!match) return res.status(404).end();
-  const [, ext, base64] = match;
-  res.set('Content-Type', `image/${ext}`);
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.set('Cache-Control', 'private, max-age=3600');
-  res.send(Buffer.from(base64, 'base64'));
+  respondWithImage(res, request?.imageData, !!req.query.preview);
+});
+
+// GET /api/quick-replies/requests/:id/image/:index — up to MAX_IMAGES per
+// request, same public/unauthenticated pattern as the live-QuickReply route
+// below (the review queue loads these directly as <img src>).
+router.get('/requests/:id/image/:index', async (req, res) => {
+  const request = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, select: { imageData: true, images: true } });
+  if (!request) return res.status(404).end();
+  respondWithImage(res, imageAt(request, Number(req.params.index)), !!req.query.preview);
 });
 
 // GET /api/quick-replies/:id/image — intentionally NOT behind `auth`.
 // LINE's own servers fetch this URL directly (as originalContentUrl/previewImageUrl)
-// when we push an image quick-reply, so it must be publicly reachable.
-// New rows store a short "/uploads/..." path (see imageStorage.js) and redirect
-// there — pass ?preview=1 to redirect to the smaller thumbnail instead (see
-// messages.js's /image/:id for why: LINE caps previewImageUrl at 1MB
-// separately from the 10MB cap on the full image). Rows created before this
-// change still have the full base64 blob (no thumbnail exists), so those are
-// decoded and streamed inline as before regardless of ?preview.
+// when we push a quick reply's FIRST image, so it must stay publicly reachable
+// exactly as-is — legacy bare route, kept unchanged for backward compatibility
+// with anything already baked into a previously-sent LINE message. New code
+// uses the indexed route below instead.
 router.get('/:id/image', async (req, res) => {
   const quickReply = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
-  if (!quickReply?.imageData) return res.status(404).end();
-  if (isStoredPath(quickReply.imageData)) {
-    const target = req.query.preview ? thumbPathFor(quickReply.imageData) : quickReply.imageData;
-    return res.redirect(target);
-  }
-  // Restricted to the same safe raster-image allowlist as new uploads (see
-  // imageStorage.js) — this path only still exists for legacy rows written
-  // before that allowlist existed. nosniff is extra defense-in-depth on top
-  // of that even for an allowed type.
-  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(quickReply.imageData);
-  if (!match) return res.status(404).end();
-  const [, ext, base64] = match;
-  res.set('Content-Type', `image/${ext}`);
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.set('Cache-Control', 'public, max-age=86400');
-  res.send(Buffer.from(base64, 'base64'));
+  respondWithImage(res, quickReply?.imageData, !!req.query.preview);
+});
+
+// GET /api/quick-replies/:id/image/:index — up to MAX_IMAGES per item. `index`
+// 0 falls back to the legacy `imageData` column for rows written before
+// `images` existed, so this one URL shape covers both old and new rows —
+// the frontend never needs to special-case which route a given item needs.
+router.get('/:id/image/:index', async (req, res) => {
+  const quickReply = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { imageData: true, images: true } });
+  if (!quickReply) return res.status(404).end();
+  respondWithImage(res, imageAt(quickReply, Number(req.params.index)), !!req.query.preview);
 });
 
 // POST /api/quick-replies/:id/send — any agent, sends this quick reply into a conversation.
@@ -456,17 +541,17 @@ router.post('/:id/send', auth, async (req, res) => {
     }
 
     const created = [];
-    // A quick reply's image and text are two separate LINE pushes — if the
-    // first (image) succeeds but the second (text) fails, the image really
-    // was delivered and its row is real, not an orphan. sendErr tracks
+    // Each image (up to MAX_IMAGES) and the text are separate LINE pushes —
+    // sent one at a time, stopping at the first failure. sendErr tracks
     // whichever push failed so the response below can tell the agent exactly
-    // what did and didn't go out, instead of either (a) throwing away a
-    // legitimately-sent image because the unrelated text push errored, or
-    // (b) silently treating "half sent" the same as "fully sent."
+    // what did and didn't go out, instead of either (a) throwing away images
+    // that legitimately DID send because a later push errored, or (b) silently
+    // treating "partially sent" the same as "fully sent."
     let sendErr = null;
+    const imageCount = quickReply.images.length > 0 ? quickReply.images.length : (quickReply.imageData ? 1 : 0);
 
-    if (quickReply.imageData) {
-      const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image`;
+    for (let i = 0; i < imageCount && !sendErr; i++) {
+      const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image/${i}`;
       const previewUrl = `${imageUrl}?preview=1`;
       try {
         await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
@@ -483,13 +568,13 @@ router.post('/:id/send', auth, async (req, res) => {
           },
         }));
       } catch (err) {
-        sendErr = err; // image push itself failed — nothing created, nothing to roll back
+        sendErr = err; // this image push failed — earlier ones (if any) already sent and are recorded above
       }
     }
 
-    // Only attempt the text half if the image (when there is one) actually
-    // went out — if it failed, stop here rather than sending the text alone,
-    // which would leave a caption with no image and confuse the customer.
+    // Only attempt the text half if every image (when there are any) actually
+    // went out — if one failed, stop here rather than sending the text alone,
+    // which would leave a caption with missing images and confuse the customer.
     if (!sendErr) {
       try {
         await sendMessage(conversation.channel, conversation.lineUserId, quickReply.content);

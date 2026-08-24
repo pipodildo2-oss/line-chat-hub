@@ -3,62 +3,118 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Plus, Trash2, Pencil, X, ImagePlus, ChevronUp, ChevronDown, Zap, ClipboardList } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 
-function QuickReplyImageUpload({ value, onChange }) {
-  function handleFile(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => onChange(reader.result);
-    reader.readAsDataURL(file);
+const MAX_IMAGES = 5;
+
+// Handles both a brand-new item (existingUrls=[]) and editing one (existing
+// images shown for reference, individually removable via onToggleRemove).
+// New picks are read as base64 data URLs into `newImages` — the parent
+// decides how to turn removedIndexes/newImages into a payload (a plain
+// `images` array on create, `removeImageIndexes`/`addImages` on edit).
+function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onToggleRemove, newImages, setNewImages }) {
+  const keptCount = existingUrls.length - removedIndexes.size;
+  const total = keptCount + newImages.length;
+
+  function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
+    const remaining = MAX_IMAGES - total;
+    files.slice(0, remaining).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => setNewImages(prev => prev.length >= MAX_IMAGES ? prev : [...prev, reader.result].slice(0, MAX_IMAGES));
+      reader.readAsDataURL(file);
+    });
   }
-  if (value) {
-    return (
-      <div className="relative inline-block">
-        <img src={value} alt="" className="w-20 h-20 rounded-lg object-cover border border-slate-700" />
-        <button
-          type="button"
-          onClick={() => onChange('')}
-          className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
-        >
-          <X size={12} />
-        </button>
-      </div>
-    );
-  }
+
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-400 border border-dashed border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:border-aurora-teal hover:text-aurora-teal w-fit transition-colors">
-      <ImagePlus size={15} /> แนบรูปภาพ (ไม่บังคับ)
-      <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
-    </label>
+    <div className="flex flex-wrap gap-2">
+      {existingUrls.map((url, i) => !removedIndexes.has(i) && (
+        <div key={`existing-${i}`} className="relative">
+          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-700" />
+          <button
+            type="button"
+            onClick={() => onToggleRemove(i)}
+            className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+      {newImages.map((url, i) => (
+        <div key={`new-${i}`} className="relative">
+          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-700" />
+          <button
+            type="button"
+            onClick={() => setNewImages(prev => prev.filter((_, idx) => idx !== i))}
+            className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+      {total < MAX_IMAGES && (
+        <label className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 border border-dashed border-slate-700 rounded-lg cursor-pointer hover:border-aurora-teal text-slate-500 hover:text-aurora-teal transition-colors">
+          <ImagePlus size={16} />
+          <span className="text-[9px]">{total}/{MAX_IMAGES}</span>
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} />
+        </label>
+      )}
+    </div>
   );
 }
 
 const QR_KIND_OPTIONS = [
   { key: 'reply', label: 'ตอบกลับ' },
+  { key: 'howto', label: 'วิธีการ' },
   { key: 'promotion', label: 'โปรโมชั่น' },
 ];
 const qrKindLabel = (kind) => QR_KIND_OPTIONS.find(k => k.key === kind)?.label || kind;
+
+// Small "+N" badge overlaid on a thumbnail when an item has more than one
+// image attached, so the catalog/request lists hint at the extra images
+// without needing to open the item.
+function ExtraImagesBadge({ count }) {
+  if (count <= 1) return null;
+  return (
+    <span className="absolute -bottom-1 -right-1 bg-slate-950 text-slate-200 text-[9px] font-semibold rounded-full px-1 min-w-[16px] text-center border border-slate-700">
+      +{count - 1}
+    </span>
+  );
+}
 
 function QuickReplyEditModal({ item, onSave, onClose }) {
   const [name, setName] = useState(item.name);
   const [kind, setKind] = useState(item.kind || 'reply');
   const [content, setContent] = useState(item.content);
-  const [imageData, setImageData] = useState(item.imageData || (item.hasImage ? `/api/quick-replies/${item.id}/image` : ''));
-  const [imageTouched, setImageTouched] = useState(false);
+  const existingUrls = Array.from({ length: item.imageCount || 0 }, (_, i) => `/api/quick-replies/${item.id}/image/${i}`);
+  const [removedIndexes, setRemovedIndexes] = useState(new Set());
+  const [newImages, setNewImages] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
   const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
 
+  function toggleRemove(i) {
+    setRemovedIndexes(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }
+
   async function handleSave() {
     if (!name.trim() || !content.trim()) { setError('กรอกชื่อและรายละเอียดข้อความให้ครบ'); return; }
     setSaving(true); setError('');
     try {
       const payload = { name, content, kind };
-      if (imageTouched) payload.imageData = imageData; // only send if the user actually changed it
+      // Only sent if the user actually touched images (removed and/or added) —
+      // matches the "not present = don't touch" convention the backend uses.
+      if (removedIndexes.size > 0 || newImages.length > 0) {
+        payload.removeImageIndexes = Array.from(removedIndexes);
+        payload.addImages = newImages;
+      }
       await onSave(item.id, payload);
       onClose();
     } catch (err) {
@@ -99,8 +155,14 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
             <textarea className={fieldCls} rows={4} value={content} onChange={e => setContent(e.target.value)} />
           </div>
           <div>
-            <label className={labelCls}>รูปภาพ</label>
-            <QuickReplyImageUpload value={imageData} onChange={v => { setImageData(v); setImageTouched(true); }} />
+            <label className={labelCls}>รูปภาพ (สูงสุด {MAX_IMAGES} รูป)</label>
+            <MultiImagePicker
+              existingUrls={existingUrls}
+              removedIndexes={removedIndexes}
+              onToggleRemove={toggleRemove}
+              newImages={newImages}
+              setNewImages={setNewImages}
+            />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-5">
@@ -120,7 +182,7 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
 
 // 1. เลือกหมวดหมู่ = หมวดที่แอดมินพิมพ์สร้างเอง แล้วเลือกได้ว่าจะให้แสดงกับไลน์ OA ไหนบ้าง
 //    (ไม่เลือกไลน์เลย = แสดงกับทุกไลน์)
-// 2. เลือกประเภท = ค่าคงที่ 2 อย่าง ตอบกลับ / โปรโมชั่น
+// 2. เลือกประเภท = ตอบกลับ / วิธีการ / โปรโมชั่น
 // 3-5. ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
 // Category CRUD and existing-item reorder/edit/delete stay isAdmin-only, but any
 // authenticated agent can browse categories and submit a NEW quick reply — for a
@@ -135,7 +197,8 @@ function QuickReplyCatalog({ isAdmin, channels }) {
   const [categoryForm, setCategoryForm] = useState(null); // { id: null|string, name, channelIds }
   const [savingCategory, setSavingCategory] = useState(false);
   const [showAddQr, setShowAddQr] = useState(false);
-  const [qrForm, setQrForm] = useState({ kind: 'reply', name: '', content: '', imageData: '' });
+  const [qrForm, setQrForm] = useState({ kind: 'reply', name: '', content: '' });
+  const [qrImages, setQrImages] = useState([]);
   const [savingQr, setSavingQr] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
@@ -214,15 +277,16 @@ function QuickReplyCatalog({ isAdmin, channels }) {
     setSavingQr(true); setError('');
     try {
       if (isAdmin) {
-        const { data } = await axios.post('/api/quick-replies', { categoryId, ...qrForm });
+        const { data } = await axios.post('/api/quick-replies', { categoryId, ...qrForm, images: qrImages });
         setQuickReplies(prev => [...prev, data]);
         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: (c._count?.quickReplies || 0) + 1 } } : c));
       } else {
-        await axios.post('/api/quick-replies/requests', { categoryId, ...qrForm });
+        await axios.post('/api/quick-replies/requests', { categoryId, ...qrForm, images: qrImages });
         setRequestSubmitted(true);
         setTimeout(() => setRequestSubmitted(false), 5000);
       }
-      setQrForm({ kind: 'reply', name: '', content: '', imageData: '' });
+      setQrForm({ kind: 'reply', name: '', content: '' });
+      setQrImages([]);
       setShowAddQr(false);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -398,8 +462,8 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                 <textarea className={inputCls} rows={3} placeholder="ข้อความที่จะส่งให้ลูกค้า" value={qrForm.content} onChange={e => setQrForm(f => ({ ...f, content: e.target.value }))} required />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">แนบรูปภาพ</label>
-                <QuickReplyImageUpload value={qrForm.imageData} onChange={v => setQrForm(f => ({ ...f, imageData: v }))} />
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">แนบรูปภาพ (สูงสุด {MAX_IMAGES} รูป)</label>
+                <MultiImagePicker newImages={qrImages} setNewImages={setQrImages} />
               </div>
               <div className="flex gap-2">
                 <button type="submit" disabled={savingQr} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">
@@ -434,8 +498,11 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                   </button>
                 </div>
               )}
-              {qr.hasImage && (
-                <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
+              {qr.imageCount > 0 && (
+                <div className="relative flex-shrink-0">
+                  <img src={`/api/quick-replies/${qr.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800" />
+                  <ExtraImagesBadge count={qr.imageCount} />
+                </div>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -542,10 +609,19 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
   const [kind, setKind] = useState(req.kind);
   const [name, setName] = useState(req.name);
   const [content, setContent] = useState(req.content);
-  const [imageData, setImageData] = useState(req.hasImage ? `/api/quick-replies/requests/${req.id}/image` : '');
-  const [imageTouched, setImageTouched] = useState(false);
+  const existingUrls = Array.from({ length: req.imageCount || 0 }, (_, i) => `/api/quick-replies/requests/${req.id}/image/${i}`);
+  const [removedIndexes, setRemovedIndexes] = useState(new Set());
+  const [newImages, setNewImages] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  function toggleRemove(i) {
+    setRemovedIndexes(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -553,7 +629,10 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
     setSaving(true); setError('');
     try {
       const payload = { kind, name: name.trim(), content: content.trim() };
-      if (imageTouched) payload.imageData = imageData;
+      if (removedIndexes.size > 0 || newImages.length > 0) {
+        payload.removeImageIndexes = Array.from(removedIndexes);
+        payload.addImages = newImages;
+      }
       await onSubmit(payload);
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
@@ -579,7 +658,13 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
       </div>
       <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อข้อความ" />
       <textarea className={inputCls} rows={3} value={content} onChange={e => setContent(e.target.value)} placeholder="รายละเอียดข้อความ" />
-      <QuickReplyImageUpload value={imageData} onChange={v => { setImageData(v); setImageTouched(true); }} />
+      <MultiImagePicker
+        existingUrls={existingUrls}
+        removedIndexes={removedIndexes}
+        onToggleRemove={toggleRemove}
+        newImages={newImages}
+        setNewImages={setNewImages}
+      />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">ส่งใหม่</button>
         <button type="button" onClick={onCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
@@ -596,8 +681,11 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
       <div className="flex items-start gap-3">
-        {req.hasImage && (
-          <img src={`/api/quick-replies/requests/${req.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
+        {req.imageCount > 0 && (
+          <div className="relative flex-shrink-0">
+            <img src={`/api/quick-replies/requests/${req.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800" />
+            <ExtraImagesBadge count={req.imageCount} />
+          </div>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -725,12 +813,34 @@ export default function QuickReplies() {
   const { tab } = useParams();
   const navigate = useNavigate();
   const { agent } = useAuth();
+  const { socket } = useSocket();
   const isAdmin = agent?.role === 'admin';
   const [channels, setChannels] = useState([]);
+  // Same "things needing MY action" count as the sidebar badge (Sidebar.jsx) —
+  // kept in sync here too so the "คำขอ" tab itself shows a live number, not
+  // just the sidebar.
+  const [actionableCount, setActionableCount] = useState(0);
 
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    function loadCount() {
+      const status = isAdmin ? 'pending' : 'needs_revision';
+      axios.get('/api/quick-replies/requests', { params: { status } })
+        .then(r => setActionableCount(r.data.length))
+        .catch(() => {});
+    }
+    loadCount();
+    if (!socket) return;
+    socket.on('quick_reply_request_created', loadCount);
+    socket.on('quick_reply_request_reviewed', loadCount);
+    return () => {
+      socket.off('quick_reply_request_created', loadCount);
+      socket.off('quick_reply_request_reviewed', loadCount);
+    };
+  }, [socket, isAdmin]);
 
   const activeTab = tab === 'requests' ? 'requests' : 'catalog';
 
@@ -751,6 +861,11 @@ export default function QuickReplies() {
             }`}
           >
             <Icon size={14} /> {label}
+            {key === 'requests' && actionableCount > 0 && (
+              <span className="bg-rose-500 text-white text-[10px] font-semibold rounded-full px-1.5 min-w-[18px] text-center">
+                {actionableCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
