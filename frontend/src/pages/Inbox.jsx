@@ -132,6 +132,11 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
               🚫 บล็อค
             </span>
           )}
+          {conv.caution && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium" title={conv.cautionReason || 'ระวังลูกค้ารายนี้'}>
+              ⚠️ ระวัง
+            </span>
+          )}
           {conv.channel?.active === false && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 font-medium" title="ช่องทางนี้ถูกปิดใช้งานอยู่">
               ⏸ ปิดใช้งาน
@@ -666,10 +671,11 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
 function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTag, onClose, isAdmin }) {
   const [name, setName] = useState(conv.displayName || '');
   const [notes, setNotes] = useState(conv.notes || '');
+  const [cautionReason, setCautionReason] = useState(conv.cautionReason || '');
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [newTagName, setNewTagName] = useState('');
 
-  useEffect(() => { setName(conv.displayName || ''); setNotes(conv.notes || ''); }, [conv.id]);
+  useEffect(() => { setName(conv.displayName || ''); setNotes(conv.notes || ''); setCautionReason(conv.cautionReason || ''); }, [conv.id]);
 
   const assignedTagIds = new Set((conv.tags || []).map(t => t.tagId));
   const availableTags = tags.filter(t => !assignedTagIds.has(t.id));
@@ -689,6 +695,14 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
             🚫 ลูกค้าบล็อคเราอยู่
           </span>
         )}
+        {conv.caution && (
+          <span
+            className="mt-2 text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium"
+            title={conv.cautionReason || undefined}
+          >
+            ⚠️ ระวังลูกค้ารายนี้
+          </span>
+        )}
       </div>
 
       {/* Manual override — LINE gives no API to check current block status, only
@@ -706,6 +720,33 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
           </button>
         </div>
       )}
+
+      {/* "ระวังลูกค้าคนนี้ไว้" — a manual warning flag every role can set/see
+          (unlike "บล็อค" above, which is admin-only), so whoever picks up this
+          customer next gets a heads-up why, e.g. a history of rudeness or
+          chargebacks. The reason textbox stays visible/editable regardless of
+          the switch — turning the switch off does NOT clear it, only typing
+          it out does, so re-flagging the same customer later doesn't require
+          re-explaining why. */}
+      <div className="p-4 border-b border-gray-100 dark:border-slate-800">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">⚠️ ระวังลูกค้าคนนี้ไว้</span>
+          <button
+            onClick={() => onUpdate({ caution: !conv.caution })}
+            className={`relative inline-flex overflow-hidden w-9 h-5 rounded-full transition-colors flex-shrink-0 ${conv.caution ? 'bg-amber-500' : 'bg-gray-200 dark:bg-slate-700'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${conv.caution ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        <textarea
+          className="w-full mt-2 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+          rows={3}
+          placeholder="เหตุผลที่ต้องระวังลูกค้ารายนี้..."
+          value={cautionReason}
+          onChange={e => setCautionReason(e.target.value)}
+          onBlur={() => cautionReason !== (conv.cautionReason || '') && onUpdate({ cautionReason })}
+        />
+      </div>
 
       <div className="p-4 border-b border-gray-100 dark:border-slate-800">
         <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 flex items-center gap-1"><Pencil size={11}/> ชื่อลูกค้า</label>
@@ -1808,6 +1849,11 @@ export default function Inbox() {
                   {selected.blocked && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-500 dark:text-rose-400 font-medium">
                       🚫 ลูกค้าบล็อคเราอยู่
+                    </span>
+                  )}
+                  {selected.caution && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium" title={selected.cautionReason || undefined}>
+                      ⚠️ ระวังลูกค้ารายนี้
                     </span>
                   )}
                   {selected.channel?.active === false && (

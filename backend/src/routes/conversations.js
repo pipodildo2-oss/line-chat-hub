@@ -189,7 +189,7 @@ router.patch('/:id', auth, async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const { status, agentId, displayName, notes, lifecycleStage, blocked } = req.body;
+    const { status, agentId, displayName, notes, lifecycleStage, blocked, caution, cautionReason } = req.body;
     const data = {};
     if (status) data.status = status;
     if (agentId !== undefined) data.agentId = agentId || null;
@@ -210,6 +210,15 @@ router.patch('/:id', auth, async (req, res) => {
       data.blocked = !!blocked;
       data.blockedAt = blocked ? new Date() : null;
     }
+    // "ระวังลูกค้าคนนี้ไว้" — a manual, no-role-restriction warning flag (see
+    // schema.prisma) so any agent can leave a heads-up for whoever handles
+    // this customer next, e.g. a history of rudeness or chargebacks.
+    // Toggling this off deliberately does NOT clear cautionReason — the
+    // explanation is meant to persist (so re-flagging the same customer
+    // later doesn't require re-typing it) until someone clears the text
+    // themselves via cautionReason below.
+    if (caution !== undefined) data.caution = !!caution;
+    if (cautionReason !== undefined) data.cautionReason = cautionReason?.trim() || null;
 
     const conversation = await prisma.conversation.update({
       where: { id: req.params.id },

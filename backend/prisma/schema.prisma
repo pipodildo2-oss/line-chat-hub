@@ -238,6 +238,12 @@ model Conversation {
   // retroactively — there's no API to query current block status.
   blocked     Boolean     @default(false)
   blockedAt   DateTime?
+  // Manual "watch this customer" flag, visible/settable by every role (unlike
+  // `blocked` above, which is admin-only) — e.g. a history of rudeness,
+  // chargebacks, or anything else the team should be cautious about before
+  // replying. cautionReason holds the free-text "why".
+  caution       Boolean     @default(false)
+  cautionReason String?
   messages    Message[]
   tags        ConversationTag[]
   createdAt   DateTime    @default(now())
