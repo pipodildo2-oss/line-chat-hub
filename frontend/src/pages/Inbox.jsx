@@ -1163,10 +1163,35 @@ export default function Inbox() {
       // switches conversations (which re-fires that effect) or reloads the
       // page. Re-joining here closes that gap the same moment the sidebar
       // list above catches back up.
-      if (selectedRef.current?.id) socket?.emit('join', selectedRef.current.id);
+      const openConvId = selectedRef.current?.id;
+      if (openConvId) {
+        socket?.emit('join', openConvId);
+        // Re-joining alone only prevents FUTURE misses from this point on —
+        // it doesn't replay anything the customer sent WHILE this client was
+        // disconnected (rooms don't buffer missed events). Re-fetch the
+        // latest page and merge in (by id) whatever isn't already loaded, so
+        // a message that arrived during the gap still shows up without
+        // needing a manual reload. Merges rather than replaces so it doesn't
+        // disturb older history already pulled in via "load older messages".
+        axios.get(`/api/messages/${openConvId}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
+          if (selectedRef.current?.id !== openConvId) return; // switched away before this resolved
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const missed = r.data.filter(m => !existingIds.has(m.id));
+            if (missed.length === 0) return prev;
+            return [...prev, ...missed].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+          });
+          // Same "this agent is actively viewing it, so it's not unread"
+          // rule as the initial-open effect above — a message that arrived
+          // during the gap shouldn't leave a stale unread badge behind.
+          if (agent?.role !== 'admin') {
+            setConversations(prev => prev.map(c => c.id === openConvId ? { ...c, _count: { ...c._count, messages: 0 } } : c));
+          }
+        }).catch(() => {});
+      }
     }
     prevConnectedRef.current = connected;
-  }, [connected, loadConversations, socket]);
+  }, [connected, loadConversations, socket, agent?.role]);
 
   useEffect(() => {
     function handleVisibility() {

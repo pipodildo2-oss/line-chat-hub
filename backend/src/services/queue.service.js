@@ -40,14 +40,37 @@ if (REDIS_URL) {
   // No Redis configured yet — process events immediately (no buffering).
   let processFnRef = null;
 
+  // The Redis/BullMQ branch above retries a failed job 3x with backoff —
+  // this fallback had none at all, so a single transient failure (a DB
+  // blip, LINE's API timing out on the profile fetch, etc.) meant the
+  // customer's message was silently gone for good, with nothing to fall
+  // back on (see webhooks.js's doc comment on why LINE's own webhook
+  // redelivery can't be relied on as the only safety net either). Mirrors
+  // the same attempts/backoff shape so behavior doesn't depend on whether
+  // Redis happens to be configured.
+  async function processWithRetry(channelId, event, attempt = 1) {
+    try {
+      return await processFnRef(channelId, event);
+    } catch (err) {
+      if (attempt >= 3) {
+        console.error(`Webhook event processing failed after 3 attempts (channel ${channelId}):`, err.message);
+        throw err;
+      }
+      const delayMs = 1000 * 2 ** (attempt - 1); // 1s, 2s
+      console.warn(`Webhook event processing failed (attempt ${attempt}/3), retrying in ${delayMs}ms:`, err.message);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return processWithRetry(channelId, event, attempt + 1);
+    }
+  }
+
   enqueueLineEvent = (channelId, event) => {
     if (!processFnRef) throw new Error('Queue worker not started');
-    return processFnRef(channelId, event);
+    return processWithRetry(channelId, event);
   };
 
   startWorker = (processFn) => {
     processFnRef = processFn;
-    console.log('Webhook queue: REDIS_URL not set — processing events immediately (no buffering). Add a Redis service in Railway to enable queuing under load.');
+    console.log('Webhook queue: REDIS_URL not set — processing events immediately with in-process retry (no cross-restart buffering). Add a Redis service in Railway to enable true queuing under load.');
     return null;
   };
 }
