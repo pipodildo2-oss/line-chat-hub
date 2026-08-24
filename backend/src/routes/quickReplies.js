@@ -209,6 +209,196 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
+// ---------- Quick Reply Requests ("คำขอเพิ่มข้อความลัด") ----------
+// A non-admin agent can't create a QuickReply directly (POST / above is
+// requireAdmin) — they submit a request here instead, which sits pending
+// until an admin reviews it (อนุมัติ/แก้ไข/ไม่อนุมัติ). Only approval
+// actually creates a live QuickReply; "แก้ไข" sends it back to the
+// ORIGINAL REQUESTER to fix and resubmit, it doesn't mean the admin edits
+// it themselves — see PATCH /requests/:id below.
+
+const REQUEST_INCLUDE = {
+  category: { select: { id: true, name: true } },
+  requestedBy: { select: { id: true, name: true } },
+  reviewedBy: { select: { id: true, name: true } },
+};
+
+// Never ships the raw base64/stored-path value — same "hasImage flag, fetch
+// via a dedicated image route" convention as the live QuickReply list above.
+function safeRequest(r) {
+  const { imageData, ...rest } = r;
+  return { ...rest, hasImage: !!imageData };
+}
+
+// GET /api/quick-replies/requests?status=
+// Agents only ever see their OWN requests — server-enforced (not just
+// hidden in the UI), same reasoning as canAccessChannel elsewhere: an agent
+// has no business browsing a teammate's pending/rejected drafts. Admins see
+// everyone's.
+router.get('/requests', auth, async (req, res) => {
+  const { status } = req.query;
+  const where = {};
+  if (status) where.status = status;
+  if (req.agent.role !== 'admin') where.requestedById = req.agent.id;
+  const requests = await prisma.quickReplyRequest.findMany({
+    where,
+    include: REQUEST_INCLUDE,
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(requests.map(safeRequest));
+});
+
+// POST /api/quick-replies/requests — any authenticated agent.
+router.post('/requests', auth, async (req, res) => {
+  try {
+    const { categoryId, kind, name, content, imageData } = req.body;
+    if (!categoryId || !name?.trim() || !content?.trim()) {
+      return res.status(400).json({ error: 'กรุณาเลือกหมวดหมู่และกรอกชื่อ/รายละเอียดข้อความ' });
+    }
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
+    if (imageData && !isValidImageDataUrl(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    }
+    const storedImage = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    const request = await prisma.quickReplyRequest.create({
+      data: {
+        categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(),
+        imageData: storedImage, requestedById: req.agent.id,
+      },
+      include: REQUEST_INCLUDE,
+    });
+    emitToAll('quick_reply_request_created', { id: request.id, requestedById: req.agent.id, requestedByName: req.agent.name });
+    res.status(201).json(safeRequest(request));
+  } catch (err) {
+    console.error('Create quick reply request failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// PATCH /api/quick-replies/requests/:id — the ORIGINAL REQUESTER edits and
+// resubmits a request an admin sent back for revision. Only allowed while
+// status is exactly 'needs_revision', and only by whoever created it —
+// resets status back to 'pending' for another review pass.
+router.patch('/requests/:id', auth, async (req, res) => {
+  try {
+    const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
+    if (existing.requestedById !== req.agent.id) return res.status(403).json({ error: 'แก้ไขได้เฉพาะคำขอของตัวเอง' });
+    if (existing.status !== 'needs_revision') {
+      return res.status(409).json({ error: 'แก้ไขได้เฉพาะคำขอที่แอดมินส่งกลับมาให้แก้ไขเท่านั้น' });
+    }
+
+    const { categoryId, kind, name, content, imageData } = req.body;
+    if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: 'kind ต้องเป็น reply หรือ promotion' });
+    if (imageData && !isValidImageDataUrl(imageData)) {
+      return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
+    }
+    const data = { status: 'pending', reviewedById: null, reviewedAt: null, reviewNote: null };
+    if (categoryId) data.categoryId = categoryId;
+    if (kind) data.kind = kind;
+    if (name?.trim()) data.name = name.trim();
+    if (content?.trim()) data.content = content.trim();
+    // Same "fetch the old file before overwriting, clean it up after" pattern
+    // as PATCH /:id above — otherwise every re-upload on resubmit leaves an
+    // orphaned file behind.
+    let previousImage = null;
+    if (imageData !== undefined) {
+      previousImage = existing.imageData;
+      data.imageData = imageData ? ((await saveBase64Image(imageData)) || imageData) : null;
+    }
+    const updated = await prisma.quickReplyRequest.update({ where: { id: req.params.id }, data, include: REQUEST_INCLUDE });
+    if (previousImage && previousImage !== updated.imageData) deleteStoredImage(previousImage);
+    emitToAll('quick_reply_request_created', { id: updated.id, requestedById: req.agent.id, requestedByName: req.agent.name });
+    res.json(safeRequest(updated));
+  } catch (err) {
+    console.error('Resubmit quick reply request failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// PATCH /api/quick-replies/requests/:id/review — admin only: อนุมัติ / แก้ไข / ไม่อนุมัติ.
+// Approving is the only path that actually creates a live QuickReply —
+// everything else just updates the request's own status.
+router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
+  try {
+    const { status, reviewNote } = req.body;
+    if (!['approved', 'needs_revision', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
+    }
+    const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
+    if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว' });
+
+    let request;
+    if (status === 'approved') {
+      request = await prisma.$transaction(async (tx) => {
+        const count = await tx.quickReply.count({ where: { categoryId: existing.categoryId } });
+        await tx.quickReply.create({
+          data: {
+            categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
+            content: existing.content, imageData: existing.imageData, order: count,
+          },
+        });
+        return tx.quickReplyRequest.update({
+          where: { id: req.params.id },
+          data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
+          include: REQUEST_INCLUDE,
+        });
+      });
+    } else {
+      request = await prisma.quickReplyRequest.update({
+        where: { id: req.params.id },
+        data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
+        include: REQUEST_INCLUDE,
+      });
+      // ไม่อนุมัติ is terminal for this image — it will never become a live
+      // QuickReply, so the stored file can be cleaned up now instead of
+      // sitting orphaned forever. "แก้ไข" (needs_revision) keeps it — the
+      // requester's resubmit form still needs it as the current value.
+      if (status === 'rejected' && existing.imageData) deleteStoredImage(existing.imageData);
+    }
+
+    emitToAll('quick_reply_request_reviewed', { id: request.id, status, requestedById: existing.requestedById });
+    res.json(safeRequest(request));
+  } catch (err) {
+    console.error('Review quick reply request failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// DELETE /api/quick-replies/requests/:id — the requester withdraws their own
+// not-yet-approved request (or an admin cleans one up).
+router.delete('/requests/:id', auth, async (req, res) => {
+  const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
+  if (existing.requestedById !== req.agent.id && req.agent.role !== 'admin') {
+    return res.status(403).json({ error: 'ยกเลิกได้เฉพาะคำขอของตัวเอง' });
+  }
+  if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว ไม่สามารถยกเลิกได้' });
+  await prisma.quickReplyRequest.delete({ where: { id: req.params.id } });
+  if (existing.imageData) deleteStoredImage(existing.imageData);
+  res.status(204).end();
+});
+
+// GET /api/quick-replies/requests/:id/image — same public/unauthenticated
+// pattern as /:id/image below; the review queue loads this directly as an
+// <img src>.
+router.get('/requests/:id/image', async (req, res) => {
+  const request = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
+  if (!request?.imageData) return res.status(404).end();
+  if (isStoredPath(request.imageData)) {
+    const target = req.query.preview ? thumbPathFor(request.imageData) : request.imageData;
+    return res.redirect(target);
+  }
+  const match = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/.exec(request.imageData);
+  if (!match) return res.status(404).end();
+  const [, ext, base64] = match;
+  res.set('Content-Type', `image/${ext}`);
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.send(Buffer.from(base64, 'base64'));
+});
+
 // GET /api/quick-replies/:id/image — intentionally NOT behind `auth`.
 // LINE's own servers fetch this URL directly (as originalContentUrl/previewImageUrl)
 // when we push an image quick-reply, so it must be publicly reachable.

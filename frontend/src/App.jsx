@@ -10,6 +10,7 @@ import Report from './pages/Report';
 import Customers from './pages/Customers';
 import Upsell from './pages/Upsell';
 import Settings from './pages/Settings';
+import QuickReplies from './pages/QuickReplies';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }) {
@@ -42,6 +43,8 @@ export default function App() {
             >
               <Route index element={<Navigate to="/inbox" replace />} />
               <Route path="inbox" element={<Inbox />} />
+              <Route path="quick-replies" element={<Navigate to="/quick-replies/catalog" replace />} />
+              <Route path="quick-replies/:tab" element={<QuickReplies />} />
               <Route path="dashboard" element={<AdminRoute><Dashboard /></AdminRoute>} />
               <Route path="report" element={<AdminRoute><Navigate to="/report/audit" replace /></AdminRoute>} />
               <Route path="report/:tab" element={<AdminRoute><Report /></AdminRoute>} />

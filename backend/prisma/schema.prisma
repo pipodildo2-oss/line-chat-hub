@@ -30,6 +30,8 @@ model Agent {
   broadcastCampaigns BroadcastCampaign[]
   upsellSubmissions UpsellSubmission[] @relation("UpsellSubmitter")
   upsellReviews     UpsellSubmission[] @relation("UpsellReviewer")
+  quickReplyRequests QuickReplyRequest[] @relation("QuickReplyRequester")
+  quickReplyReviews  QuickReplyRequest[] @relation("QuickReplyReviewer")
 
   @@index([categoryId])
 }
@@ -110,6 +112,36 @@ model QuickReplyCategory {
   createdAt    DateTime      @default(now())
   quickReplies QuickReply[]
   channels     LineChannel[]
+  requests     QuickReplyRequest[]
+}
+
+// A non-admin agent can't create a QuickReply directly (see quickReplies.js
+// POST /, requireAdmin) — they submit a request here instead, which an
+// admin reviews (อนุมัติ/แก้ไข/ไม่อนุมัติ — see PATCH /requests/:id/review)
+// before it becomes a real, live QuickReply. "แก้ไข" (needs_revision) sends
+// it back to the ORIGINAL REQUESTER to fix and resubmit (PATCH /requests/:id,
+// requester-only, only while status is exactly needs_revision) — it doesn't
+// mean the admin edits it themselves.
+model QuickReplyRequest {
+  id            String    @id @default(cuid())
+  categoryId    String
+  category      QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind          String    @default("reply")
+  name          String
+  content       String
+  imageData     String?   // same stored-path convention as QuickReply.imageData (imageStorage.js)
+  status        String    @default("pending") // pending | needs_revision | approved | rejected
+  requestedById String
+  requestedBy   Agent     @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewNote    String?   // admin's feedback — why it needs revision / was rejected
+  reviewedById  String?
+  reviewedBy    Agent?    @relation("QuickReplyReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([requestedById])
 }
 
 model QuickReply {

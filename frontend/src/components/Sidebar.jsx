@@ -37,7 +37,6 @@ export default function Sidebar() {
     { to: '/settings/channels', icon: Radio, label: t('settings_channels') },
     { to: '/settings/agents', icon: Users, label: t('settings_agents') },
     { to: '/settings/tags', icon: Tag, label: t('settings_tags') },
-    { to: '/settings/quick-replies', icon: Zap, label: t('settings_quick_replies') },
     { to: '/settings/approved-links', icon: Link2, label: 'ลิงค์ที่อนุญาต' },
   ];
 
@@ -78,6 +77,10 @@ export default function Sidebar() {
             <NavLink to="/inbox" className={linkCls}>
               <MessageSquare size={17} />
               {t('nav_inbox')}
+            </NavLink>
+            <NavLink to="/quick-replies" className={linkCls}>
+              <Zap size={17} />
+              {t('settings_quick_replies')}
             </NavLink>
           </div>
         </div>
