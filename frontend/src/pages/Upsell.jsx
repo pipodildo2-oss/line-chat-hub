@@ -799,11 +799,15 @@ function UpsellReportPage() {
   // table's whole "who needs a push" purpose); agents within each team
   // follow whichever column header was last clicked.
   const activityTeamGroups = (() => {
-    if (!activityWithPct.length) return [];
+    // Agents with no team assigned are left out of this table entirely —
+    // it's meant for team-vs-team comparison, so a "ไม่มีทีม" catch-all box
+    // doesn't serve that and was just clutter.
+    const withTeam = activityWithPct.filter(a => a.categoryId);
+    if (!withTeam.length) return [];
     const byTeam = {};
-    for (const a of activityWithPct) {
-      const key = a.categoryId || '__none__';
-      (byTeam[key] ||= { id: a.categoryId, name: a.categoryName || 'ไม่มีทีม', agents: [] }).agents.push(a);
+    for (const a of withTeam) {
+      const key = a.categoryId;
+      (byTeam[key] ||= { id: a.categoryId, name: a.categoryName, agents: [] }).agents.push(a);
     }
     const groups = Object.values(byTeam).map(g => {
       const conversationsHandled = g.agents.reduce((s, a) => s + a.conversationsHandled, 0);
