@@ -1153,9 +1153,20 @@ export default function Inbox() {
   useEffect(() => {
     if (connected && !prevConnectedRef.current) {
       loadConversations();
+      // Socket.io room membership does NOT survive a reconnect — the server
+      // treats it as a brand new connection with no rooms joined. 'new_message'
+      // and friends are ROOM-scoped (see emitToConversation in
+      // socket.service.js, and the join/leave effect below), so without this
+      // a network blip or a backend redeploy silently stops new customer
+      // messages from appearing in whatever chat is currently open — nothing
+      // looks wrong (the socket still shows "connected"), until the agent
+      // switches conversations (which re-fires that effect) or reloads the
+      // page. Re-joining here closes that gap the same moment the sidebar
+      // list above catches back up.
+      if (selectedRef.current?.id) socket?.emit('join', selectedRef.current.id);
     }
     prevConnectedRef.current = connected;
-  }, [connected, loadConversations]);
+  }, [connected, loadConversations, socket]);
 
   useEffect(() => {
     function handleVisibility() {
