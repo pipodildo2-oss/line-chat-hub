@@ -273,7 +273,7 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   if (!['approved', 'rejected'].includes(status)) {
     return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
   }
-  const existing = await prisma.upsellSubmission.findUnique({ where: { id: req.params.id }, select: { id: true, agentId: true } });
+  const existing = await prisma.upsellSubmission.findUnique({ where: { id: req.params.id }, select: { id: true, agentId: true, conversationId: true } });
   if (!existing) return res.status(404).json({ error: 'Submission not found' });
 
   const submission = await prisma.upsellSubmission.update({
@@ -288,6 +288,15 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   });
 
   emitToAll('upsell_reviewed', { submissionId: submission.id, agentId: existing.agentId, status });
+  // "ไม่ผ่าน" — clear the claimed badge in any open chat right away, same as
+  // deleting a submission does (see DELETE below). The submission row itself
+  // stays in the DB, so ตรวจสอบอัพเซลล์'s "ไปที่แชท" link (which navigates by
+  // conversation/message id, not by this badge) keeps working either way.
+  if (status === 'rejected') {
+    emitToConversation(existing.conversationId, 'upsell_unclaimed', {
+      messageIds: submission.items.map(i => i.message.id),
+    });
+  }
 
   res.json(submission);
 });

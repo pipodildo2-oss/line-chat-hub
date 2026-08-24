@@ -18,11 +18,30 @@ const MESSAGE_SELECT = {
   content: true, metadata: true, read: true, lineMessageId: true, createdAt: true,
   // Inbox only ever shows "claimed / by whom" (see UpsellBadge in
   // Inbox.jsx), never the ผ่าน/ไม่ผ่าน review outcome — that's the
-  // ตรวจสอบ page's job. Kept out of this select entirely (not just hidden
-  // in the UI) so a claimed-but-not-yet-reviewed message can't leak its
-  // eventual verdict to the chat just by inspecting the API response.
-  upsellItem: { select: { id: true, submissionId: true, submission: { select: { agent: { select: { name: true } } } } } },
+  // ตรวจสอบ page's job. `submission.status` is only fetched here so
+  // sanitizeUpsellItems (below) can drop the badge entirely once a
+  // submission is rejected — it's stripped back out before the response
+  // goes out, so a claimed-but-not-yet-reviewed message still can't leak
+  // its eventual verdict to the chat just by inspecting the API response.
+  upsellItem: { select: { id: true, submissionId: true, submission: { select: { status: true, agent: { select: { name: true } } } } } },
 };
+
+// A rejected upsell claim ("ไม่ผ่าน") should stop showing as claimed in the
+// chat — the message goes back to looking like any other normal message —
+// while the submission row itself stays in the DB so the ตรวจสอบอัพเซลล์
+// page's "ไปที่แชท" link keeps working (it navigates by conversation/message
+// id, not by this badge). Mutates messages in place.
+function sanitizeUpsellItems(messages) {
+  for (const m of messages) {
+    if (!m.upsellItem) continue;
+    if (m.upsellItem.submission.status === 'rejected') {
+      m.upsellItem = null;
+    } else {
+      delete m.upsellItem.submission.status;
+    }
+  }
+  return messages;
+}
 
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
 // Placed before the /:conversationId route below since "content" would otherwise be
@@ -159,7 +178,7 @@ router.get('/:conversationId', auth, async (req, res) => {
     }
   }
 
-  res.json(messages.reverse());
+  res.json(sanitizeUpsellItems(messages).reverse());
 });
 
 // POST /api/messages/:conversationId — send a text message, or an image (imageData
