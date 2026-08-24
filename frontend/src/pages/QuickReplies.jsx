@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Pencil, X, ImagePlus, ChevronUp, ChevronDown, Zap, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, ClipboardList } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 
@@ -80,6 +80,50 @@ function ExtraImagesBadge({ count }) {
     <span className="absolute -bottom-1 -right-1 bg-slate-950 text-slate-200 text-[9px] font-semibold rounded-full px-1 min-w-[16px] text-center border border-slate-700">
       +{count - 1}
     </span>
+  );
+}
+
+// Full-size viewer for a clicked thumbnail — arrow-key/click navigation
+// between an item's other images when it has more than one.
+function ImageLightbox({ urls, index, onClose, onIndexChange }) {
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') onIndexChange((index - 1 + urls.length) % urls.length);
+      if (e.key === 'ArrowRight') onIndexChange((index + 1) % urls.length);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [index, urls.length, onClose, onIndexChange]);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white">
+        <X size={24} />
+      </button>
+      {urls.length > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onIndexChange((index - 1 + urls.length) % urls.length); }}
+          className="absolute left-3 sm:left-6 text-white/80 hover:text-white p-2"
+        >
+          <ChevronLeft size={28} />
+        </button>
+      )}
+      <img src={urls[index]} alt="" className="max-w-full max-h-full rounded-lg object-contain" onClick={e => e.stopPropagation()} />
+      {urls.length > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onIndexChange((index + 1) % urls.length); }}
+          className="absolute right-3 sm:right-6 text-white/80 hover:text-white p-2"
+        >
+          <ChevronRight size={28} />
+        </button>
+      )}
+      {urls.length > 1 && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/80 text-sm bg-black/40 px-2.5 py-1 rounded-full">
+          {index + 1} / {urls.length}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -675,17 +719,19 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
 
 function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onResubmit }) {
   const [resubmitting, setResubmitting] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const meta = REQUEST_STATUS_META[req.status] || REQUEST_STATUS_META.pending;
   const isMine = req.requestedById === myId;
+  const imageUrls = Array.from({ length: req.imageCount || 0 }, (_, i) => `/api/quick-replies/requests/${req.id}/image/${i}`);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
       <div className="flex items-start gap-3">
         {req.imageCount > 0 && (
-          <div className="relative flex-shrink-0">
-            <img src={`/api/quick-replies/requests/${req.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800" />
+          <button type="button" onClick={() => setLightboxIndex(0)} className="relative flex-shrink-0">
+            <img src={imageUrls[0]} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800 hover:opacity-80 transition-opacity" />
             <ExtraImagesBadge count={req.imageCount} />
-          </div>
+          </button>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -726,6 +772,10 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
           onCancel={() => setResubmitting(false)}
           onSubmit={async (fields) => { await onResubmit(req.id, fields); setResubmitting(false); }}
         />
+      )}
+
+      {lightboxIndex !== null && (
+        <ImageLightbox urls={imageUrls} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onIndexChange={setLightboxIndex} />
       )}
     </div>
   );
