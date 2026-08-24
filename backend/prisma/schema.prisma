@@ -32,6 +32,7 @@ model Agent {
   upsellReviews     UpsellSubmission[] @relation("UpsellReviewer")
   quickReplyRequests QuickReplyRequest[] @relation("QuickReplyRequester")
   quickReplyReviews  QuickReplyRequest[] @relation("QuickReplyReviewer")
+  quickReplyAuditLogs QuickReplyAuditLog[]
 
   @@index([categoryId])
 }
@@ -158,6 +159,29 @@ model QuickReply {
   createdAt  DateTime           @default(now())
 
   @@index([categoryId])
+}
+
+// Append-only audit trail for the whole Quick Replies feature ("ประวัติ" tab)
+// — who did what and when. QuickReplyRequest alone can't answer that: it only
+// holds the CURRENT status/review, so e.g. an approval after an earlier
+// rejection overwrites that rejection's reviewNote. Rows here are never
+// updated after insert and are NOT cleaned up when their target
+// QuickReply/category/request is later deleted — itemName/categoryName are
+// snapshotted as plain strings specifically so an entry still reads sensibly
+// after that (same reasoning as Message.senderName alongside senderId).
+model QuickReplyAuditLog {
+  id           String   @id @default(cuid())
+  action       String   // created | updated | deleted | category_created | category_updated | category_deleted | request_submitted | request_resubmitted | request_approved | request_needs_revision | request_rejected | request_withdrawn
+  itemName     String?  // snapshot of the quick reply / request's name at the time of the action
+  categoryName String?  // snapshot of the category name at the time of the action
+  detail       String?  // extra context — e.g. the admin's reviewNote, or which agent a request belonged to
+  actorId      String?
+  actor        Agent?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorName    String   // snapshotted alongside actorId so the entry still reads right if that agent account is later deleted
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
 }
 
 // Restricts which LINE OA channels an agent is allowed to see.

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Pencil, X, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, ClipboardList, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 
@@ -854,9 +854,94 @@ function QuickReplyRequests({ isAdmin, myId }) {
   );
 }
 
+// ---------- ประวัติ (audit log, admin only) ----------
+// Reads QuickReplyAuditLog (backend/prisma/schema.prisma) — a separate
+// append-only trail from QuickReplyRequest's own status, since a request's
+// status/reviewNote get overwritten on every review pass (an approval after
+// an earlier rejection would otherwise erase that rejection's reason).
+
+const AUDIT_ACTION_META = {
+  created: { label: 'เพิ่มข้อความลัด', cls: 'bg-emerald-500/15 text-emerald-400' },
+  updated: { label: 'แก้ไขข้อความลัด', cls: 'bg-sky-500/15 text-sky-400' },
+  deleted: { label: 'ลบข้อความลัด', cls: 'bg-rose-500/15 text-rose-400' },
+  category_created: { label: 'เพิ่มหมวดหมู่', cls: 'bg-emerald-500/15 text-emerald-400' },
+  category_updated: { label: 'แก้ไขหมวดหมู่', cls: 'bg-sky-500/15 text-sky-400' },
+  category_deleted: { label: 'ลบหมวดหมู่', cls: 'bg-rose-500/15 text-rose-400' },
+  request_submitted: { label: 'ส่งคำขอ', cls: 'bg-slate-700 text-slate-300' },
+  request_resubmitted: { label: 'ส่งคำขอใหม่', cls: 'bg-slate-700 text-slate-300' },
+  request_approved: { label: 'อนุมัติคำขอ', cls: 'bg-emerald-500/15 text-emerald-400' },
+  request_needs_revision: { label: 'ส่งคำขอกลับให้แก้ไข', cls: 'bg-amber-500/15 text-amber-400' },
+  request_rejected: { label: 'ไม่อนุมัติคำขอ', cls: 'bg-rose-500/15 text-rose-400' },
+  request_withdrawn: { label: 'ยกเลิกคำขอ', cls: 'bg-slate-700 text-slate-300' },
+};
+
+const HISTORY_ACTION_FILTERS = [
+  { key: '', label: 'ทั้งหมด' },
+  { key: 'created', label: 'เพิ่ม' },
+  { key: 'updated', label: 'แก้ไข' },
+  { key: 'deleted', label: 'ลบ' },
+  { key: 'request_submitted', label: 'ส่งคำขอ' },
+  { key: 'request_approved', label: 'อนุมัติคำขอ' },
+  { key: 'request_needs_revision', label: 'ส่งคำขอกลับแก้ไข' },
+  { key: 'request_rejected', label: 'ไม่อนุมัติคำขอ' },
+];
+
+function formatLogTime(iso) {
+  return new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function QuickReplyHistory() {
+  const [actionFilter, setActionFilter] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = actionFilter ? { action: actionFilter } : {};
+    axios.get('/api/quick-replies/audit-log', { params })
+      .then(r => setLogs(r.data))
+      .finally(() => setLoading(false));
+  }, [actionFilter]);
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {HISTORY_ACTION_FILTERS.map(f => (
+          <button
+            key={f.key || 'all'}
+            onClick={() => setActionFilter(f.key)}
+            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
+              actionFilter === f.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {loading && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
+      {!loading && logs.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีประวัติ</p>}
+      {!loading && logs.map(log => {
+        const meta = AUDIT_ACTION_META[log.action] || { label: log.action, cls: 'bg-slate-700 text-slate-300' };
+        return (
+          <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${meta.cls}`}>{meta.label}</span>
+              {log.itemName && <p className="font-medium text-slate-100 text-sm">{log.itemName}</p>}
+              {log.categoryName && <span className="text-xs text-slate-500">({log.categoryName})</span>}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">โดย {log.actorName} • {formatLogTime(log.createdAt)}</p>
+            {log.detail && <p className="text-sm text-slate-400 mt-1.5 whitespace-pre-wrap">{log.detail}</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const TABS = [
   { key: 'catalog', label: 'รายการ', icon: Zap },
   { key: 'requests', label: 'คำขอ', icon: ClipboardList },
+  { key: 'history', label: 'ประวัติ', icon: History, adminOnly: true },
 ];
 
 export default function QuickReplies() {
@@ -892,7 +977,8 @@ export default function QuickReplies() {
     };
   }, [socket, isAdmin]);
 
-  const activeTab = tab === 'requests' ? 'requests' : 'catalog';
+  const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin);
+  const activeTab = visibleTabs.some(t => t.key === tab) ? tab : 'catalog';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -902,7 +988,7 @@ export default function QuickReplies() {
       </div>
 
       <div className="flex gap-2 mb-6 border-b border-slate-800 pb-3">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {visibleTabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => navigate(`/quick-replies/${key}`)}
@@ -922,6 +1008,7 @@ export default function QuickReplies() {
 
       {activeTab === 'catalog' && <QuickReplyCatalog isAdmin={isAdmin} channels={channels} />}
       {activeTab === 'requests' && <QuickReplyRequests isAdmin={isAdmin} myId={agent?.id} />}
+      {activeTab === 'history' && isAdmin && <QuickReplyHistory />}
     </div>
   );
 }

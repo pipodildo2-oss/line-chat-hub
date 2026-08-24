@@ -12,6 +12,7 @@ const KINDS = ['reply', 'howto', 'promotion'];
 const KIND_ERROR = 'kind ต้องเป็น reply, howto หรือ promotion';
 const MAX_IMAGES = 5;
 const TOO_MANY_IMAGES_ERROR = `แนบรูปได้สูงสุด ${MAX_IMAGES} รูป`;
+const REVIEW_AUDIT_ACTION = { approved: 'request_approved', needs_revision: 'request_needs_revision', rejected: 'request_rejected' };
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -76,6 +77,24 @@ function imageAt(row, index) {
   return index === 0 ? row.imageData : null;
 }
 
+// Writes one row to the "ประวัติ" audit trail (see schema.prisma's doc
+// comment on QuickReplyAuditLog for why this exists separately from
+// QuickReplyRequest's own status field). Never lets a logging failure break
+// the actual mutation it's describing — awaited inline since these are
+// low-volume admin/agent actions, not a hot path, but errors are swallowed.
+async function logAudit(action, agent, { itemName, categoryName, detail } = {}) {
+  try {
+    await prisma.quickReplyAuditLog.create({
+      data: {
+        action, itemName: itemName || null, categoryName: categoryName || null, detail: detail || null,
+        actorId: agent.id, actorName: agent.name,
+      },
+    });
+  } catch (err) {
+    console.error('Quick reply audit log failed:', err.message);
+  }
+}
+
 // ---------- Quick Reply Categories ("หมวดหมู่") ----------
 // Free-form, admin-created by typing a name. Not tied to any specific LINE OA —
 // an admin picks which conversation to send a quick reply into at send time.
@@ -112,6 +131,7 @@ router.post('/categories', auth, requireAdmin, async (req, res) => {
       },
       include: CATEGORY_INCLUDE,
     });
+    await logAudit('category_created', req.agent, { categoryName: category.name });
     res.status(201).json(category);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีหมวดหมู่นี้อยู่แล้ว' });
@@ -134,6 +154,7 @@ router.patch('/categories/:id', auth, requireAdmin, async (req, res) => {
       },
       include: CATEGORY_INCLUDE,
     });
+    await logAudit('category_updated', req.agent, { categoryName: category.name });
     res.json(category);
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -145,14 +166,19 @@ router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
   try {
     // The cascade delete below removes the QuickReply rows, but not their image
     // files on disk — grab those first so they can be cleaned up afterward.
-    const withImages = await prisma.quickReply.findMany({
-      where: { categoryId: req.params.id },
-      select: { imageData: true, images: true },
+    const existing = await prisma.quickReplyCategory.findUnique({
+      where: { id: req.params.id },
+      select: { name: true, quickReplies: { select: { imageData: true, images: true } } },
     });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
     await prisma.quickReplyCategory.delete({ where: { id: req.params.id } });
-    withImages.forEach(qr => {
+    existing.quickReplies.forEach(qr => {
       if (qr.imageData) deleteStoredImage(qr.imageData);
       qr.images.forEach(deleteStoredImage);
+    });
+    await logAudit('category_deleted', req.agent, {
+      categoryName: existing.name,
+      detail: existing.quickReplies.length > 0 ? `รวมข้อความลัดในหมวดนี้ที่ถูกลบไปด้วย ${existing.quickReplies.length} รายการ` : null,
     });
     res.status(204).end();
   } catch {
@@ -217,13 +243,17 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       }
     }
     // New items go to the end of their category's list by default.
-    const count = await prisma.quickReply.count({ where: { categoryId } });
+    const [count, category] = await Promise.all([
+      prisma.quickReply.count({ where: { categoryId } }),
+      prisma.quickReplyCategory.findUnique({ where: { id: categoryId }, select: { name: true } }),
+    ]);
     // Write each image to disk instead of storing the base64 blob in Postgres
     // (see imageStorage.js).
     const storedImages = await saveImages(images);
     const quickReply = await prisma.quickReply.create({
       data: { categoryId, kind: kind || 'reply', name: name.trim(), content: content.trim(), images: storedImages, order: count },
     });
+    await logAudit('created', req.agent, { itemName: quickReply.name, categoryName: category?.name });
     res.status(201).json(imageMeta(quickReply));
   } catch (err) {
     console.error('Create quick reply failed:', err.message);
@@ -272,6 +302,18 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     const quickReply = await prisma.quickReply.update({ where: { id: req.params.id }, data });
     removedFiles.forEach(deleteStoredImage);
     if (legacyImageToClean) deleteStoredImage(legacyImageToClean);
+
+    const changedFields = [];
+    if (data.name) changedFields.push('ชื่อ');
+    if (data.content) changedFields.push('เนื้อหา');
+    if (data.kind) changedFields.push('ประเภท');
+    if (data.categoryId) changedFields.push('หมวดหมู่');
+    if (removeImageIndexes !== undefined || addImages !== undefined) changedFields.push('รูปภาพ');
+    const category = await prisma.quickReplyCategory.findUnique({ where: { id: quickReply.categoryId }, select: { name: true } });
+    await logAudit('updated', req.agent, {
+      itemName: quickReply.name, categoryName: category?.name,
+      detail: changedFields.length > 0 ? `แก้ไข: ${changedFields.join(', ')}` : null,
+    });
     res.json(imageMeta(quickReply));
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -281,11 +323,15 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
 // DELETE /api/quick-replies/:id — admin only
 router.delete('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const quickReply = await prisma.quickReply.delete({ where: { id: req.params.id } });
+    const quickReply = await prisma.quickReply.delete({
+      where: { id: req.params.id },
+      include: { category: { select: { name: true } } },
+    });
     // Clean up the associated image files off disk — Prisma only removes the DB
     // row, so without this the files would sit orphaned in the uploads volume forever.
     if (quickReply.imageData) deleteStoredImage(quickReply.imageData);
     quickReply.images.forEach(deleteStoredImage);
+    await logAudit('deleted', req.agent, { itemName: quickReply.name, categoryName: quickReply.category?.name });
     res.status(204).end();
   } catch {
     res.status(404).json({ error: 'Not found' });
@@ -351,6 +397,7 @@ router.post('/requests', auth, async (req, res) => {
       },
       include: REQUEST_INCLUDE,
     });
+    await logAudit('request_submitted', req.agent, { itemName: request.name, categoryName: request.category.name });
     emitToAll('quick_reply_request_created', { id: request.id, requestedById: req.agent.id, requestedByName: req.agent.name });
     res.status(201).json(safeRequest(request));
   } catch (err) {
@@ -399,6 +446,7 @@ router.patch('/requests/:id', auth, async (req, res) => {
     const updated = await prisma.quickReplyRequest.update({ where: { id: req.params.id }, data, include: REQUEST_INCLUDE });
     removedFiles.forEach(deleteStoredImage);
     if (legacyImageToClean) deleteStoredImage(legacyImageToClean);
+    await logAudit('request_resubmitted', req.agent, { itemName: updated.name, categoryName: updated.category.name });
     emitToAll('quick_reply_request_created', { id: updated.id, requestedById: req.agent.id, requestedByName: req.agent.name });
     res.json(safeRequest(updated));
   } catch (err) {
@@ -416,7 +464,7 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
     if (!['approved', 'needs_revision', 'rejected'].includes(status)) {
       return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
     }
-    const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, include: REQUEST_INCLUDE });
     if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
     if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว' });
 
@@ -452,6 +500,11 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
       }
     }
 
+    await logAudit(REVIEW_AUDIT_ACTION[status], req.agent, {
+      itemName: existing.name,
+      categoryName: existing.category.name,
+      detail: `คำขอของ ${existing.requestedBy.name}${reviewNote?.trim() ? ` — เหตุผล: ${reviewNote.trim()}` : ''}`,
+    });
     emitToAll('quick_reply_request_reviewed', { id: request.id, status, requestedById: existing.requestedById });
     res.json(safeRequest(request));
   } catch (err) {
@@ -463,16 +516,41 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
 // DELETE /api/quick-replies/requests/:id — the requester withdraws their own
 // not-yet-approved request (or an admin cleans one up).
 router.delete('/requests/:id', auth, async (req, res) => {
-  const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, include: REQUEST_INCLUDE });
   if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
-  if (existing.requestedById !== req.agent.id && req.agent.role !== 'admin') {
+  const isOwner = existing.requestedById === req.agent.id;
+  if (!isOwner && req.agent.role !== 'admin') {
     return res.status(403).json({ error: 'ยกเลิกได้เฉพาะคำขอของตัวเอง' });
   }
   if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว ไม่สามารถยกเลิกได้' });
   await prisma.quickReplyRequest.delete({ where: { id: req.params.id } });
   if (existing.imageData) deleteStoredImage(existing.imageData);
   existing.images.forEach(deleteStoredImage);
+  await logAudit('request_withdrawn', req.agent, {
+    itemName: existing.name,
+    categoryName: existing.category.name,
+    detail: isOwner ? null : `ยกเลิกโดยแอดมิน (เจ้าของคำขอ: ${existing.requestedBy.name})`,
+  });
   res.status(204).end();
+});
+
+// ---------- "ประวัติ" audit log ----------
+
+// GET /api/quick-replies/audit-log?action= — admin only. Every recorded
+// action across the whole Quick Replies feature (catalog CRUD + request
+// lifecycle), newest first — see QuickReplyAuditLog's doc comment in
+// schema.prisma for why this is a separate append-only table rather than
+// reading QuickReplyRequest's current status.
+router.get('/audit-log', auth, requireAdmin, async (req, res) => {
+  const { action } = req.query;
+  const where = {};
+  if (action) where.action = action;
+  const logs = await prisma.quickReplyAuditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  });
+  res.json(logs);
 });
 
 // GET /api/quick-replies/requests/:id/image — legacy bare route, kept
