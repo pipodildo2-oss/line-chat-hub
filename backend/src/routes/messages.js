@@ -121,6 +121,18 @@ router.get('/:conversationId', auth, async (req, res) => {
     take: Number(limit),
   });
 
+  // Personal "I've opened this" marker — powers the Inbox sidebar badge
+  // (unread-count in conversations.js). Unlike the read/MessageView logic
+  // below, this runs for EVERY opener including admins: an admin's own
+  // badge should clear when they personally look at a chat, without
+  // touching the shared `read` flag other agents rely on to see "has
+  // anyone handled this yet."
+  prisma.conversationSeen.upsert({
+    where: { agentId_conversationId: { agentId: req.agent.id, conversationId: req.params.conversationId } },
+    create: { agentId: req.agent.id, conversationId: req.params.conversationId },
+    update: { seenAt: new Date() },
+  }).catch(e => console.error('conversationSeen upsert failed:', e.message));
+
   // Admins are reviewers checking on agents' work, not the ones handling the
   // conversation — so an admin opening a chat should NOT mark it read (the
   // unread badge should keep showing it as new for whoever actually owns it)
