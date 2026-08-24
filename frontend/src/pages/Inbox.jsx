@@ -30,6 +30,11 @@ const MESSAGE_PAGE_LIMIT = 50;
 // broadcast targeting thousands of conversations, or a heavy report query).
 const SEND_REQUEST_TIMEOUT_MS = 30000;
 
+// Composer image attachments — same cap as the quick-reply multi-image
+// feature (QuickReplies.jsx), each one going out as its own separate LINE
+// push (see handleSend).
+const MAX_PENDING_IMAGES = 5;
+
 // Shape of Inbox's conversation-list filter — shared between the initial
 // state and the localStorage fallback (see the `filter` useState below), so
 // there's one place to update if a new filter field is ever added.
@@ -370,7 +375,9 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
     <p className={`text-xs mt-1 ${timeCls}`}>
       {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
       {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-      {!isUser && <DeliveryTick repliedTo={repliedTo} onBubble />}
+      {msg.pending
+        ? <Loader2 size={11} className="inline-block ml-1 align-text-bottom animate-spin" />
+        : (!isUser && <DeliveryTick repliedTo={repliedTo} onBubble />)}
     </p>
   );
 
@@ -400,14 +407,16 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
           {meta.url ? (
-            <button type="button" onClick={() => onImageClick?.(meta.url)} className="block cursor-zoom-in">
+            <button type="button" onClick={() => onImageClick?.(meta.url)} className={`block cursor-zoom-in ${msg.pending ? 'opacity-60' : ''}`}>
               <img src={meta.url} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
             </button>
           ) : <p className="text-sm text-gray-400">[Image]</p>}
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+            {msg.pending
+              ? <Loader2 size={11} className="inline-block ml-1 align-text-bottom animate-spin" />
+              : (!isUser && <DeliveryTick repliedTo={repliedTo} />)}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
           <UpsellBadge msg={msg} />
@@ -462,7 +471,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
-        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-[#4C3EDE] text-white rounded-tr-sm'}`}>
+        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${msg.pending ? 'opacity-60' : ''} ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-[#4C3EDE] text-white rounded-tr-sm'}`}>
           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
           {timeLabel}
         </div>
@@ -970,7 +979,7 @@ export default function Inbox() {
   // on conversation switch, so one stuck request could lock the whole app's
   // composer until a page refresh).
   const [sendingConvIds, setSendingConvIds] = useState(() => new Set());
-  const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
+  const [pendingImages, setPendingImages] = useState([]); // [{ previewUrl, base64 }] — attached but not sent yet, up to MAX_PENDING_IMAGES
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -1482,35 +1491,86 @@ export default function Inbox() {
     return () => socket.off('agent_typing', handleAgentTyping);
   }, [socket]);
 
-  // Reads a dropped/picked file into a pending attachment shown in the composer —
-  // it isn't sent to the customer until the agent hits Send.
+  // Reads a dropped/picked/pasted file into a pending attachment shown in the
+  // composer — it isn't sent to the customer until the agent hits Send.
+  // Appends rather than replacing, so multiple images can be queued up
+  // before sending (each still goes out as its own separate LINE push, same
+  // as the quick-reply multi-image flow — see handleSend below).
   function attachImageFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = () => setPendingImage({ previewUrl: reader.result, base64: reader.result });
+    reader.onload = () => setPendingImages(prev => (
+      prev.length >= MAX_PENDING_IMAGES ? prev : [...prev, { previewUrl: reader.result, base64: reader.result }]
+    ));
     reader.readAsDataURL(file);
   }
 
   async function handleSend(text) {
     const content = (text ?? input).trim();
-    const image = pendingImage;
-    if ((!content && !image) || !selected || sendingConvIds.has(selected.id)) return;
+    const images = pendingImages;
+    if ((!content && images.length === 0) || !selected || sendingConvIds.has(selected.id)) return;
     const convId = selected.id;
     setSendingConvIds(prev => new Set(prev).add(convId));
+
+    // Optimistic send: clear the composer and show every bubble immediately
+    // (flagged `pending: true` — see MessageBubble's spinner) instead of
+    // waiting on the full LINE-push round trip before anything appears on
+    // screen. Each entry resolves into the real message as its own request
+    // finishes; images go out as separate sequential pushes, same as the
+    // quick-reply multi-image flow. A failure removes only what didn't make
+    // it out and restores that piece into the composer, so nothing typed or
+    // attached is silently lost — same rule the old synchronous version
+    // followed, just applied per-item instead of per-send.
+    setInput('');
+    setPendingImages([]);
+    const nowIso = new Date().toISOString();
+    const entries = [
+      ...images.map(img => ({
+        tempId: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        payload: { imageData: img.base64 },
+        image: img,
+        optimistic: {
+          conversationId: convId, sender: 'agent', senderName: agent?.name, senderId: agent?.id,
+          type: 'image', content: '[Image]', metadata: JSON.stringify({ url: img.previewUrl }),
+          createdAt: nowIso, pending: true,
+        },
+      })),
+      ...(content ? [{
+        tempId: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        payload: { content },
+        text: content,
+        optimistic: {
+          conversationId: convId, sender: 'agent', senderName: agent?.name, senderId: agent?.id,
+          type: 'text', content, createdAt: nowIso, pending: true,
+        },
+      }] : []),
+    ];
+    setMessages(prev => [...prev, ...entries.map(e => ({ id: e.tempId, ...e.optimistic }))]);
+
     try {
-      // Only clear each piece (input / pendingImage) after IT actually succeeds —
-      // clearing both upfront meant a failed send (e.g. LINE rejects the push
-      // because the customer blocked the OA, or the access token is bad) silently
-      // wiped what the agent typed with no error shown and nothing to retry.
-      if (image) {
-        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64 }, { timeout: SEND_REQUEST_TIMEOUT_MS });
-        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-        setPendingImage(null);
-      }
-      if (content) {
-        const { data } = await axios.post(`/api/messages/${convId}`, { content }, { timeout: SEND_REQUEST_TIMEOUT_MS });
-        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-        setInput('');
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        try {
+          const { data } = await axios.post(`/api/messages/${convId}`, entry.payload, { timeout: SEND_REQUEST_TIMEOUT_MS });
+          // The 'new_message' socket event for this same row can arrive
+          // before this response does — dedupe against it instead of
+          // blindly swapping, or a fast socket delivery would leave both
+          // the (now-stale) real row AND this replacement on screen.
+          setMessages(prev => {
+            const withoutTemp = prev.filter(m => m.id !== entry.tempId);
+            return withoutTemp.some(m => m.id === data.id) ? withoutTemp : [...withoutTemp, data];
+          });
+        } catch (err) {
+          // Drop this and every optimistic bubble still queued behind it —
+          // whatever already sent above stays as a real message.
+          const remaining = entries.slice(i);
+          const remainingIds = new Set(remaining.map(e => e.tempId));
+          setMessages(prev => prev.filter(m => !remainingIds.has(m.id)));
+          setPendingImages(remaining.filter(e => e.image).map(e => e.image));
+          const remainingText = remaining.find(e => e.text)?.text;
+          if (remainingText) setInput(remainingText);
+          throw err;
+        }
       }
     } catch (err) {
       // `uncertain` (backend flag, set when it gave up waiting on LINE — see
@@ -1825,7 +1885,7 @@ export default function Inbox() {
               onDrop={e => {
                 e.preventDefault();
                 setDragOver(false);
-                attachImageFile(e.dataTransfer.files?.[0]);
+                Array.from(e.dataTransfer.files || []).forEach(attachImageFile);
               }}
             >
               {dragOver && (
@@ -1928,20 +1988,24 @@ export default function Inbox() {
                 </div>
               )}
 
-              {pendingImage && (
-                <div className="px-4 pt-3 flex items-center gap-2">
-                  <div className="relative">
-                    <button type="button" onClick={() => setLightboxSrc(pendingImage.previewUrl)} className="block cursor-zoom-in">
-                      <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
-                    </button>
-                    <button
-                      onClick={() => setPendingImage(null)}
-                      className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
+              {pendingImages.length > 0 && (
+                <div className="px-4 pt-3 flex items-start gap-2 flex-wrap">
+                  {pendingImages.map((img, i) => (
+                    <div key={img.previewUrl + i} className="relative">
+                      <button type="button" onClick={() => setLightboxSrc(img.previewUrl)} className="block cursor-zoom-in">
+                        <img src={img.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+                      </button>
+                      <button
+                        onClick={() => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  <span className="text-xs text-gray-500 dark:text-slate-400 self-center">
+                    แนบรูปแล้ว {pendingImages.length}/{MAX_PENDING_IMAGES} (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง
+                  </span>
                 </div>
               )}
 
@@ -1994,15 +2058,16 @@ export default function Inbox() {
                     <div className="flex items-center gap-1.5">
                       <label
                         title="แนบรูปภาพ"
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 cursor-pointer text-sky-500 dark:text-sky-400 ${pendingImage ? 'bg-sky-500/15' : 'hover:bg-sky-500/10'}`}
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 cursor-pointer text-sky-500 dark:text-sky-400 ${pendingImages.length > 0 ? 'bg-sky-500/15' : 'hover:bg-sky-500/10'} ${pendingImages.length >= MAX_PENDING_IMAGES ? 'opacity-40 pointer-events-none' : ''}`}
                       >
                         <ImagePlus size={19} />
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           className="hidden"
                           onChange={e => {
-                            attachImageFile(e.target.files?.[0]);
+                            Array.from(e.target.files || []).forEach(attachImageFile);
                             e.target.value = '';
                           }}
                         />
@@ -2038,7 +2103,7 @@ export default function Inbox() {
                     </div>
                     <button
                       onClick={() => handleSend()}
-                      disabled={(!input.trim() && !pendingImage) || sendingConvIds.has(selected?.id)}
+                      disabled={(!input.trim() && pendingImages.length === 0) || sendingConvIds.has(selected?.id)}
                       className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-full w-8 h-8 flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
                     >
                       <Send size={15} />
