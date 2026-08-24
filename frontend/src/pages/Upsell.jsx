@@ -718,8 +718,8 @@ function UpsellReportPage() {
   // log only), and deliberately includes every agent (not just submitters)
   // so someone who's busy in chat but has submitted nothing still shows up.
   const [agentActivity, setAgentActivity] = useState(null);
-  const [activitySort, setActivitySort] = useState('approvedAmount');
-  const [activitySortDir, setActivitySortDir] = useState('asc'); // least-upsell-first by default, per the whole point of this table
+  const [activitySort, setActivitySort] = useState('pct');
+  const [activitySortDir, setActivitySortDir] = useState('asc'); // lowest conversion rate first — the whole point of this table
   const { socket } = useSocket();
   const navigate = useNavigate();
 
@@ -768,24 +768,57 @@ function UpsellReportPage() {
       setActivitySortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setActivitySort(key);
-      setActivitySortDir(key === 'name' || key === 'approvedAmount' ? 'asc' : 'desc');
+      setActivitySortDir(key === 'name' ? 'asc' : key === 'pct' ? 'asc' : 'desc');
     }
   }
 
-  const sortedActivity = agentActivity ? [...agentActivity].sort((a, b) => {
+  // pct = รายการ (approved) ÷ รับเคส (conversationsHandled) — how many of
+  // this agent's handled cases actually converted to an approved upsell,
+  // full case load = 100%. null (not 0%) when they haven't handled any
+  // cases yet, so an idle agent doesn't look identical to a 0%-conversion one.
+  const activityWithPct = (agentActivity || []).map(a => ({
+    ...a,
+    pct: a.conversationsHandled > 0 ? (a.approved / a.conversationsHandled) * 100 : null,
+  }));
+
+  function sortAgents(agents) {
     const dir = activitySortDir === 'asc' ? 1 : -1;
-    if (activitySort === 'name') return dir * a.name.localeCompare(b.name);
-    return dir * ((a[activitySort] ?? 0) - (b[activitySort] ?? 0));
-  }) : [];
-  // Median of agents who actually sent messages this period — the bar for
-  // "busy," so a genuinely idle agent with no upsells doesn't get flagged
-  // alongside someone visibly carrying a full chat load with nothing to show.
-  const activeMessageCounts = (agentActivity || []).map(a => a.messagesSent).filter(v => v > 0).sort((x, y) => x - y);
-  const activityMedianMessages = activeMessageCounts.length
-    ? (activeMessageCounts.length % 2 === 1
-      ? activeMessageCounts[(activeMessageCounts.length - 1) / 2]
-      : (activeMessageCounts[activeMessageCounts.length / 2 - 1] + activeMessageCounts[activeMessageCounts.length / 2]) / 2)
-    : 0;
+    return [...agents].sort((a, b) => {
+      if (activitySort === 'name') return dir * a.name.localeCompare(b.name);
+      const av = a[activitySort];
+      const bv = b[activitySort];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1; // no cases received — always sorts last, regardless of direction
+      if (bv == null) return -1;
+      return dir * (av - bv);
+    });
+  }
+
+  // Grouped by team, same pattern as ตรวจสอบ/คะแนน — team boxes ordered by
+  // approved amount ascending (lowest-earning team first, matching this
+  // table's whole "who needs a push" purpose); agents within each team
+  // follow whichever column header was last clicked.
+  const activityTeamGroups = (() => {
+    if (!activityWithPct.length) return [];
+    const byTeam = {};
+    for (const a of activityWithPct) {
+      const key = a.categoryId || '__none__';
+      (byTeam[key] ||= { id: a.categoryId, name: a.categoryName || 'ไม่มีทีม', agents: [] }).agents.push(a);
+    }
+    const groups = Object.values(byTeam).map(g => {
+      const conversationsHandled = g.agents.reduce((s, a) => s + a.conversationsHandled, 0);
+      const approved = g.agents.reduce((s, a) => s + a.approved, 0);
+      const approvedAmount = g.agents.reduce((s, a) => s + a.approvedAmount, 0);
+      return {
+        ...g,
+        conversationsHandled, approved, approvedAmount,
+        pct: conversationsHandled > 0 ? (approved / conversationsHandled) * 100 : null,
+      };
+    });
+    groups.sort((x, y) => x.approvedAmount - y.approvedAmount);
+    for (const g of groups) g.agents = sortAgents(g.agents);
+    return groups;
+  })();
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -796,61 +829,61 @@ function UpsellReportPage() {
 
       <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden overflow-x-auto mb-6">
-        <div className="px-4 py-2.5 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800">
-          <p className="text-sm font-semibold text-gray-800 dark:text-slate-200">สรุปกิจกรรมรายพนักงาน</p>
-          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-            เทียบปริมาณงานกับยอดอัพเซลล์ในช่วงเวลาที่เลือก — แถวไฮไลท์คือตอบแชทเยอะแต่ยังไม่มียอดอัพเซลล์เข้ามาเลย
-          </p>
-        </div>
+      <div className="mb-6">
+        <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">สรุปกิจกรรมรายพนักงาน</p>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+          % คือสัดส่วนรายการที่ผ่านจากจำนวนเคสที่รับทั้งหมดในช่วงเวลานี้ — รับเคสเท่าไหร่ทำได้ครบเท่านั้นคือ 100%
+        </p>
         {!agentActivity ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
-        ) : sortedActivity.length === 0 ? (
+        ) : activityTeamGroups.length === 0 ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ไม่มีพนักงานในระบบ</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
-                <SortableTh label="พนักงาน" active={activitySort === 'name'} dir={activitySortDir} onClick={() => handleActivitySort('name')} />
-                <SortableTh label="รับเคส" active={activitySort === 'conversationsHandled'} dir={activitySortDir} onClick={() => handleActivitySort('conversationsHandled')} align="center" />
-                <SortableTh label="ส่งข้อความ" active={activitySort === 'messagesSent'} dir={activitySortDir} onClick={() => handleActivitySort('messagesSent')} align="center" />
-                <SortableTh label="รายการ" active={activitySort === 'approved'} dir={activitySortDir} onClick={() => handleActivitySort('approved')} align="center" />
-                <SortableTh label="ยอดที่อัพเซลล์ได้" active={activitySort === 'approvedAmount'} dir={activitySortDir} onClick={() => handleActivitySort('approvedAmount')} align="right" />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedActivity.map(a => {
-                const lowUpsell = a.messagesSent > 0 && a.messagesSent >= activityMedianMessages && a.approvedAmount === 0;
-                return (
-                  <tr
-                    key={a.id}
-                    className={`border-b border-gray-50 dark:border-slate-800/60 last:border-0 ${lowUpsell ? 'bg-amber-50 dark:bg-amber-500/10 border-l-2 border-l-amber-400' : ''}`}
-                  >
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={a.name} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
-                          <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{a.categoryName || '—'}</p>
-                        </div>
-                        {lowUpsell && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap flex-shrink-0">
-                            ⚠ ควรกระตุ้น
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.conversationsHandled}</td>
-                    <td className="px-3 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.messagesSent}</td>
-                    <td className="px-3 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.approved}</td>
-                    <td className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${a.approvedAmount === 0 ? 'text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}`}>
-                      {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {activityTeamGroups.map(team => (
+              <div key={team.id || 'none'} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden overflow-x-auto">
+                <div className="px-4 py-2.5 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Users size={14} /> {team.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    {team.approved}/{team.conversationsHandled} รายการ ({team.pct != null ? `${team.pct.toFixed(0)}%` : '—'}) · {team.approvedAmount.toLocaleString()} บาท
+                  </p>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                      <SortableTh label="พนักงาน" active={activitySort === 'name'} dir={activitySortDir} onClick={() => handleActivitySort('name')} />
+                      <SortableTh label="รับเคส" active={activitySort === 'conversationsHandled'} dir={activitySortDir} onClick={() => handleActivitySort('conversationsHandled')} align="center" />
+                      <SortableTh label="รายการ" active={activitySort === 'approved'} dir={activitySortDir} onClick={() => handleActivitySort('approved')} align="center" />
+                      <SortableTh label="%" active={activitySort === 'pct'} dir={activitySortDir} onClick={() => handleActivitySort('pct')} align="center" />
+                      <SortableTh label="ยอดที่อัพเซลล์ได้" active={activitySort === 'approvedAmount'} dir={activitySortDir} onClick={() => handleActivitySort('approvedAmount')} align="right" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.agents.map(a => (
+                      <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800/40">
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={a.name} />
+                            <p className="text-gray-800 dark:text-slate-200 truncate">{a.name}</p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.conversationsHandled}</td>
+                        <td className="px-3 py-2.5 text-center text-gray-600 dark:text-slate-300">{a.approved}</td>
+                        <td className="px-3 py-2.5 text-center font-semibold text-gray-800 dark:text-slate-200">
+                          {a.pct != null ? `${a.pct.toFixed(0)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap text-gray-900 dark:text-slate-100">
+                          {a.approvedAmount ? `${a.approvedAmount.toLocaleString()} บาท` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
