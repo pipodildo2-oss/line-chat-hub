@@ -251,7 +251,7 @@ function Lightbox({ src, onClose }) {
 // Backdrop+centered-box confirm dialog for submitting a batch of claimed
 // messages as one upsell submission — same modal shell as Lightbox above,
 // just with content instead of an image.
-function UpsellConfirmModal({ messages, submitting, onConfirm, onCancel }) {
+function UpsellConfirmModal({ messages, submitting, onConfirm, onCancel, onImageClick }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
       <div
@@ -269,6 +269,20 @@ function UpsellConfirmModal({ messages, submitting, onConfirm, onCancel }) {
             <div key={m.id} className="text-sm text-gray-700 dark:text-slate-300 border border-gray-100 dark:border-slate-800 rounded-lg px-3 py-2">
               {m.type === 'text' ? (
                 <p className="line-clamp-2 whitespace-pre-wrap break-words">{m.content}</p>
+              ) : m.type === 'image' ? (
+                m.lineMessageId ? (
+                  <ImageMessage messageId={m.lineMessageId} onImageClick={onImageClick} />
+                ) : (
+                  (() => {
+                    let meta = {};
+                    try { meta = m.metadata ? JSON.parse(m.metadata) : {}; } catch { /* ignore */ }
+                    return meta.url ? (
+                      <button type="button" onClick={() => onImageClick?.(meta.url)} className="block cursor-zoom-in">
+                        <img src={meta.url} alt="" className="max-w-[160px] max-h-[160px] rounded-lg object-cover" />
+                      </button>
+                    ) : <p className="text-gray-400 dark:text-slate-500">[image]</p>;
+                  })()
+                )
               ) : (
                 <p className="text-gray-400 dark:text-slate-500">[{m.type}]</p>
               )}
@@ -2141,15 +2155,16 @@ export default function Inbox() {
           </div>
         </div>
       )}
-      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       {showUpsellConfirm && (
         <UpsellConfirmModal
           messages={messages.filter(m => selectedUpsellIds.has(m.id))}
           submitting={submittingUpsell}
           onConfirm={submitUpsellSelection}
           onCancel={() => setShowUpsellConfirm(false)}
+          onImageClick={setLightboxSrc}
         />
       )}
+      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
