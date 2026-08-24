@@ -230,6 +230,7 @@ model ConversationNote {
   agentId        String?
   agent          Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt // only ever changes once an edit happens — lets the UI show "(แก้ไขแล้ว)"
 
   @@index([conversationId, createdAt])
 }

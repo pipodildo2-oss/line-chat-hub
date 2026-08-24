@@ -244,15 +244,13 @@ router.get('/:id/notes', auth, async (req, res) => {
   }
   const notes = await prisma.conversationNote.findMany({
     where: { conversationId: req.params.id },
-    select: { id: true, content: true, createdAt: true, agent: { select: { id: true, name: true } } },
+    select: { id: true, content: true, createdAt: true, updatedAt: true, agent: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'desc' },
   });
   res.json(notes);
 });
 
-// POST /api/conversations/:id/notes — append a new note. Notes are an
-// append-only log (no edit/delete), same spirit as the audit-trail-style
-// records elsewhere in this app.
+// POST /api/conversations/:id/notes — append a new note.
 router.post('/:id/notes', auth, async (req, res) => {
   const content = req.body.content?.trim();
   if (!content) return res.status(400).json({ error: 'กรุณากรอกข้อความ' });
@@ -265,10 +263,35 @@ router.post('/:id/notes', auth, async (req, res) => {
 
   const note = await prisma.conversationNote.create({
     data: { conversationId: req.params.id, content, agentId: req.agent.id },
-    select: { id: true, content: true, createdAt: true, agent: { select: { id: true, name: true } } },
+    select: { id: true, content: true, createdAt: true, updatedAt: true, agent: { select: { id: true, name: true } } },
   });
   emitToAll('conversation_note_added', { conversationId: req.params.id, note });
   res.status(201).json(note);
+});
+
+// PATCH /api/conversations/:id/notes/:noteId — edit an existing note's text.
+// Any agent with access to the conversation can edit any note (same
+// permission shape as the rest of the customer panel — tags/name/notes have
+// never been restricted to whoever originally set them).
+router.patch('/:id/notes/:noteId', auth, async (req, res) => {
+  const content = req.body.content?.trim();
+  if (!content) return res.status(400).json({ error: 'กรุณากรอกข้อความ' });
+
+  const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!(await canAccessChannel(req.agent, existing.channelId))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const note = await prisma.conversationNote.update({
+    where: { id: req.params.noteId, conversationId: req.params.id },
+    data: { content },
+    select: { id: true, content: true, createdAt: true, updatedAt: true, agent: { select: { id: true, name: true } } },
+  }).catch(() => null);
+  if (!note) return res.status(404).json({ error: 'Not found' });
+
+  emitToAll('conversation_note_updated', { conversationId: req.params.id, note });
+  res.json(note);
 });
 
 module.exports = router;

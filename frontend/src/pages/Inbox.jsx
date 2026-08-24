@@ -690,6 +690,9 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
   const [noteEntries, setNoteEntries] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const { socket } = useSocket();
 
   useEffect(() => { setName(conv.displayName || ''); setCautionReason(conv.cautionReason || ''); }, [conv.id]);
@@ -706,8 +709,16 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       if (conversationId !== conv.id) return;
       setNoteEntries(prev => (prev.some(n => n.id === note.id) ? prev : [note, ...prev]));
     }
+    function onNoteUpdated({ conversationId, note }) {
+      if (conversationId !== conv.id) return;
+      setNoteEntries(prev => prev.map(n => (n.id === note.id ? note : n)));
+    }
     socket.on('conversation_note_added', onNoteAdded);
-    return () => socket.off('conversation_note_added', onNoteAdded);
+    socket.on('conversation_note_updated', onNoteUpdated);
+    return () => {
+      socket.off('conversation_note_added', onNoteAdded);
+      socket.off('conversation_note_updated', onNoteUpdated);
+    };
   }, [socket, conv.id]);
 
   async function addNote() {
@@ -720,6 +731,29 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
       setNewNote('');
     } catch { /* ignore */ }
     setAddingNote(false);
+  }
+
+  function startEditNote(note) {
+    setEditingNoteId(note.id);
+    setEditingText(note.content);
+  }
+
+  function cancelEditNote() {
+    setEditingNoteId(null);
+    setEditingText('');
+  }
+
+  async function saveEditNote(noteId) {
+    const content = editingText.trim();
+    if (!content || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      const { data } = await axios.patch(`/api/conversations/${conv.id}/notes/${noteId}`, { content });
+      setNoteEntries(prev => prev.map(n => (n.id === data.id ? data : n)));
+      setEditingNoteId(null);
+      setEditingText('');
+    } catch { /* ignore */ }
+    setSavingEdit(false);
   }
 
   const assignedTagIds = new Set((conv.tags || []).map(t => t.tagId));
@@ -875,12 +909,56 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
         <div className="space-y-1.5">
           {noteEntries.length === 0 && <p className="text-xs text-gray-300 dark:text-slate-600">ยังไม่มีโน้ต</p>}
           {noteEntries.map(n => (
-            <div key={n.id} className="border border-gray-100 dark:border-slate-800 rounded-lg px-2.5 py-1.5 bg-gray-50 dark:bg-slate-800/50">
-              <p className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words">{n.content}</p>
-              <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
-                {n.agent?.name ? `${n.agent.name} · ` : ''}
-                {new Date(n.createdAt).toLocaleString('th', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-              </p>
+            <div key={n.id} className="group border border-gray-100 dark:border-slate-800 rounded-lg px-2.5 py-1.5 bg-gray-50 dark:bg-slate-800/50">
+              {editingNoteId === n.id ? (
+                <div>
+                  <textarea
+                    autoFocus
+                    className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep resize-none"
+                    rows={2}
+                    value={editingText}
+                    onChange={e => setEditingText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditNote(n.id); }
+                      if (e.key === 'Escape') cancelEditNote();
+                    }}
+                  />
+                  <div className="flex items-center justify-end gap-1.5 mt-1">
+                    <button
+                      onClick={cancelEditNote}
+                      disabled={savingEdit}
+                      className="text-[11px] px-2 py-0.5 rounded text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      onClick={() => saveEditNote(n.id)}
+                      disabled={!editingText.trim() || savingEdit}
+                      className="text-[11px] px-2 py-0.5 rounded bg-aurora-tealDeep text-white hover:brightness-110 disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-1.5">
+                    <p className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words flex-1">{n.content}</p>
+                    <button
+                      onClick={() => startEditNote(n)}
+                      title="แก้ไขโน้ต"
+                      className="flex-shrink-0 text-gray-300 dark:text-slate-600 hover:text-aurora-tealDeep dark:hover:text-aurora-teal opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
+                    {n.agent?.name ? `${n.agent.name} · ` : ''}
+                    {new Date(n.createdAt).toLocaleString('th', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    {n.updatedAt && n.updatedAt !== n.createdAt ? ' (แก้ไขแล้ว)' : ''}
+                  </p>
+                </>
+              )}
             </div>
           ))}
         </div>
