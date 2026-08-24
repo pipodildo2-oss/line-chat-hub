@@ -781,6 +781,7 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
 
 const QR_KIND_TABS = [
   { key: 'reply', label: 'ตอบกลับ' },
+  { key: 'howto', label: 'วิธีการ' },
   { key: 'promotion', label: 'โปรโมชั่น' },
 ];
 
@@ -875,8 +876,15 @@ function QuickReplyPicker({ channelId, onSend, onClose }) {
             disabled={!!sendingId}
             className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800/60 border-b border-gray-50 dark:border-slate-800/40 disabled:opacity-50 flex items-start gap-2"
           >
-            {item.hasImage && (
-              <img src={`/api/quick-replies/${item.id}/image`} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+            {item.imageCount > 0 && (
+              <div className="relative flex-shrink-0">
+                <img src={`/api/quick-replies/${item.id}/image/0`} alt="" className="w-9 h-9 rounded-lg object-cover" />
+                {item.imageCount > 1 && (
+                  <span className="absolute -bottom-1 -right-1 bg-slate-950 text-slate-200 text-[8px] font-semibold rounded-full px-1 min-w-[14px] text-center border border-slate-700">
+                    +{item.imageCount - 1}
+                  </span>
+                )}
+              </div>
             )}
             <span className="min-w-0">
               <span className="flex items-center gap-1.5">

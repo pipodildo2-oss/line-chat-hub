@@ -86,9 +86,9 @@ export default function Sidebar() {
     <aside className="w-56 bg-aurora-midnight border-r border-slate-800 flex flex-col flex-shrink-0">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800">
-        <img src="/logo.png" alt="Aurora" className="w-9 h-9 rounded-lg shadow-sm flex-shrink-0" />
+        <img src="/logo.png" alt="Alpha" className="w-9 h-9 rounded-lg shadow-sm flex-shrink-0" />
         <div className="min-w-0">
-          <p className="font-brand font-semibold text-base text-slate-100 leading-tight truncate">Aurora Chat</p>
+          <p className="font-brand font-semibold text-base text-slate-100 leading-tight truncate">Alpha Chat</p>
           <p className="text-[11px] text-slate-500 truncate">By BBB888</p>
         </div>
       </div>
