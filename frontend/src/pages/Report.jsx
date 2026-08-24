@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus, Link2 } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus, Link2, Repeat } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -30,6 +30,7 @@ const CATEGORY_TABS = [
   { key: '', label: 'ทั้งหมด' },
   { key: 'moderation', label: 'คำไม่เหมาะสม' },
   { key: 'link', label: 'ลิงค์ไม่ได้รับอนุญาต' },
+  { key: 'spam', label: 'สแปม' },
 ];
 
 function StatCard({ icon: Icon, label, value, color }) {
@@ -850,7 +851,8 @@ function AuditReport() {
           severeCount: prev.severeCount + (payload.severity === 'severe' ? 1 : 0),
           minorCount: prev.minorCount + (payload.severity === 'minor' ? 1 : 0),
           linkCount: prev.linkCount + (payload.category === 'link' ? 1 : 0),
-          moderationCount: prev.moderationCount + (payload.category !== 'link' ? 1 : 0),
+          spamCount: prev.spamCount + (payload.category === 'spam' ? 1 : 0),
+          moderationCount: prev.moderationCount + (payload.category !== 'link' && payload.category !== 'spam' ? 1 : 0),
         };
       });
     }
@@ -918,11 +920,12 @@ function AuditReport() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <StatCard icon={AlertTriangle} label={`ข้อความที่ถูกตี (${rangeLabel})`} value={data.totalFlagged} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" />
         <StatCard icon={ShieldAlert} label="รุนแรง" value={data.severeCount} color="bg-rose-500" />
         <StatCard icon={ShieldQuestion} label="เล็กน้อย" value={data.minorCount} color="bg-amber-500" />
         <StatCard icon={Link2} label="ลิงค์ไม่ได้รับอนุญาต" value={data.linkCount} color="bg-fuchsia-600" />
+        <StatCard icon={Repeat} label="สแปม" value={data.spamCount} color="bg-orange-500" />
       </div>
 
       {/* Category tabs */}
@@ -996,6 +999,11 @@ function AuditReport() {
                       {m.flagCategory === 'link' && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 flex items-center gap-1">
                           <Link2 size={10} /> ลิงค์
+                        </span>
+                      )}
+                      {m.flagCategory === 'spam' && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                          <Repeat size={10} /> สแปม
                         </span>
                       )}
                     </div>

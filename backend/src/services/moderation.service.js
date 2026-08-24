@@ -32,7 +32,10 @@ function findMatch(normalizedText, wordList) {
  * reply) against the word list in badWords.json, plus a simple repeated-
  * message spam check against recent history. `history` is the last few
  * messages in the conversation (oldest first, [{sender, content}]).
- * Returns null if clean; otherwise { severity: 'minor' | 'severe', reason: string }.
+ * Returns null if clean; otherwise
+ * { severity: 'minor' | 'severe', reason: string, category: 'moderation' | 'spam' }
+ * — category maps directly onto Message.flagCategory (see reports.js), so
+ * callers can pass it straight through without re-deriving which check hit.
  *
  * Kept synchronous-looking (still returns a Promise) so the call site in
  * messages.js — which does `.then(history => checkMessage(...)).then(...)` —
@@ -44,10 +47,10 @@ async function checkMessage(text, history = []) {
   const normalized = normalize(text);
 
   const severeHit = findMatch(normalized, SEVERE_WORDS);
-  if (severeHit) return { severity: 'severe', reason: 'พบคำหยาบ/ไม่เหมาะสมในข้อความ' };
+  if (severeHit) return { severity: 'severe', reason: 'พบคำหยาบ/ไม่เหมาะสมในข้อความ', category: 'moderation' };
 
   const minorHit = findMatch(normalized, MINOR_WORDS);
-  if (minorHit) return { severity: 'minor', reason: 'พบคำพูดไม่สุภาพ/ก้าวร้าวเล็กน้อยในข้อความ' };
+  if (minorHit) return { severity: 'minor', reason: 'พบคำพูดไม่สุภาพ/ก้าวร้าวเล็กน้อยในข้อความ', category: 'moderation' };
 
   // Spam check: the SAME message sent back-to-back 3+ times in a row.
   // "history" is oldest-first, so walk backward from the most recent entry
@@ -63,7 +66,7 @@ async function checkMessage(text, history = []) {
     else break;
   }
   if (normalized.length >= 3 && consecutiveRepeats + 1 >= 3) {
-    return { severity: 'minor', reason: 'ส่งข้อความเดิมซ้ำติดกันตั้งแต่ 3 ครั้งขึ้นไป (สแปม)' };
+    return { severity: 'minor', reason: 'ส่งข้อความเดิมซ้ำติดกันตั้งแต่ 3 ครั้งขึ้นไป (สแปม)', category: 'spam' };
   }
 
   return null;

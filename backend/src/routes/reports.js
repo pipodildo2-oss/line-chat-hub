@@ -25,10 +25,14 @@ function dayEnd(dateStr) { return new Date(`${dateStr}T23:59:59.999+07:00`); }
 // GET /api/reports/flagged-messages?from=&to=&severity=&category=&agentId=
 // Admin-only — powers the KPI review Report page. Only ever contains messages
 // flagged by a check going forward from when that check shipped — no
-// historical backfill. Two categories share this list: "moderation" (bad
-// words/spam, moderation.service.js) and "link" (unauthorized link,
-// linkGuard.js) — rows flagged before flagCategory existed are null, treated
-// as "moderation" everywhere below since that was the only category then.
+// historical backfill. Three categories share this list: "moderation" (bad
+// words, moderation.service.js), "spam" (repeated-message check, same
+// service — split out from "moderation" as its own category so it doesn't
+// get counted as profanity), and "link" (unauthorized link, linkGuard.js) —
+// rows flagged before flagCategory existed are null, treated as
+// "moderation" everywhere below since that was the only category then
+// (spam didn't have its own value yet either, so old spam-flagged rows stay
+// bucketed under "moderation" too — no retroactive reclassification).
 router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
   const { from, to, severity, category, agentId } = req.query;
 
@@ -46,9 +50,10 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
   const where = { ...baseWhere };
   if (severity) where.flagSeverity = severity;
   if (category === 'link') where.flagCategory = 'link';
+  else if (category === 'spam') where.flagCategory = 'spam';
   else if (category === 'moderation') where.OR = [{ flagCategory: 'moderation' }, { flagCategory: null }];
 
-  const [messages, totalFlagged, severeCount, minorCount, linkCount] = await Promise.all([
+  const [messages, totalFlagged, severeCount, minorCount, linkCount, spamCount] = await Promise.all([
     prisma.message.findMany({
       where,
       select: {
@@ -66,9 +71,13 @@ router.get('/flagged-messages', auth, requireAdmin, async (req, res) => {
     prisma.message.count({ where: { ...baseWhere, flagSeverity: 'severe' } }),
     prisma.message.count({ where: { ...baseWhere, flagSeverity: 'minor' } }),
     prisma.message.count({ where: { ...baseWhere, flagCategory: 'link' } }),
+    prisma.message.count({ where: { ...baseWhere, flagCategory: 'spam' } }),
   ]);
 
-  res.json({ messages, totalFlagged, severeCount, minorCount, linkCount, moderationCount: totalFlagged - linkCount });
+  res.json({
+    messages, totalFlagged, severeCount, minorCount, linkCount, spamCount,
+    moderationCount: totalFlagged - linkCount - spamCount,
+  });
 });
 
 const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a customer message the team hasn't had a fair chance to answer yet

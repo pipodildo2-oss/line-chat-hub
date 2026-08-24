@@ -346,13 +346,13 @@ router.post('/:conversationId', auth, async (req, res) => {
         if (!result) return;
         await prisma.message.update({
           where: { id: message.id },
-          data: { flagged: true, flagSeverity: result.severity, flagReason: result.reason, flagCategory: 'moderation' },
+          data: { flagged: true, flagSeverity: result.severity, flagReason: result.reason, flagCategory: result.category },
         });
         emitToAll('message_flagged', {
           messageId: message.id,
           conversationId: conversation.id,
           severity: result.severity,
-          category: 'moderation',
+          category: result.category,
           reason: result.reason,
           agentId: req.agent.id,
           agentName: req.agent.name,
