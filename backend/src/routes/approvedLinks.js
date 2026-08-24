@@ -4,6 +4,7 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
+const { reconcileFlaggedLinks } = require('../lib/linkGuard');
 
 const prisma = new PrismaClient();
 
@@ -38,6 +39,12 @@ router.post('/', auth, requireAdmin, async (req, res) => {
   }
   try {
     const link = await prisma.approvedLink.create({ data: { domain, label } });
+    // A message flagged before this domain was approved (or before this
+    // exact TLD/subdomain variant of it counted, see linkGuard.js's
+    // registrable-name matching) shouldn't keep sitting in the ตรวจสอบ
+    // report as if it were still a violation — clear it right away instead
+    // of waiting for the next server restart's reconciliation.
+    reconcileFlaggedLinks(prisma).catch(e => console.error('reconcileFlaggedLinks failed:', e.message));
     res.status(201).json(link);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'มีโดเมนนี้อยู่ในรายการแล้ว' });

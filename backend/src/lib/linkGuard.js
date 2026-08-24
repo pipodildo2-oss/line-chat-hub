@@ -80,4 +80,32 @@ function findUnauthorizedLink(text, approvedDomains) {
   return null;
 }
 
-module.exports = { findUnauthorizedLink };
+// Re-checks every currently-flagged "unauthorized link" message against the
+// CURRENT approved-domain list and matching rules, and clears the flag on
+// any that are no longer actually violations (e.g. a domain that got added
+// to the whitelist afterward, or a matching-rule change like the
+// registrable-name broadening above). The ตรวจสอบ report is meant to show
+// what's actually wrong right now, not keep stale false-positives around as
+// history — so this doesn't just hide them client-side, it clears the flag
+// in the DB. Only ever clears, never re-flags (removing an approved domain
+// doesn't retroactively make a message sent while it WAS approved into a
+// violation) — see callers (seed.js on every startup, approvedLinks.js when
+// a domain is added) for when this runs. Returns the cleared message ids.
+async function reconcileFlaggedLinks(prisma) {
+  const approvedLinks = await prisma.approvedLink.findMany({ select: { domain: true } });
+  const domains = approvedLinks.map(l => l.domain);
+  const flagged = await prisma.message.findMany({
+    where: { flagged: true, flagCategory: 'link' },
+    select: { id: true, content: true },
+  });
+  const clearIds = flagged.filter(m => !findUnauthorizedLink(m.content, domains)).map(m => m.id);
+  if (clearIds.length > 0) {
+    await prisma.message.updateMany({
+      where: { id: { in: clearIds } },
+      data: { flagged: false, flagSeverity: null, flagReason: null, flagCategory: null },
+    });
+  }
+  return clearIds;
+}
+
+module.exports = { findUnauthorizedLink, reconcileFlaggedLinks };

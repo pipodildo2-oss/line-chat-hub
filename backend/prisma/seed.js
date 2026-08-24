@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { reconcileFlaggedLinks } = require('../src/lib/linkGuard');
 
 const prisma = new PrismaClient();
 
@@ -51,6 +52,17 @@ async function main() {
     });
     console.log(`Migrated ${toMigrate.length} legacy conversation note(s) into ConversationNote rows.`);
   }
+
+  // Runs on every startup (not just once): clears the "unauthorized link"
+  // flag on any message that no longer actually violates the CURRENT
+  // approved-domain list/matching rules — e.g. right now, links that only
+  // became approved because of the registrable-name matching broadened in
+  // linkGuard.js. The ตรวจสอบ report should only ever show what's actually
+  // wrong, not stale flags left over from an older, stricter rule — see
+  // reconcileFlaggedLinks's own comment for why this only clears, never
+  // re-flags. No-op once nothing is left to clear.
+  const clearedLinkIds = await reconcileFlaggedLinks(prisma);
+  if (clearedLinkIds.length > 0) console.log(`Cleared ${clearedLinkIds.length} link flag(s) that are no longer violations under the current approved-domain rules.`);
 
   console.log('Seed complete. Login: admin@example.com / admin1234');
 }
