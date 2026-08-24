@@ -1608,8 +1608,11 @@ export default function Inbox() {
   // re-opening a case while filtered to "เปิด" incorrectly hid it too), and
   // assignAgent/updateConv never removed a row that fell out of the filter at
   // all. This is the single place that gets it right for every field.
-  function applyConversationPatch(data) {
-    setSelected(data);
+  // `nextSelected` overrides what becomes the open chat after this patch —
+  // defaults to the patched conversation itself, but changeStatus below
+  // passes something else when closing a case (see there for why).
+  function applyConversationPatch(data, nextSelected = data) {
+    setSelected(nextSelected);
     const merged = { ...(conversations.find(c => c.id === data.id) || {}), ...data };
     const matches = matchesFilter(merged, filter, agent?.id);
     setConversations(prev => {
@@ -1629,6 +1632,19 @@ export default function Inbox() {
 
   async function changeStatus(status) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, { status });
+    if (status === 'closed') {
+      // Closing a case is naturally followed by "handle whatever's next," not
+      // staring at the one just finished — jump straight to the next open,
+      // unread conversation instead of leaving the closed one on screen.
+      // Scans forward from its position in the current list order (wrapping
+      // around); lands on null (the "select a conversation" placeholder) if
+      // nothing else is open and unread right now.
+      const idx = conversations.findIndex(c => c.id === data.id);
+      const ordered = idx === -1 ? conversations : [...conversations.slice(idx + 1), ...conversations.slice(0, idx)];
+      const next = ordered.find(c => c.id !== data.id && c.status === 'open' && (c._count?.messages || 0) > 0);
+      applyConversationPatch(data, next || null);
+      return;
+    }
     applyConversationPatch(data);
   }
 
