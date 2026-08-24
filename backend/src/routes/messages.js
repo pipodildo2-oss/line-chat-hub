@@ -13,34 +13,31 @@ const prisma = new PrismaClient();
 
 // Excludes the (potentially large) base64 imageData column from bulk queries —
 // callers get metadata.url for agent-sent images instead, see /image/:id below.
+//
+// upsellItems: a message can accumulate more than one UpsellSubmissionItem
+// row over time (a rejected claim is left in place as history, see
+// schema.prisma), but the chat only ever needs the current ACTIVE one — the
+// `where` below excludes rejected rows at the DB level, so a rejected claim's
+// badge just disappears on its own (no rejected-status field ever reaches
+// this query, let alone the response — Inbox only ever shows "claimed / by
+// whom," never the ผ่าน/ไม่ผ่าน outcome, that's the ตรวจสอบ page's job).
+// take: 1 + flattenUpsellItem (below) turn this back into a single
+// `upsellItem` field so the rest of the codebase (frontend included) can
+// keep treating it as one-claim-at-a-time, which in practice it still is.
 const MESSAGE_SELECT = {
   id: true, conversationId: true, sender: true, senderName: true, type: true,
   content: true, metadata: true, read: true, lineMessageId: true, createdAt: true,
-  // Inbox only ever shows "claimed / by whom" (see UpsellBadge in
-  // Inbox.jsx), never the ผ่าน/ไม่ผ่าน review outcome — that's the
-  // ตรวจสอบ page's job. `submission.status` is only fetched here so
-  // sanitizeUpsellItems (below) can drop the badge entirely once a
-  // submission is rejected — it's stripped back out before the response
-  // goes out, so a claimed-but-not-yet-reviewed message still can't leak
-  // its eventual verdict to the chat just by inspecting the API response.
-  upsellItem: { select: { id: true, submissionId: true, submission: { select: { status: true, agent: { select: { name: true } } } } } },
+  upsellItems: {
+    where: { submission: { status: { not: 'rejected' } } },
+    select: { id: true, submissionId: true, submission: { select: { agent: { select: { name: true } } } } },
+    take: 1,
+  },
 };
 
-// A rejected upsell claim ("ไม่ผ่าน") should stop showing as claimed in the
-// chat — the message goes back to looking like any other normal message —
-// while the submission row itself stays in the DB so the ตรวจสอบอัพเซลล์
-// page's "ไปที่แชท" link keeps working (it navigates by conversation/message
-// id, not by this badge). Mutates messages in place.
-function sanitizeUpsellItems(messages) {
-  for (const m of messages) {
-    if (!m.upsellItem) continue;
-    if (m.upsellItem.submission.status === 'rejected') {
-      m.upsellItem = null;
-    } else {
-      delete m.upsellItem.submission.status;
-    }
-  }
-  return messages;
+function flattenUpsellItem(message) {
+  const { upsellItems, ...rest } = message;
+  rest.upsellItem = upsellItems?.[0] || null;
+  return rest;
 }
 
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
@@ -178,7 +175,7 @@ router.get('/:conversationId', auth, async (req, res) => {
     }
   }
 
-  res.json(sanitizeUpsellItems(messages).reverse());
+  res.json(messages.map(flattenUpsellItem).reverse());
 });
 
 // POST /api/messages/:conversationId — send a text message, or an image (imageData
@@ -266,14 +263,14 @@ router.post('/:conversationId', auth, async (req, res) => {
         }
         throw err;
       }
-      message = await prisma.message.update({
+      message = flattenUpsellItem(await prisma.message.update({
         where: { id: message.id },
         data: { metadata: JSON.stringify({ url: imageUrl }) },
         select: MESSAGE_SELECT,
-      });
+      }));
     } else {
       await sendMessage(conversation.channel, conversation.lineUserId, content);
-      message = await prisma.message.create({
+      message = flattenUpsellItem(await prisma.message.create({
         data: {
           conversationId: conversation.id,
           sender: 'agent',
@@ -284,7 +281,7 @@ router.post('/:conversationId', auth, async (req, res) => {
           read: true,
         },
         select: MESSAGE_SELECT,
-      });
+      }));
     }
 
     // From here on, the message is confirmed sent (real row exists, LINE push

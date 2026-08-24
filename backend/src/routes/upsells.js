@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { PrismaClient, Prisma } = require('@prisma/client');
+const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
@@ -65,6 +65,24 @@ router.post('/', auth, async (req, res) => {
 
   try {
     const submission = await prisma.$transaction(async (tx) => {
+      // The lock is "no other ACTIVE (pending/approved) claim on this
+      // message" — not "no UpsellSubmissionItem row at all." A rejected
+      // claim leaves its row in place as history (see schema.prisma), so an
+      // agent who picked the wrong message can redo it once it's rejected.
+      // Checked inside the transaction, right before the create below, to
+      // keep the race window as tight as possible (same residual risk as the
+      // unique-constraint approach this replaced: two agents claiming the
+      // exact same message in the same instant is vanishingly rare here).
+      const conflicts = await tx.upsellSubmissionItem.findFirst({
+        where: { messageId: { in: messageIds }, submission: { status: { not: 'rejected' } } },
+        select: { id: true },
+      });
+      if (conflicts) {
+        const err = new Error('ข้อความบางรายการถูกเลือกไปแล้ว');
+        err.isActiveClaimConflict = true;
+        throw err;
+      }
+
       const created = await tx.upsellSubmission.create({
         data: { conversationId, agentId: req.agent.id },
       });
@@ -86,12 +104,8 @@ router.post('/', auth, async (req, res) => {
 
     res.status(201).json(submission);
   } catch (err) {
-    // A unique-constraint violation on UpsellSubmissionItem.messageId means
-    // someone else claimed one of these messages in the moment between the
-    // findMany check above and this transaction — the whole transaction rolls
-    // back automatically, so there's no orphan UpsellSubmission row to clean up.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return res.status(409).json({ error: 'ข้อความบางรายการถูกเลือกไปแล้ว' });
+    if (err.isActiveClaimConflict) {
+      return res.status(409).json({ error: err.message });
     }
     console.error('Upsell submit failed:', err.message);
     res.status(500).json({ error: 'ไม่สามารถส่งรายการอัพเซลล์ได้' });

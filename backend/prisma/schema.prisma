@@ -320,7 +320,7 @@ model Message {
   lineMessageId  String?      @unique // LINE's own message id — used to reject duplicate webhook redeliveries
   createdAt      DateTime     @default(now())
   views          MessageView[]
-  upsellItem     UpsellSubmissionItem?
+  upsellItems    UpsellSubmissionItem[]
 
   // AI moderation result (see moderation.service.js) — only ever checked for
   // freely-typed agent text messages sent to a customer via the composer, and
@@ -399,15 +399,23 @@ model UpsellSubmission {
   @@index([status])
 }
 
-// One row per claimed message. messageId is unique across the whole table —
-// this is the actual lock, independent of which submission it ends up under.
+// One row per claimed message, one row per submission attempt (not
+// necessarily one per message anymore — see below). The exclusivity lock is
+// enforced in application code (POST /api/upsells in upsells.js), not by a DB
+// unique constraint on messageId: a message that was claimed and then
+// rejected must become claimable again (so an agent who picked the wrong
+// message can redo it), while a message still pending/approved must not be.
+// A plain @unique on messageId can't express "unique only among
+// pending/approved rows," so the rejected row is instead just left in place
+// as history and the new claim gets its own row.
 model UpsellSubmissionItem {
   id           String   @id @default(cuid())
   submissionId String
   submission   UpsellSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  messageId    String   @unique
+  messageId    String
   message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
 
   @@index([submissionId])
+  @@index([messageId])
 }
