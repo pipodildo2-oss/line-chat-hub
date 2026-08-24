@@ -98,13 +98,20 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/upsells/agents?from=&to= — admin overview, one row per agent who
-// has submitted. from/to (optional) scope every count to submissions
-// CREATED in that range — i.e. "upsells made during this period," which is
-// what a team target/leaderboard for a given day/month should reflect,
-// regardless of when each one happened to get reviewed.
+// GET /api/upsells/agents?from=&to=&includeAll= — admin overview, one row
+// per agent. from/to (optional) scope every count to submissions/messages
+// CREATED in that range — i.e. "activity during this period," which is what
+// a team target/leaderboard for a given day/month should reflect, regardless
+// of when a submission happened to get reviewed.
+//
+// By default only agents who have submitted at least one upsell are
+// returned (ตรวจสอบ/คะแนน — reviewing/scoring submitters). Pass
+// includeAll=1 to get every non-admin agent instead, even ones with zero
+// submissions — used by the "รายงาน" activity-vs-upsell comparison table,
+// where an agent who's busy in chat but has submitted NOTHING is exactly
+// the row a supervisor most needs to see, not one that should be hidden.
 router.get('/agents', auth, requireAdmin, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, includeAll } = req.query;
   const dateWhere = {};
   if (from || to) {
     dateWhere.createdAt = {};
@@ -112,12 +119,29 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
     if (to) dateWhere.createdAt.lte = dayEnd(to);
   }
 
-  const [agents, statusGroups, amountGroups] = await Promise.all([
+  // Messages sent + distinct conversations replied to in the same range —
+  // one raw query (senderId isn't otherwise groupable together with a
+  // distinct-conversation count via plain Prisma groupBy). Conditionally
+  // date-bounded the same way dateWhere is above, so omitting from/to still
+  // means "all time" for callers that rely on that (ตรวจสอบ's worklist).
+  const msgParams = [];
+  let msgDateSql = '';
+  if (from) { msgParams.push(dayStart(from)); msgDateSql += ` AND "createdAt" >= $${msgParams.length}`; }
+  if (to) { msgParams.push(dayEnd(to)); msgDateSql += ` AND "createdAt" <= $${msgParams.length}`; }
+
+  const [agents, statusGroups, amountGroups, activityRows] = await Promise.all([
     prisma.agent.findMany({
+      where: { role: 'agent' },
       select: { id: true, name: true, email: true, categoryId: true, category: { select: { id: true, name: true } } },
     }),
     prisma.upsellSubmission.groupBy({ by: ['agentId', 'status'], where: dateWhere, _count: { _all: true } }),
     prisma.upsellSubmission.groupBy({ by: ['agentId'], where: { ...dateWhere, status: 'approved' }, _sum: { amount: true } }),
+    prisma.$queryRawUnsafe(
+      `SELECT "senderId" as "agentId", COUNT(DISTINCT "conversationId")::int as "conversationsHandled", COUNT(*)::int as "messagesSent"
+       FROM "Message" WHERE sender = 'agent' AND "senderId" IS NOT NULL ${msgDateSql}
+       GROUP BY "senderId"`,
+      ...msgParams,
+    ),
   ]);
 
   const byAgent = {}; // agentId -> { total, pending, approved, rejected }
@@ -130,22 +154,27 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
   }
   const amountByAgent = {};
   for (const g of amountGroups) amountByAgent[g.agentId] = g._sum.amount || 0;
+  const activityByAgent = {};
+  for (const r of activityRows) activityByAgent[r.agentId] = r;
 
   const summary = agents
-    .filter(a => byAgent[a.id])
+    .filter(a => includeAll || byAgent[a.id])
     .map(a => ({
       id: a.id,
       name: a.name,
       email: a.email,
       categoryId: a.categoryId,
       categoryName: a.category?.name || null,
-      total: byAgent[a.id].total,
-      pending: byAgent[a.id].pending,
-      approved: byAgent[a.id].approved,
-      rejected: byAgent[a.id].rejected,
+      total: byAgent[a.id]?.total || 0,
+      pending: byAgent[a.id]?.pending || 0,
+      approved: byAgent[a.id]?.approved || 0,
+      rejected: byAgent[a.id]?.rejected || 0,
       approvedAmount: amountByAgent[a.id] || 0,
+      messagesSent: activityByAgent[a.id]?.messagesSent || 0,
+      conversationsHandled: activityByAgent[a.id]?.conversationsHandled || 0,
     }))
     // Worklist-first: agents with unreviewed submissions float to the top.
+    // (includeAll callers re-sort client-side, so this default doesn't matter to them.)
     .sort((x, y) => (y.pending - x.pending) || (y.total - x.total));
 
   res.json({ agents: summary });
