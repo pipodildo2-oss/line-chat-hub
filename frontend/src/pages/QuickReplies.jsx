@@ -354,9 +354,19 @@ function QuickReplyCatalog({ isAdmin, channels }) {
       {/* 2-5. รายการข้อความลัดในหมวดหมู่ที่เลือก */}
       {categoryId && (
         <div className="space-y-3">
-          <label className="text-xs font-medium text-slate-400 block">ข้อความลัดในหมวดหมู่นี้</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium text-slate-400">ข้อความลัดในหมวดหมู่นี้</label>
+            {!showAddQr && (
+              <button
+                onClick={() => setShowAddQr(true)}
+                className="flex items-center gap-1.5 text-sm text-aurora-teal font-medium border border-aurora-teal/40 rounded-lg px-3 py-1.5 hover:bg-aurora-teal/10 transition-colors"
+              >
+                <Plus size={14} /> {isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}
+              </button>
+            )}
+          </div>
 
-          {showAddQr ? (
+          {showAddQr && (
             <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
               <h3 className="font-medium text-slate-100">{isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}</h3>
               {!isAdmin && (
@@ -398,10 +408,6 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                 <button type="button" onClick={() => setShowAddQr(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
               </div>
             </form>
-          ) : (
-            <button onClick={() => setShowAddQr(true)} className="flex items-center gap-2 text-sm text-aurora-teal hover:brightness-110 font-medium">
-              <Plus size={18} /> {isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}
-            </button>
           )}
           {requestSubmitted && (
             <div className="bg-emerald-500/10 text-emerald-400 text-sm px-3 py-2 rounded-lg">ส่งคำขอแล้ว รอแอดมินอนุมัติ</div>
