@@ -355,46 +355,6 @@ function QuickReplyCatalog({ isAdmin, channels }) {
       {categoryId && (
         <div className="space-y-3">
           <label className="text-xs font-medium text-slate-400 block">ข้อความลัดในหมวดหมู่นี้</label>
-          {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
-          {!loadingReplies && quickReplies.map((qr, i) => (
-            <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
-              {isAdmin && (
-                <div className="flex flex-col flex-shrink-0 -my-1">
-                  <button
-                    onClick={() => moveQuickReply(qr.id, 'up')}
-                    disabled={i === 0}
-                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    onClick={() => moveQuickReply(qr.id, 'down')}
-                    disabled={i === quickReplies.length - 1}
-                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </div>
-              )}
-              {qr.hasImage && (
-                <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
-                </div>
-                <p className="text-sm text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
-              </div>
-              {isAdmin && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => setEditTarget(qr)} className="text-slate-500 hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
-                  <button onClick={() => deleteQuickReply(qr.id)} className="text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
-                </div>
-              )}
-            </div>
-          ))}
-          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
 
           {showAddQr ? (
             <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
@@ -446,6 +406,47 @@ function QuickReplyCatalog({ isAdmin, channels }) {
           {requestSubmitted && (
             <div className="bg-emerald-500/10 text-emerald-400 text-sm px-3 py-2 rounded-lg">ส่งคำขอแล้ว รอแอดมินอนุมัติ</div>
           )}
+
+          {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
+          {!loadingReplies && quickReplies.map((qr, i) => (
+            <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
+              {isAdmin && (
+                <div className="flex flex-col flex-shrink-0 -my-1">
+                  <button
+                    onClick={() => moveQuickReply(qr.id, 'up')}
+                    disabled={i === 0}
+                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    onClick={() => moveQuickReply(qr.id, 'down')}
+                    disabled={i === quickReplies.length - 1}
+                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              )}
+              {qr.hasImage && (
+                <img src={`/api/quick-replies/${qr.id}/image`} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-800" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
+                </div>
+                <p className="text-sm text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => setEditTarget(qr)} className="text-slate-500 hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
+                  <button onClick={() => deleteQuickReply(qr.id)} className="text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
+                </div>
+              )}
+            </div>
+          ))}
+          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
         </div>
       )}
 
