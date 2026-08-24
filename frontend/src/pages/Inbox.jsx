@@ -462,7 +462,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
-        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-cyan text-white rounded-tr-sm'}`}>
+        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-aurora-teal text-white rounded-tr-sm'}`}>
           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
           {timeLabel}
         </div>
