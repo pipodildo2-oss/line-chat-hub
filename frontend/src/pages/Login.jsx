@@ -45,7 +45,7 @@ export default function Login() {
       <div className="relative w-full max-w-sm mx-4">
         <div className="backdrop-blur-xl bg-white/[0.04] border border-white/10 rounded-2xl shadow-2xl shadow-black/40 p-8">
           <div className="flex items-center gap-3 mb-8">
-            <img src="/logo.png" alt="Alpha" className="w-11 h-11 rounded-xl shadow-lg shadow-aurora-teal/20" />
+            <img src="/logo.png" alt="Alpha" className="w-14 h-14 rounded-xl shadow-lg shadow-aurora-teal/20" />
             <div>
               <h1 className="font-brand font-semibold text-white text-xl leading-tight tracking-tight">Alpha Chat</h1>
               <p className="text-white/40 text-xs">By BBB888</p>
