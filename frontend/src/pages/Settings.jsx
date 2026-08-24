@@ -344,7 +344,7 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
         </div>
       </div>
       <div className="flex items-center gap-1.5 mt-3">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/20 text-violet-300' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-tealDeep/20 text-aurora-cyan' : 'bg-aurora-teal/15 text-aurora-teal'}`}>
           {a.role === 'admin' ? 'Admin' : 'Agent'}
         </span>
         {isMe && (
@@ -894,7 +894,7 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowAddChannelCategoryGroup(v => !v)}
-                  className="text-xs text-violet-300 font-medium flex items-center gap-1 hover:brightness-110"
+                  className="text-xs text-aurora-cyan font-medium flex items-center gap-1 hover:brightness-110"
                 >
                   <Plus size={12} /> เพิ่มหมวดหมู่ใหญ่
                 </button>
@@ -1065,7 +1065,7 @@ export default function Settings() {
             </div>
             <div className="rounded-xl border border-aurora-purple/25 bg-aurora-purple/10 px-4 py-2.5 min-w-[88px]">
               <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
-              <p className="text-[11px] text-violet-300 font-medium mt-0.5">แอดมิน</p>
+              <p className="text-[11px] text-aurora-cyan font-medium mt-0.5">แอดมิน</p>
             </div>
             <div className="rounded-xl border border-aurora-teal/25 bg-aurora-teal/10 px-4 py-2.5 min-w-[88px]">
               <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>

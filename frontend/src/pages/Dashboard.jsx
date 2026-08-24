@@ -117,7 +117,7 @@ export default function Dashboard() {
           caption/label text spells this out so it doesn't read as a bug. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon={MessageSquare} label={t('dashboard_total_conversations')} value={data.totalConversations} color="bg-gradient-to-br from-aurora-teal to-aurora-purple" caption="ข้อมูลปัจจุบันทั้งหมด ไม่ขึ้นกับช่วงเวลาที่เลือก" />
-        <StatCard icon={Clock} label={t('dashboard_open')} value={data.openConversations} color="bg-aurora-purple" caption="ข้อมูลปัจจุบัน" />
+        <StatCard icon={Clock} label={t('dashboard_open')} value={data.openConversations} color="bg-aurora-tealDeep" caption="ข้อมูลปัจจุบัน" />
         <StatCard icon={CheckCircle} label={t('dashboard_closed')} value={data.closedConversations} color="bg-gray-400 dark:bg-slate-600" caption="ข้อมูลปัจจุบัน" />
         <StatCard icon={Users} label={`${t('dashboard_new_conversations')} (${rangeLabel})`} value={data.newConversations} color="bg-amber-500" />
       </div>
@@ -135,7 +135,7 @@ export default function Dashboard() {
                 contentStyle={isDark ? { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' } : undefined}
                 labelStyle={isDark ? { color: '#e2e8f0' } : undefined}
               />
-              <Bar dataKey="messages" fill="#18D6C8" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="messages" fill="#005BFF" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

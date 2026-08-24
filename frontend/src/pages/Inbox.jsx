@@ -462,7 +462,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
-        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-purple text-white rounded-tr-sm'}`}>
+        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-gradient-to-br from-aurora-tealDeep to-aurora-cyan text-white rounded-tr-sm'}`}>
           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
           {timeLabel}
         </div>
@@ -1761,7 +1761,7 @@ export default function Inbox() {
                 it to the composer below rather than sending it immediately. */}
             <div
               ref={messageListRef}
-              className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-midnight relative"
+              className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-navy relative"
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
               onDrop={e => {
@@ -2023,7 +2023,7 @@ export default function Inbox() {
           )}
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-600 bg-gray-50 dark:bg-aurora-midnight">
+        <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-600 bg-gray-50 dark:bg-aurora-navy">
           <div className="text-center">
             <div className="text-5xl mb-3">💬</div>
             <p>เลือกการสนทนาเพื่อเริ่มต้น</p>

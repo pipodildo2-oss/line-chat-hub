@@ -5,7 +5,7 @@ import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquare
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
-import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS } from '../lib/constants';
+import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS, STATUS_DOT_COLORS } from '../lib/constants';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -471,7 +471,7 @@ function ConductRow({ a, onClick }) {
         </div>
       </td>
       <td className="px-4 py-2.5">
-        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-purple/15 text-violet-500 dark:text-violet-300' : 'bg-aurora-teal/15 text-aurora-tealDeep dark:text-aurora-teal'}`}>
+        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${a.role === 'admin' ? 'bg-aurora-tealDeep/15 text-aurora-tealDeep dark:text-aurora-cyan' : 'bg-aurora-teal/15 text-aurora-tealDeep dark:text-aurora-teal'}`}>
           {ROLE_LABEL[a.role] || a.role}
         </span>
       </td>
@@ -1903,7 +1903,8 @@ function CustomerFollowupPage() {
                       {c.agent?.category?.name && <span className="block text-[11px] text-gray-400 dark:text-slate-500">{c.agent.category.name}</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
+                      <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[c.status] || 'bg-gray-400'}`} />
                         {c.status === 'open' ? 'เปิด' : c.status === 'pending' ? 'รอ' : 'ปิด'}
                       </span>
                     </td>

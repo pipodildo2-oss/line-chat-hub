@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Contact, Search, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { STATUS_COLORS } from '../lib/constants';
+import { STATUS_COLORS, STATUS_DOT_COLORS } from '../lib/constants';
 
 const STATUS_TABS = [
   { key: '', label: 'ทั้งหมด' },
@@ -252,7 +252,8 @@ export default function Customers() {
                     </td>
                     <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{c.channel?.name}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
+                      <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[c.status] || 'bg-gray-400'}`} />
                         {STATUS_LABEL[c.status] || c.status}
                       </span>
                     </td>

@@ -85,7 +85,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative mt-1 bg-gradient-to-r from-aurora-tealDeep to-aurora-purple text-white rounded-lg py-2.5 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-aurora-teal/20"
+              className="group relative mt-1 bg-gradient-to-r from-aurora-tealDeep to-aurora-cyan text-white rounded-lg py-2.5 text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-aurora-teal/20"
             >
               {loading ? 'กำลังเข้าสู่ระบบ...' : (
                 <>เข้าสู่ระบบ <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" /></>

@@ -17,4 +17,13 @@ export const STATUS_COLORS = {
   closed: 'bg-gray-100 text-gray-600',
 };
 
-export const TAG_COLOR_PRESETS = ['#18D6C8', '#7CFF6B', '#3d276f', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444', '#64748b'];
+// Leading-dot color for the same open/pending/closed badges above — a small
+// solid circle before the label, same convention as the online/break/offline
+// status dot in Sidebar.jsx.
+export const STATUS_DOT_COLORS = {
+  open: 'bg-emerald-500',
+  pending: 'bg-amber-500',
+  closed: 'bg-gray-400',
+};
+
+export const TAG_COLOR_PRESETS = ['#005BFF', '#7CFF6B', '#7EC7FF', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444', '#64748b'];
