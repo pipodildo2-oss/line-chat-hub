@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Send, Sparkles, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
+import { Send, UserCheck, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, CheckCheck, Pencil, Zap, ImagePlus, Smile, Loader2, Wallet } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -934,7 +934,6 @@ export default function Inbox() {
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [suggestion, setSuggestion] = useState('');
   const [agents, setAgents] = useState([]);
   const [channels, setChannels] = useState([]);
   const [tags, setTags] = useState([]);
@@ -1196,7 +1195,6 @@ export default function Inbox() {
         setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, _count: { ...c._count, messages: 0 } } : c));
       }
     });
-    setSuggestion('');
     socket?.emit('join', selected.id);
     return () => socket?.emit('leave', selected.id);
   }, [selected?.id, socket]);
@@ -1514,7 +1512,6 @@ export default function Inbox() {
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
         setInput('');
       }
-      setSuggestion('');
     } catch (err) {
       // `uncertain` (backend flag, set when it gave up waiting on LINE — see
       // line.service.js's SendTimeoutError) or no response at all (our own
@@ -1563,11 +1560,6 @@ export default function Inbox() {
       setShowUpsellConfirm(false);
       exitUpsellMode();
     }
-  }
-
-  async function getSuggestion() {
-    const { data } = await axios.get(`/api/messages/${selected.id}/suggest`);
-    setSuggestion(data.suggestion || '');
   }
 
   async function sendQuickReply(quickReplyId) {
@@ -1885,16 +1877,6 @@ export default function Inbox() {
               </div>
             )}
 
-            {/* AI suggestion */}
-            {suggestion && (
-              <div className="bg-gradient-to-r from-aurora-teal/10 to-aurora-purple/10 border-t border-aurora-teal/20 px-4 py-2 flex items-center gap-2">
-                <Sparkles size={14} className="text-aurora-teal flex-shrink-0" />
-                <span className="text-sm text-aurora-teal flex-1">{suggestion}</span>
-                <button onClick={() => { setInput(suggestion); setSuggestion(''); }} className="text-xs bg-gradient-to-r from-aurora-teal to-aurora-purple text-white px-2 py-1 rounded hover:brightness-110">ใช้</button>
-                <button onClick={() => setSuggestion('')}><X size={14} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300" /></button>
-              </div>
-            )}
-
             {/* Typing indicator for the currently open chat */}
             {typingMap[selected.id] && (
               <div className="bg-aurora-teal/10 border-t border-aurora-teal/20 px-4 py-1.5 text-xs text-aurora-tealDeep dark:text-aurora-teal font-medium">
@@ -1993,37 +1975,10 @@ export default function Inbox() {
                     }}
                   />
                   <div className="flex items-center justify-between px-3 pb-2 pt-0.5">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setShowEmojiPicker(v => !v)}
-                          title="อิโมจิ"
-                          className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-                        >
-                          <Smile size={19} />
-                        </button>
-                        {showEmojiPicker && (
-                          <EmojiPicker onPick={insertEmoji} onClose={() => setShowEmojiPicker(false)} />
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setShowQrPicker(v => !v)}
-                        title="ข้อความลัด"
-                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${showQrPicker ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
-                      >
-                        <Zap size={19} />
-                      </button>
-                      <button
-                        onClick={getSuggestion}
-                        title="AI suggest reply"
-                        className="inline-flex items-center justify-center w-5 h-5 text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep transition-colors flex-shrink-0"
-                      >
-                        <Sparkles size={19} />
-                      </button>
+                    <div className="flex items-center gap-1.5">
                       <label
                         title="แนบรูปภาพ"
-                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 cursor-pointer ${pendingImage ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 cursor-pointer text-sky-500 dark:text-sky-400 ${pendingImage ? 'bg-sky-500/15' : 'hover:bg-sky-500/10'}`}
                       >
                         <ImagePlus size={19} />
                         <input
@@ -2037,10 +1992,30 @@ export default function Inbox() {
                         />
                       </label>
                       <button
+                        onClick={() => setShowQrPicker(v => !v)}
+                        title="ข้อความลัด"
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 text-aurora-teal ${showQrPicker ? 'bg-aurora-teal/15' : 'hover:bg-aurora-teal/10'}`}
+                      >
+                        <Zap size={19} />
+                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker(v => !v)}
+                          title="อิโมจิ"
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 text-amber-500 dark:text-amber-400 ${showEmojiPicker ? 'bg-amber-500/15' : 'hover:bg-amber-500/10'}`}
+                        >
+                          <Smile size={19} />
+                        </button>
+                        {showEmojiPicker && (
+                          <EmojiPicker onPick={insertEmoji} onClose={() => setShowEmojiPicker(false)} />
+                        )}
+                      </div>
+                      <button
                         type="button"
                         onClick={() => { setUpsellMode(v => !v); setSelectedUpsellIds(new Set()); }}
                         title="เครื่องมืออัพเซลล์"
-                        className={`inline-flex items-center justify-center w-5 h-5 transition-colors flex-shrink-0 ${upsellMode ? 'text-aurora-tealDeep' : 'text-gray-400 dark:text-slate-500 hover:text-aurora-tealDeep'}`}
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 text-emerald-500 dark:text-emerald-400 ${upsellMode ? 'bg-emerald-500/15' : 'hover:bg-emerald-500/10'}`}
                       >
                         <Wallet size={19} />
                       </button>
