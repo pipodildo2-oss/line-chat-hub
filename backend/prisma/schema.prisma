@@ -33,6 +33,7 @@ model Agent {
   quickReplyRequests QuickReplyRequest[] @relation("QuickReplyRequester")
   quickReplyReviews  QuickReplyRequest[] @relation("QuickReplyReviewer")
   quickReplyAuditLogs QuickReplyAuditLog[]
+  conversationNotes ConversationNote[]
 
   @@index([categoryId])
 }
@@ -217,6 +218,22 @@ model ConversationTag {
   @@index([tagId])
 }
 
+// One row per note an agent adds about a customer via the CustomerPanel —
+// replaces the old single free-text Conversation.notes field so notes can
+// accumulate over time (each kept as its own short, timestamped entry)
+// instead of being one ever-growing block of text.
+model ConversationNote {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  content        String
+  agentId        String?
+  agent          Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
 model Conversation {
   id          String      @id @default(cuid())
   lineUserId  String
@@ -229,7 +246,13 @@ model Conversation {
   agent       Agent?      @relation(fields: [agentId], references: [id])
   status      String      @default("open") // open | pending | closed
   lifecycleStage String   @default("new") // new | contacted | qualified | negotiation | won | lost
+  // Legacy single free-text note — superseded by noteEntries below (an
+  // agent can now add multiple, timestamped notes instead of one block of
+  // text). Left in place, unused by the UI going forward, so no historical
+  // note is lost; any pre-existing value here is migrated into a first
+  // ConversationNote row by seed.js's one-time backfill.
   notes       String?
+  noteEntries ConversationNote[]
   // LINE gives us NO error when pushing a message to a user who has blocked
   // the OA (200 OK, message just silently never arrives) — the 'unfollow'
   // webhook event is the only real signal, so this flag is set from there

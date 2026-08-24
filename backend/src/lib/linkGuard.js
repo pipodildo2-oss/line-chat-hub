@@ -20,25 +20,46 @@ function extractHost(rawMatch) {
     .toLowerCase();
 }
 
-// The label before the domain's first dot — e.g. "money87" for both
-// "money87.com" and "money87.co.th". Used below to treat different
-// TLD/suffix variants of the same registered name as equivalent, per an
-// explicit admin request: a business that owns money87.com but not every
-// other TLD of the same name (money87.co.th, .net, ...) doesn't want each
-// variant separately whitelisted.
-function firstLabel(domain) {
-  return domain.split('.')[0];
+// Public suffixes that are two labels long ("co.th") rather than one
+// ("com") — needed so registrableName (below) strips the WHOLE suffix, not
+// just the last label, for these. A short, hand-picked list scoped to what's
+// realistic in this app's Thai-business context rather than a full
+// public-suffix-list dependency.
+const TWO_LABEL_SUFFIXES = new Set([
+  'co.th', 'or.th', 'ac.th', 'in.th', 'go.th', 'mi.th', 'net.th',
+  'co.uk', 'co.jp', 'co.kr', 'co.nz', 'co.id', 'com.au', 'com.sg',
+]);
+
+// The name a domain is actually "sold under" — e.g. "sure87" for
+// "sure87.com", "sure87.co.th", and "m.sure87.com" alike (a subdomain
+// prefix or a different TLD/suffix don't change whose name it is). Used
+// below to treat all of those as the same registered name, per an explicit
+// admin request: a business that owns sure87.com but not every other
+// TLD/subdomain of the same name doesn't want each variant separately
+// whitelisted.
+//
+// Deliberately NOT just labels[0] — that would also match
+// "sure87.fakesite.com" (where "sure87" is merely a subdomain of the
+// unrelated domain "fakesite.com"), which is exactly the spoofing case this
+// needs to keep rejecting. Taking the label immediately before the public
+// suffix instead of the first label avoids that: for "m.sure87.com" that's
+// "sure87" (correct), for "sure87.fakesite.com" that's "fakesite" (correctly
+// NOT a match).
+function registrableName(domain) {
+  const labels = domain.split('.');
+  if (labels.length < 2) return labels[0];
+  const suffixLabelCount = TWO_LABEL_SUFFIXES.has(labels.slice(-2).join('.')) ? 2 : 1;
+  const idx = labels.length - suffixLabelCount - 1;
+  return idx >= 0 ? labels[idx] : labels[0];
 }
 
 // approvedDomains already lowercased, no protocol/www (see approvedLinks.js,
-// which normalizes on save). A host matches an approved domain if any of:
-//  - exactly equal, or
-//  - a subdomain of it ("promo.mysite.com" when "mysite.com" is approved —
-//    "notmysite.com", no dot boundary, still isn't), or
-//  - same first label regardless of what follows the first dot
-//    ("money87.co.th" when "money87.com" is approved).
+// which normalizes on save). A host matches an approved domain if they share
+// the same registrable name — this alone covers exact matches, subdomains
+// ("m.sure87.com"), different TLDs ("sure87.co.th"), and both combined
+// ("m.sure87.co.th") for an approved "sure87.com".
 function isApprovedHost(host, approvedDomains) {
-  return approvedDomains.some(d => host === d || host.endsWith(`.${d}`) || firstLabel(host) === firstLabel(d));
+  return approvedDomains.some(d => registrableName(host) === registrableName(d));
 }
 
 // Returns the first unauthorized link found in `text`, or null if every

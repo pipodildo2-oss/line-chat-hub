@@ -33,6 +33,25 @@ async function main() {
   });
   if (spamBackfill.count > 0) console.log(`Reclassified ${spamBackfill.count} old spam-flagged message(s) into the "spam" category.`);
 
+  // One-time backfill: migrate the old single free-text Conversation.notes
+  // field into the new multi-entry ConversationNote model (see
+  // schema.prisma) so no existing note is lost when the UI switches from
+  // "one note box" to "add notes over time". Only touches conversations that
+  // still have a legacy note AND no ConversationNote rows yet — already
+  // migrated (or one that got its first note added via the new UI) no
+  // longer matches, so this is a no-op after the first successful run.
+  const legacyNotesConvs = await prisma.conversation.findMany({
+    where: { notes: { not: null }, noteEntries: { none: {} } },
+    select: { id: true, notes: true },
+  });
+  const toMigrate = legacyNotesConvs.filter(c => c.notes && c.notes.trim());
+  if (toMigrate.length > 0) {
+    await prisma.conversationNote.createMany({
+      data: toMigrate.map(c => ({ conversationId: c.id, content: c.notes.trim() })),
+    });
+    console.log(`Migrated ${toMigrate.length} legacy conversation note(s) into ConversationNote rows.`);
+  }
+
   console.log('Seed complete. Login: admin@example.com / admin1234');
 }
 

@@ -232,4 +232,43 @@ router.patch('/:id', auth, async (req, res) => {
   }
 });
 
+// GET /api/conversations/:id/notes — timestamped note log for the customer
+// panel (replaces the old single Conversation.notes free-text field, see
+// schema.prisma). Newest first, so the latest context is what an agent sees
+// without scrolling.
+router.get('/:id/notes', auth, async (req, res) => {
+  const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!(await canAccessChannel(req.agent, existing.channelId))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const notes = await prisma.conversationNote.findMany({
+    where: { conversationId: req.params.id },
+    select: { id: true, content: true, createdAt: true, agent: { select: { id: true, name: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(notes);
+});
+
+// POST /api/conversations/:id/notes — append a new note. Notes are an
+// append-only log (no edit/delete), same spirit as the audit-trail-style
+// records elsewhere in this app.
+router.post('/:id/notes', auth, async (req, res) => {
+  const content = req.body.content?.trim();
+  if (!content) return res.status(400).json({ error: 'กรุณากรอกข้อความ' });
+
+  const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!(await canAccessChannel(req.agent, existing.channelId))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const note = await prisma.conversationNote.create({
+    data: { conversationId: req.params.id, content, agentId: req.agent.id },
+    select: { id: true, content: true, createdAt: true, agent: { select: { id: true, name: true } } },
+  });
+  emitToAll('conversation_note_added', { conversationId: req.params.id, note });
+  res.status(201).json(note);
+});
+
 module.exports = router;

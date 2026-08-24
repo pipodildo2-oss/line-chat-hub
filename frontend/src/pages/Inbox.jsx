@@ -684,12 +684,43 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
 
 function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTag, onClose, isAdmin }) {
   const [name, setName] = useState(conv.displayName || '');
-  const [notes, setNotes] = useState(conv.notes || '');
   const [cautionReason, setCautionReason] = useState(conv.cautionReason || '');
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+  const [noteEntries, setNoteEntries] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+  const { socket } = useSocket();
 
-  useEffect(() => { setName(conv.displayName || ''); setNotes(conv.notes || ''); setCautionReason(conv.cautionReason || ''); }, [conv.id]);
+  useEffect(() => { setName(conv.displayName || ''); setCautionReason(conv.cautionReason || ''); }, [conv.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get(`/api/conversations/${conv.id}/notes`).then(r => { if (!cancelled) setNoteEntries(r.data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [conv.id]);
+
+  useEffect(() => {
+    if (!socket) return;
+    function onNoteAdded({ conversationId, note }) {
+      if (conversationId !== conv.id) return;
+      setNoteEntries(prev => (prev.some(n => n.id === note.id) ? prev : [note, ...prev]));
+    }
+    socket.on('conversation_note_added', onNoteAdded);
+    return () => socket.off('conversation_note_added', onNoteAdded);
+  }, [socket, conv.id]);
+
+  async function addNote() {
+    const content = newNote.trim();
+    if (!content || addingNote) return;
+    setAddingNote(true);
+    try {
+      const { data } = await axios.post(`/api/conversations/${conv.id}/notes`, { content });
+      setNoteEntries(prev => (prev.some(n => n.id === data.id) ? prev : [data, ...prev]));
+      setNewNote('');
+    } catch { /* ignore */ }
+    setAddingNote(false);
+  }
 
   const assignedTagIds = new Set((conv.tags || []).map(t => t.tagId));
   const availableTags = tags.filter(t => !assignedTagIds.has(t.id));
@@ -821,14 +852,38 @@ function CustomerPanel({ conv, tags, onUpdate, onAddTag, onRemoveTag, onCreateTa
 
       <div className="p-4 flex-1">
         <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">โน้ต</label>
-        <textarea
-          className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
-          rows={6}
-          placeholder="บันทึกรายละเอียดเกี่ยวกับลูกค้า..."
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          onBlur={() => notes !== (conv.notes || '') && onUpdate({ notes })}
-        />
+        <div className="flex gap-1.5 mb-2">
+          <textarea
+            className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+            rows={2}
+            placeholder="เพิ่มโน้ตใหม่..."
+            value={newNote}
+            onChange={e => setNewNote(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); }
+            }}
+          />
+          <button
+            onClick={addNote}
+            disabled={!newNote.trim() || addingNote}
+            title="เพิ่มโน้ต"
+            className="flex-shrink-0 self-end w-8 h-8 rounded-lg bg-aurora-tealDeep text-white flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          {noteEntries.length === 0 && <p className="text-xs text-gray-300 dark:text-slate-600">ยังไม่มีโน้ต</p>}
+          {noteEntries.map(n => (
+            <div key={n.id} className="border border-gray-100 dark:border-slate-800 rounded-lg px-2.5 py-1.5 bg-gray-50 dark:bg-slate-800/50">
+              <p className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words">{n.content}</p>
+              <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
+                {n.agent?.name ? `${n.agent.name} · ` : ''}
+                {new Date(n.createdAt).toLocaleString('th', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
