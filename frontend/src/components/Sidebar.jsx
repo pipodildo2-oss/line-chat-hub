@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2 } from 'lucide-react';
@@ -26,7 +26,7 @@ export default function Sidebar() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const status = agent?.status || 'online';
-  const { socket } = useSocket();
+  const { socket, connected } = useSocket();
   // "Things needing MY action" on quick-reply requests — admins count pending
   // (awaiting their review), agents count needs_revision (awaiting their own
   // fix + resubmit). Kept live via socket events rather than polling.
@@ -72,22 +72,36 @@ export default function Sidebar() {
     };
   }, [socket, isAdmin, agent?.id]);
 
-  // (Re)seeds the open set (and myChannelIds) from the server whenever the
-  // agent, or the channel filter, changes — the incremental socket handler
-  // below then takes over keeping openConvIds current from this point on.
-  useEffect(() => {
+  // (Re)seeds the open set (and myChannelIds) from the server — the
+  // incremental socket handler below then takes over keeping openConvIds
+  // current from this point on.
+  const fetchOpenCount = useCallback(() => {
     if (!agent?.id) return;
-    let cancelled = false;
     const params = filterChannelIds.length > 0 ? { channelIds: filterChannelIds.join(',') } : {};
     axios.get('/api/conversations/open-count', { params })
       .then(r => {
-        if (cancelled) return;
         setOpenConvIds(new Set(r.data.ids));
         setMyChannelIds(r.data.myChannelIds ? new Set(r.data.myChannelIds) : null);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
   }, [agent?.id, filterChannelIds]);
+
+  // Runs on mount, and whenever the agent or the channel filter changes.
+  useEffect(() => { fetchOpenCount(); }, [fetchOpenCount]);
+
+  // Also re-seeds whenever the socket reconnects (network blip, a
+  // backgrounded/throttled tab, a backend redeploy) — the incremental
+  // handler below can only apply deltas from events it actually receives, so
+  // any 'conversation_updated' that fired while disconnected is gone for
+  // good and the count quietly drifts until something re-fetches the full
+  // set. Inbox.jsx closes the same gap for its own list the same way (see
+  // the reconnect effect there); without this, the badge only ever
+  // recovers on a full page reload.
+  const prevConnectedRef = useRef(connected);
+  useEffect(() => {
+    if (connected && !prevConnectedRef.current) fetchOpenCount();
+    prevConnectedRef.current = connected;
+  }, [connected, fetchOpenCount]);
 
   useEffect(() => {
     if (!socket || myChannelIds === undefined) return;
