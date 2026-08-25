@@ -1656,9 +1656,15 @@ export default function Inbox() {
         // the filter (e.g. someone else closed it while filtered to "เปิด")
         // shouldn't linger in it either.
         if (!matches) return idx === -1 ? prev : prev.filter(c => c.id !== conv.id);
-        if (idx === -1) return [conv, ...prev];
-        const next = [...prev];
-        next[idx] = { ...next[idx], ...conv };
+        // A brand-new conversation (idx === -1, e.g. a customer's very first
+        // message) used to just get prepended here with no re-sort — under
+        // "เก่าสุด → ใหม่สุด" that put it at the top of the list for a moment
+        // (visibly wrong — it's the newest one, it belongs at the bottom)
+        // until some later event happened to trigger a re-sort. Always
+        // sorting below, for both the insert and update paths, means a new
+        // conversation lands in its correct position immediately.
+        const next = idx === -1 ? [conv, ...prev] : [...prev];
+        if (idx !== -1) next[idx] = { ...next[idx], ...conv };
         // dir=-1 (newest first, the default) must produce a DESCENDING sort, i.e.
         // compare as (b - a). The previous version compared (b - a) but then
         // multiplied by -1 for the "newest" case, which is actually the formula
