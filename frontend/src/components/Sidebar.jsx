@@ -42,12 +42,12 @@ export default function Sidebar() {
   const [openConvIds, setOpenConvIds] = useState(() => new Set());
   const openConvCount = openConvIds.size;
   // Which channels THIS agent can see at all (independent of the Inbox
-  // filter below) — /api/channels already applies the same restriction
-  // GET /api/conversations does, so this just mirrors that. Needed so the
-  // incremental socket handler can tell whether an update is even relevant
-  // to this agent (emitToAll broadcasts every conversation update to every
-  // connected client, restricted or not).
-  const [myChannelIds, setMyChannelIds] = useState(null);
+  // filter below) — rides along on the /api/conversations/open-count
+  // response (see there), rather than a separate /api/channels request, so
+  // there's only one thing that has to succeed for the live-update listener
+  // below to attach. undefined = not loaded yet (listener stays off), null =
+  // unrestricted (sees every channel), Set = restricted to those ids.
+  const [myChannelIds, setMyChannelIds] = useState(undefined);
   // The LINE channel(s) currently selected in the Inbox filter (empty =
   // every channel the agent can see) — shared via context since Sidebar and
   // the Inbox page are siblings under Layout, not parent/child (see
@@ -72,28 +72,28 @@ export default function Sidebar() {
     };
   }, [socket, isAdmin, agent?.id]);
 
-  useEffect(() => {
-    if (!agent?.id) return;
-    axios.get('/api/channels').then(r => setMyChannelIds(new Set(r.data.map(c => c.id)))).catch(() => {});
-  }, [agent?.id]);
-
-  // (Re)seeds the open set from the server whenever the agent, or the
-  // channel filter, changes — the incremental socket handler below then
-  // takes over keeping it current from this point on.
+  // (Re)seeds the open set (and myChannelIds) from the server whenever the
+  // agent, or the channel filter, changes — the incremental socket handler
+  // below then takes over keeping openConvIds current from this point on.
   useEffect(() => {
     if (!agent?.id) return;
     let cancelled = false;
     const params = filterChannelIds.length > 0 ? { channelIds: filterChannelIds.join(',') } : {};
     axios.get('/api/conversations/open-count', { params })
-      .then(r => { if (!cancelled) setOpenConvIds(new Set(r.data.ids)); })
+      .then(r => {
+        if (cancelled) return;
+        setOpenConvIds(new Set(r.data.ids));
+        setMyChannelIds(r.data.myChannelIds ? new Set(r.data.myChannelIds) : null);
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [agent?.id, filterChannelIds]);
 
   useEffect(() => {
-    if (!socket || !myChannelIds) return;
+    if (!socket || myChannelIds === undefined) return;
     function onConversationUpdated(conv) {
-      const inScope = myChannelIds.has(conv.channelId) && (filterChannelIds.length === 0 || filterChannelIds.includes(conv.channelId));
+      const inScope = (myChannelIds === null || myChannelIds.has(conv.channelId))
+        && (filterChannelIds.length === 0 || filterChannelIds.includes(conv.channelId));
       const shouldCount = conv.status === 'open' && inScope;
       setOpenConvIds(prev => {
         if (shouldCount === prev.has(conv.id)) return prev; // no change — same Set reference, no re-render

@@ -125,7 +125,7 @@ router.get('/open-count', auth, async (req, res) => {
   if (visibleChannelIds) {
     if (selectedChannelIds.length > 0) {
       const allowed = selectedChannelIds.filter(id => visibleChannelIds.includes(id));
-      if (allowed.length === 0) return res.json({ ids: [] });
+      if (allowed.length === 0) return res.json({ ids: [], myChannelIds: visibleChannelIds });
       where.channelId = { in: allowed };
     } else {
       where.channelId = { in: visibleChannelIds };
@@ -133,7 +133,13 @@ router.get('/open-count', auth, async (req, res) => {
   }
 
   const rows = await prisma.conversation.findMany({ where, select: { id: true } });
-  res.json({ ids: rows.map(r => r.id) });
+  // myChannelIds (null = unrestricted, sees every channel) rides along on
+  // this same response so the frontend's incremental socket handler can
+  // filter out-of-scope updates without a second, separate request — see
+  // Sidebar.jsx (a previous version fetched /api/channels independently for
+  // this, which meant the live-update listener silently never attached at
+  // all if that second request happened to fail).
+  res.json({ ids: rows.map(r => r.id), myChannelIds: visibleChannelIds });
 });
 
 // GET /api/conversations/summary — aggregate counts for the Customers directory
