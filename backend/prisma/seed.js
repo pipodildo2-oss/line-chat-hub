@@ -72,6 +72,19 @@ async function main() {
   const recoveredLinkIds = await recoverLinkFlagsMissedByTldAllowlistBug(prisma);
   if (recoveredLinkIds.length > 0) console.log(`Recovered ${recoveredLinkIds.length} link flag(s) wrongly cleared by the TLD-allowlist bug.`);
 
+  // One-time backfill: lineDisplayName (see schema.prisma) is new — for any
+  // conversation that's never been renamed by an agent, displayName already
+  // holds the real LINE name, so it's safe to copy straight across. A
+  // conversation that WAS already renamed before this field existed has no
+  // recoverable original name (never stored anywhere) — left null here;
+  // it'll start being tracked from that customer's next message onward (see
+  // line.service.js). Only touches rows with no value yet, so this is a
+  // no-op after the first successful run.
+  const lineNameBackfill = await prisma.$executeRawUnsafe(
+    `UPDATE "Conversation" SET "lineDisplayName" = "displayName" WHERE "displayNameCustomized" = false AND "lineDisplayName" IS NULL AND "displayName" IS NOT NULL`
+  );
+  if (lineNameBackfill > 0) console.log(`Backfilled lineDisplayName for ${lineNameBackfill} conversation(s).`);
+
   console.log('Seed complete. Login: admin@example.com / admin1234');
 }
 

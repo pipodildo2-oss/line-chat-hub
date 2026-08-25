@@ -240,6 +240,15 @@ model Conversation {
   lineUserId  String
   displayName String?
   displayNameCustomized Boolean @default(false) // true once an agent manually renames the customer — stops incoming messages from reverting it to LINE's profile name
+  // The customer's actual LINE profile name, kept in sync from every incoming
+  // webhook message REGARDLESS of displayNameCustomized (unlike displayName
+  // above, which stops following LINE once an agent renames the customer) —
+  // exists so search can still find someone by their real LINE name even
+  // after they've been renamed in the Inbox. Null for a conversation that
+  // was already renamed before this field existed and hasn't messaged again
+  // since (the original name was never stored anywhere and can't be
+  // recovered) — see seed.js's one-time backfill for everyone else.
+  lineDisplayName String?
   pictureUrl  String?
   channelId   String
   channel     LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)

@@ -139,8 +139,13 @@ async function processLineEvent(channel, event) {
       where: { lineUserId_channelId: { lineUserId, channelId: channel.id } },
       update: {
         // Don't clobber a name an agent set by hand — only sync LINE's profile
-        // name in if nobody has customized it for this conversation yet.
+        // name into displayName if nobody has customized it for this
+        // conversation yet. lineDisplayName, unlike displayName, always
+        // tracks the real LINE profile name regardless of customization —
+        // it exists specifically so the customer can still be found by
+        // their original LINE name after being renamed (see schema.prisma).
         ...(existingConv?.displayNameCustomized ? {} : { displayName }),
+        lineDisplayName: displayName,
         pictureUrl,
         // A closed conversation reopens on a new message — it was "done",
         // this is a fresh inquiry. "รอ" (pending) is different: an agent put
@@ -158,6 +163,7 @@ async function processLineEvent(channel, event) {
       create: {
         lineUserId,
         displayName,
+        lineDisplayName: displayName,
         pictureUrl,
         channelId: channel.id,
         status: 'open',

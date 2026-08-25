@@ -104,8 +104,20 @@ function buildConversationWhere(query, meAgentId) {
   if (search) {
     andConds.push({
       OR: [
+        // The currently-shown name (custom, if an agent renamed this
+        // customer, otherwise their LINE name) ...
         { displayName: { contains: search, mode: 'insensitive' } },
-        { lineUserId: { contains: search } },
+        // ... and separately, their actual LINE name, so a customer who's
+        // been renamed can still be found by the name they originally
+        // messaged in under (see schema.prisma's lineDisplayName).
+        { lineDisplayName: { contains: search, mode: 'insensitive' } },
+        // insensitive here too — the client-side matchesFilter check in
+        // Inbox.jsx (used to decide whether a live-updated conversation
+        // still belongs in the list) already lowercases both sides before
+        // comparing, so without `mode: 'insensitive'` here, a live update
+        // and a fresh page load could disagree on whether the exact same
+        // search term matches this row.
+        { lineUserId: { contains: search, mode: 'insensitive' } },
       ],
     });
   }

@@ -58,8 +58,12 @@ function matchesFilter(conv, filter, myAgentId) {
   const q = filter.search?.trim().toLowerCase();
   if (q) {
     const name = (conv.displayName || '').toLowerCase();
+    // The customer's real LINE name — matched separately from displayName
+    // above so a renamed customer can still be found by the name they
+    // originally messaged in under (see schema.prisma's lineDisplayName).
+    const lineName = (conv.lineDisplayName || '').toLowerCase();
     const lineId = (conv.lineUserId || '').toLowerCase();
-    if (!name.includes(q) && !lineId.includes(q)) return false;
+    if (!name.includes(q) && !lineName.includes(q) && !lineId.includes(q)) return false;
   }
   return true;
 }
@@ -1160,6 +1164,21 @@ export default function Inbox() {
     } catch { /* corrupted/missing — fall back to defaults below */ }
     return DEFAULT_FILTER;
   });
+  // The search box's own local, immediate value — typing updates this (and
+  // the input) instantly, but filter.search (the value that actually drives
+  // loadConversations below) only follows it after the debounce effect
+  // settles. Without this split, every keystroke fired its own
+  // GET /api/conversations?limit=1000 request — laggy on its own, and prone
+  // to showing results for an earlier, shorter search term if a later
+  // request happened to resolve first (see requestIdRef below for the other
+  // half of that fix).
+  const [searchInput, setSearchInput] = useState(filter.search || '');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilter(f => (f.search === searchInput ? f : { ...f, search: searchInput }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
   // Mirror of `filter`, read inside the 'conversation_updated' socket handler
   // below (see matchesFilter) instead of depending on `filter` directly in
   // that effect — a ref avoids re-subscribing all four socket listeners on
@@ -1309,6 +1328,13 @@ export default function Inbox() {
     return ids;
   }, [messages]);
 
+  // Guards against a slower, now-stale request (e.g. from an earlier,
+  // shorter search term) resolving AFTER a newer one and overwriting its
+  // correct results — with no debounce this used to be reachable on every
+  // keystroke; the debounce above makes it rare rather than eliminating it
+  // (a filter dropdown change right after typing can still race), so this
+  // stays as the actual fix.
+  const requestIdRef = useRef(0);
   const loadConversations = useCallback(async () => {
     // Without an explicit limit, GET /api/conversations falls back to its
     // own default of 30 — fine for the paginated Customers/Report tables,
@@ -1323,7 +1349,9 @@ export default function Inbox() {
       if (k === 'channelIds') { if (v.length > 0) params.channelIds = v.join(','); return; }
       if (v) params[k] = v;
     });
+    const requestId = ++requestIdRef.current;
     const { data } = await axios.get('/api/conversations', { params });
+    if (requestId !== requestIdRef.current) return; // superseded by a newer request — discard
     setConversations(data.conversations);
   }, [filter]);
 
@@ -1927,8 +1955,8 @@ export default function Inbox() {
               <input
                 className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-aurora-tealDeep placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder={t('search_placeholder')}
-                value={filter.search}
-                onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
               />
             </div>
             <button
