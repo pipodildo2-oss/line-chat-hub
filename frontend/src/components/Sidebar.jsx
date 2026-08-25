@@ -31,11 +31,23 @@ export default function Sidebar() {
   // (awaiting their review), agents count needs_revision (awaiting their own
   // fix + resubmit). Kept live via socket events rather than polling.
   const [qrRequestCount, setQrRequestCount] = useState(0);
-  // Total customer chats currently in "เปิด" (open), respecting the same
-  // channel-visibility restriction as the Inbox list itself (see
-  // /api/conversations/open-count). Kept live via socket, same pattern as
-  // qrRequestCount above.
-  const [openConvCount, setOpenConvCount] = useState(0);
+  // The set of conversation ids currently counted as "เปิด" (open) for the
+  // badge — tracked incrementally (added/removed one id at a time as
+  // 'conversation_updated' events arrive) rather than re-fetched from the
+  // server on every event. A debounced refetch-the-whole-count approach was
+  // tried first and reported as feeling stale/non-live by agents — tracking
+  // the actual set client-side means a status change or a new chat updates
+  // the badge the instant its socket event arrives, no request round-trip
+  // needed at all for the common case.
+  const [openConvIds, setOpenConvIds] = useState(() => new Set());
+  const openConvCount = openConvIds.size;
+  // Which channels THIS agent can see at all (independent of the Inbox
+  // filter below) — /api/channels already applies the same restriction
+  // GET /api/conversations does, so this just mirrors that. Needed so the
+  // incremental socket handler can tell whether an update is even relevant
+  // to this agent (emitToAll broadcasts every conversation update to every
+  // connected client, restricted or not).
+  const [myChannelIds, setMyChannelIds] = useState(null);
   // The LINE channel(s) currently selected in the Inbox filter (empty =
   // every channel the agent can see) — shared via context since Sidebar and
   // the Inbox page are siblings under Layout, not parent/child (see
@@ -62,27 +74,37 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (!agent?.id) return;
-    function loadOpenCount() {
-      const params = filterChannelIds.length > 0 ? { channelIds: filterChannelIds.join(',') } : {};
-      axios.get('/api/conversations/open-count', { params }).then(r => setOpenConvCount(r.data.count)).catch(() => {});
+    axios.get('/api/channels').then(r => setMyChannelIds(new Set(r.data.map(c => c.id)))).catch(() => {});
+  }, [agent?.id]);
+
+  // (Re)seeds the open set from the server whenever the agent, or the
+  // channel filter, changes — the incremental socket handler below then
+  // takes over keeping it current from this point on.
+  useEffect(() => {
+    if (!agent?.id) return;
+    let cancelled = false;
+    const params = filterChannelIds.length > 0 ? { channelIds: filterChannelIds.join(',') } : {};
+    axios.get('/api/conversations/open-count', { params })
+      .then(r => { if (!cancelled) setOpenConvIds(new Set(r.data.ids)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [agent?.id, filterChannelIds]);
+
+  useEffect(() => {
+    if (!socket || !myChannelIds) return;
+    function onConversationUpdated(conv) {
+      const inScope = myChannelIds.has(conv.channelId) && (filterChannelIds.length === 0 || filterChannelIds.includes(conv.channelId));
+      const shouldCount = conv.status === 'open' && inScope;
+      setOpenConvIds(prev => {
+        if (shouldCount === prev.has(conv.id)) return prev; // no change — same Set reference, no re-render
+        const next = new Set(prev);
+        if (shouldCount) next.add(conv.id); else next.delete(conv.id);
+        return next;
+      });
     }
-    loadOpenCount();
-    if (!socket) return;
-    // 'conversation_updated' fires on every new/changed message across the
-    // whole system (see socket.service.js's emitToAll) — debounced so a
-    // burst of chat activity coalesces into one refetch shortly after it
-    // quiets down, instead of hitting this endpoint on every single message.
-    let debounceTimer;
-    function scheduleReload() {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(loadOpenCount, 500);
-    }
-    socket.on('conversation_updated', scheduleReload);
-    return () => {
-      clearTimeout(debounceTimer);
-      socket.off('conversation_updated', scheduleReload);
-    };
-  }, [socket, agent?.id, filterChannelIds]);
+    socket.on('conversation_updated', onConversationUpdated);
+    return () => socket.off('conversation_updated', onConversationUpdated);
+  }, [socket, myChannelIds, filterChannelIds]);
 
   async function handleStatusChange(next) {
     setStatusOpen(false);

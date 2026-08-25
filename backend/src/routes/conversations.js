@@ -104,13 +104,16 @@ router.get('/', auth, async (req, res) => {
   res.json({ conversations: withDaysInactive(conversations), total, page: Number(page), limit: Number(limit) });
 });
 
-// GET /api/conversations/open-count — just the count of "เปิด" conversations,
-// for the "กล่องข้อความ" nav badge in Sidebar.jsx. A dedicated single-COUNT
-// endpoint rather than reusing /summary below (which runs ~10 queries to
-// build the Customers directory's overview cards) — this one gets called a
-// lot more often, on every relevant 'conversation_updated' socket event, so
-// it stays as cheap as the badge actually needs. Declared before GET /:id so
-// "open-count" isn't swallowed as an :id value.
+// GET /api/conversations/open-count — ids of every "เปิด" conversation, for
+// the "กล่องข้อความ" nav badge in Sidebar.jsx. Returns ids (not just a count)
+// so the frontend can track the open set incrementally from socket events
+// afterward — add an id when a conversation's live update shows it's now
+// open, drop it otherwise — instead of re-fetching this endpoint on every
+// update, which is what made the badge feel laggy/non-live before. A
+// dedicated endpoint rather than reusing /summary below (which runs ~10
+// queries to build the Customers directory's overview cards) since this one
+// only needs to run once per mount/filter-change now, not on every event.
+// Declared before GET /:id so "open-count" isn't swallowed as an :id value.
 router.get('/open-count', auth, async (req, res) => {
   // Optional ?channelIds=a,b — the LINE channel(s) currently selected in the
   // Inbox filter (see InboxChannelFilterContext.jsx on the frontend), so the
@@ -122,15 +125,15 @@ router.get('/open-count', auth, async (req, res) => {
   if (visibleChannelIds) {
     if (selectedChannelIds.length > 0) {
       const allowed = selectedChannelIds.filter(id => visibleChannelIds.includes(id));
-      if (allowed.length === 0) return res.json({ count: 0 });
+      if (allowed.length === 0) return res.json({ ids: [] });
       where.channelId = { in: allowed };
     } else {
       where.channelId = { in: visibleChannelIds };
     }
   }
 
-  const count = await prisma.conversation.count({ where });
-  res.json({ count });
+  const rows = await prisma.conversation.findMany({ where, select: { id: true } });
+  res.json({ ids: rows.map(r => r.id) });
 });
 
 // GET /api/conversations/summary — aggregate counts for the Customers directory
