@@ -30,6 +30,11 @@ export default function Sidebar() {
   // (awaiting their review), agents count needs_revision (awaiting their own
   // fix + resubmit). Kept live via socket events rather than polling.
   const [qrRequestCount, setQrRequestCount] = useState(0);
+  // Total customer chats currently in "เปิด" (open), respecting the same
+  // channel-visibility restriction as the Inbox list itself (see
+  // /api/conversations/open-count). Kept live via socket, same pattern as
+  // qrRequestCount above.
+  const [openConvCount, setOpenConvCount] = useState(0);
 
   useEffect(() => {
     if (!agent?.id) return;
@@ -48,6 +53,29 @@ export default function Sidebar() {
       socket.off('quick_reply_request_reviewed', loadCount);
     };
   }, [socket, isAdmin, agent?.id]);
+
+  useEffect(() => {
+    if (!agent?.id) return;
+    function loadOpenCount() {
+      axios.get('/api/conversations/open-count').then(r => setOpenConvCount(r.data.count)).catch(() => {});
+    }
+    loadOpenCount();
+    if (!socket) return;
+    // 'conversation_updated' fires on every new/changed message across the
+    // whole system (see socket.service.js's emitToAll) — debounced so a
+    // burst of chat activity coalesces into one refetch shortly after it
+    // quiets down, instead of hitting this endpoint on every single message.
+    let debounceTimer;
+    function scheduleReload() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadOpenCount, 500);
+    }
+    socket.on('conversation_updated', scheduleReload);
+    return () => {
+      clearTimeout(debounceTimer);
+      socket.off('conversation_updated', scheduleReload);
+    };
+  }, [socket, agent?.id]);
 
   async function handleStatusChange(next) {
     setStatusOpen(false);
@@ -100,7 +128,12 @@ export default function Sidebar() {
           <div className="space-y-0.5">
             <NavLink to="/inbox" className={linkCls}>
               <MessageSquare size={17} />
-              {t('nav_inbox')}
+              <span className="flex-1">{t('nav_inbox')}</span>
+              {openConvCount > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-semibold rounded-full px-1.5 min-w-[18px] text-center">
+                  {openConvCount}
+                </span>
+              )}
             </NavLink>
             <NavLink to={qrRequestCount > 0 ? '/quick-replies/requests' : '/quick-replies/catalog'} className={linkCls}>
               <Zap size={17} />

@@ -104,6 +104,20 @@ router.get('/', auth, async (req, res) => {
   res.json({ conversations: withDaysInactive(conversations), total, page: Number(page), limit: Number(limit) });
 });
 
+// GET /api/conversations/open-count — just the count of "เปิด" conversations,
+// for the "กล่องข้อความ" nav badge in Sidebar.jsx. A dedicated single-COUNT
+// endpoint rather than reusing /summary below (which runs ~10 queries to
+// build the Customers directory's overview cards) — this one gets called a
+// lot more often, on every relevant 'conversation_updated' socket event, so
+// it stays as cheap as the badge actually needs. Declared before GET /:id so
+// "open-count" isn't swallowed as an :id value.
+router.get('/open-count', auth, async (req, res) => {
+  const visibleChannelIds = await getVisibleChannelIds(req.agent);
+  const where = { status: 'open', ...(visibleChannelIds ? { channelId: { in: visibleChannelIds } } : {}) };
+  const count = await prisma.conversation.count({ where });
+  res.json({ count });
+});
+
 // GET /api/conversations/summary — aggregate counts for the Customers directory
 // overview cards. Respects the same channel-visibility restriction as the list
 // above. "unanswered" uses a fixed 10-minute threshold as a quick at-a-glance
