@@ -7,6 +7,7 @@ import { Send, X, Search, SlidersHorizontal, Info, Tag as TagIcon, Plus, Check, 
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
 import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
@@ -1164,6 +1165,12 @@ export default function Inbox() {
     } catch { /* corrupted/missing — fall back to defaults below */ }
     return DEFAULT_FILTER;
   });
+  // Shares the currently-selected channel filter with Sidebar, so the
+  // "กล่องข้อความ" nav badge's open-conversation count matches this same
+  // channel selection instead of always counting every channel the agent
+  // can see.
+  const { setChannelIds: setSidebarChannelIds } = useInboxChannelFilter();
+  useEffect(() => { setSidebarChannelIds(filter.channelIds); }, [filter.channelIds, setSidebarChannelIds]);
   // The search box's own local, immediate value — typing updates this (and
   // the input) instantly, but filter.search (the value that actually drives
   // loadConversations below) only follows it after the debounce effect

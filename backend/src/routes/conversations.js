@@ -112,8 +112,23 @@ router.get('/', auth, async (req, res) => {
 // it stays as cheap as the badge actually needs. Declared before GET /:id so
 // "open-count" isn't swallowed as an :id value.
 router.get('/open-count', auth, async (req, res) => {
+  // Optional ?channelIds=a,b — the LINE channel(s) currently selected in the
+  // Inbox filter (see InboxChannelFilterContext.jsx on the frontend), so the
+  // badge matches whatever channel selection is actually applied there
+  // instead of always counting every channel the agent can see.
+  const { where, selectedChannelIds } = buildConversationWhere({ status: 'open', channelIds: req.query.channelIds });
+
   const visibleChannelIds = await getVisibleChannelIds(req.agent);
-  const where = { status: 'open', ...(visibleChannelIds ? { channelId: { in: visibleChannelIds } } : {}) };
+  if (visibleChannelIds) {
+    if (selectedChannelIds.length > 0) {
+      const allowed = selectedChannelIds.filter(id => visibleChannelIds.includes(id));
+      if (allowed.length === 0) return res.json({ count: 0 });
+      where.channelId = { in: allowed };
+    } else {
+      where.channelId = { in: visibleChannelIds };
+    }
+  }
+
   const count = await prisma.conversation.count({ where });
   res.json({ count });
 });

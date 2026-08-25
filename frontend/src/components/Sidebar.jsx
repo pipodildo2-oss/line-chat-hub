@@ -5,6 +5,7 @@ import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, 
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSocket } from '../contexts/SocketContext';
+import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
 import ProfileModal from './ProfileModal';
 
 const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
@@ -35,6 +36,11 @@ export default function Sidebar() {
   // /api/conversations/open-count). Kept live via socket, same pattern as
   // qrRequestCount above.
   const [openConvCount, setOpenConvCount] = useState(0);
+  // The LINE channel(s) currently selected in the Inbox filter (empty =
+  // every channel the agent can see) — shared via context since Sidebar and
+  // the Inbox page are siblings under Layout, not parent/child (see
+  // InboxChannelFilterContext).
+  const { channelIds: filterChannelIds } = useInboxChannelFilter();
 
   useEffect(() => {
     if (!agent?.id) return;
@@ -57,7 +63,8 @@ export default function Sidebar() {
   useEffect(() => {
     if (!agent?.id) return;
     function loadOpenCount() {
-      axios.get('/api/conversations/open-count').then(r => setOpenConvCount(r.data.count)).catch(() => {});
+      const params = filterChannelIds.length > 0 ? { channelIds: filterChannelIds.join(',') } : {};
+      axios.get('/api/conversations/open-count', { params }).then(r => setOpenConvCount(r.data.count)).catch(() => {});
     }
     loadOpenCount();
     if (!socket) return;
@@ -75,7 +82,7 @@ export default function Sidebar() {
       clearTimeout(debounceTimer);
       socket.off('conversation_updated', scheduleReload);
     };
-  }, [socket, agent?.id]);
+  }, [socket, agent?.id, filterChannelIds]);
 
   async function handleStatusChange(next) {
     setStatusOpen(false);
