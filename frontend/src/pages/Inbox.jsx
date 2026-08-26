@@ -1199,14 +1199,14 @@ export default function Inbox() {
   const [showDetail, setShowDetail] = useState(() => localStorage.getItem('inbox_showDetail') === '1');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  // Which conversationIds currently have a send in flight — a Set (not a
-  // single boolean) so a slow/stuck send in one conversation only disables
-  // that conversation's Send button, not every other chat's too (that used
-  // to happen: a single global `sending` boolean never got scoped or reset
-  // on conversation switch, so one stuck request could lock the whole app's
-  // composer until a page refresh).
-  const [sendingConvIds, setSendingConvIds] = useState(() => new Set());
   const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
+  // Per-conversation tail of a promise chain, so consecutive sends in the
+  // SAME conversation still reach LINE in the order they were typed (each
+  // send is a separate POST that calls LINE's pushMessage — firing them
+  // concurrently could let LINE deliver them to the customer out of order)
+  // without making the agent wait for one to finish before starting the
+  // next — see handleSend below for why that mattered.
+  const sendQueueRef = useRef(new Map());
   const [dragOver, setDragOver] = useState(false);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -1815,28 +1815,31 @@ export default function Inbox() {
     reader.readAsDataURL(file);
   }
 
-  async function handleSend(text) {
-    const content = (text ?? input).trim();
-    const image = pendingImage;
-    if ((!content && !image) || !selected || sendingConvIds.has(selected.id)) return;
-    const convId = selected.id;
-    setSendingConvIds(prev => new Set(prev).add(convId));
+  // Sends one piece (an image, or a text message) and reports success/failure —
+  // the actual network call. Split out from handleSend so that function can
+  // enqueue this without awaiting it.
+  async function sendOne(convId, { image, content }) {
     try {
-      // Only clear each piece (input / pendingImage) after IT actually succeeds —
-      // clearing both upfront meant a failed send (e.g. LINE rejects the push
-      // because the customer blocked the OA, or the access token is bad) silently
-      // wiped what the agent typed with no error shown and nothing to retry.
       if (image) {
         const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64 }, { timeout: SEND_REQUEST_TIMEOUT_MS });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-        setPendingImage(null);
       }
       if (content) {
         const { data } = await axios.post(`/api/messages/${convId}`, { content }, { timeout: SEND_REQUEST_TIMEOUT_MS });
         setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
-        setInput('');
       }
     } catch (err) {
+      // Restore whatever failed back into the composer — appended, not
+      // replacing, so it doesn't clobber anything the agent has already
+      // started typing since. Sends for the same conversation resolve in
+      // the order they were queued (see handleSend below), so a run of
+      // several failures appends in the same order they were originally
+      // typed, reading top-to-bottom the way the agent expects. A failed
+      // send used to just leave the original text sitting in the box
+      // because nothing cleared it until success; now that the box clears
+      // the instant Enter is pressed, losing it silently on failure would
+      // mean re-typing from memory.
+      if (content) setInput(prev => (prev ? `${prev}\n${content}` : content));
       // `uncertain` (backend flag, set when it gave up waiting on LINE — see
       // line.service.js's SendTimeoutError) or no response at all (our own
       // axios timeout above, a dropped connection, etc.) both mean the same
@@ -1850,9 +1853,25 @@ export default function Inbox() {
       } else {
         alert(err.response?.data?.error || 'ส่งข้อความไม่สำเร็จ ลองใหม่อีกครั้ง');
       }
-    } finally {
-      setSendingConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
     }
+  }
+
+  function handleSend(text) {
+    const content = (text ?? input).trim();
+    const image = pendingImage;
+    if ((!content && !image) || !selected) return;
+    const convId = selected.id;
+    // Clear the composer right away, before the network round-trip even
+    // starts, so the agent can start typing (and sending) the next message
+    // immediately instead of the box feeling stuck for however long this
+    // send takes to reach LINE and come back (previously blocked via
+    // sendingConvIds until the request resolved — normal LINE push latency
+    // made back-to-back messages feel like they had a built-in ~1s delay).
+    if (image) setPendingImage(null);
+    if (content) setInput('');
+    const prevTail = sendQueueRef.current.get(convId) || Promise.resolve();
+    const thisSend = prevTail.catch(() => {}).then(() => sendOne(convId, { image, content }));
+    sendQueueRef.current.set(convId, thisSend);
   }
 
   function toggleUpsellSelect(msg) {
@@ -2355,7 +2374,7 @@ export default function Inbox() {
                     </div>
                     <button
                       onClick={() => handleSend()}
-                      disabled={(!input.trim() && !pendingImage) || sendingConvIds.has(selected?.id)}
+                      disabled={!input.trim() && !pendingImage}
                       className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-full w-8 h-8 flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
                     >
                       <Send size={15} />
