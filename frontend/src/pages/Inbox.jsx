@@ -1373,20 +1373,41 @@ export default function Inbox() {
   useEffect(() => {
     const convId = searchParams.get('conv');
     const msgId = searchParams.get('msg');
-    if (!convId) return;
-    axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
-    if (msgId) {
-      jumpTargetRef.current = msgId;
-      // A jump is pending as soon as this is set, not just once the target is
-      // actually found — the ResizeObserver-driven "stick to bottom" (below)
-      // must stay off for the whole jump-search phase too, otherwise a
-      // late-loading image while still paging back through history would
-      // fight loadOlderMessages' own scroll-position restoration.
-      isNearBottomRef.current = false;
+    if (convId) {
+      axios.get(`/api/conversations/${convId}`).then(r => setSelected(r.data)).catch(() => {});
+      if (msgId) {
+        jumpTargetRef.current = msgId;
+        // A jump is pending as soon as this is set, not just once the target is
+        // actually found — the ResizeObserver-driven "stick to bottom" (below)
+        // must stay off for the whole jump-search phase too, otherwise a
+        // late-loading image while still paging back through history would
+        // fight loadOlderMessages' own scroll-position restoration.
+        isNearBottomRef.current = false;
+      }
+      setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); next.delete('msg'); return next; }, { replace: true });
+      return;
     }
-    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('conv'); next.delete('msg'); return next; }, { replace: true });
+    // No deep link — restore whichever conversation was open before the last
+    // page load (see the persistence effect below, which keeps this key
+    // current every time `selected` changes) so refreshing mid-chat (F5)
+    // lands back on that same conversation instead of the empty "เลือกการ
+    // สนทนาเพื่อเริ่มต้น" placeholder. If it 404s (deleted, or a channel
+    // restriction changed since), drop the stale reference instead of
+    // leaving it to fail silently on every future load.
+    const lastId = localStorage.getItem('inbox_selected_conv_id');
+    if (!lastId) return;
+    axios.get(`/api/conversations/${lastId}`).then(r => setSelected(r.data)).catch(() => {
+      localStorage.removeItem('inbox_selected_conv_id');
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keeps inbox_selected_conv_id current so the mount effect above can
+  // restore it after a refresh — see there.
+  useEffect(() => {
+    if (selected?.id) localStorage.setItem('inbox_selected_conv_id', selected.id);
+    else localStorage.removeItem('inbox_selected_conv_id');
+  }, [selected?.id]);
 
   // The list only reorders itself in response to socket events (see 'conversation_updated'
   // below). If the tab sits idle for a while, the browser can throttle background JS or
