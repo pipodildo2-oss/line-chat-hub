@@ -8,7 +8,8 @@
     "start": "npx prisma db push --accept-data-loss && node prisma/seed.js && node src/index.js",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node prisma/seed.js",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:moderation": "node scripts/test-moderation.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
@@ -26,7 +27,8 @@
     "jsonwebtoken": "^9.0.2",
     "redis": "^5.0.0",
     "sharp": "^0.33.5",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "wordcut": "^0.9.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",

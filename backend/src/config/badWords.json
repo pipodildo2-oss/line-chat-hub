@@ -1,5 +1,5 @@
 {
-  "_comment": "Word list used by moderation.service.js to flag outgoing agent messages — no AI/API involved, so this list is the ONLY thing controlling what gets caught. Edit freely: add/remove words, redeploy, done. 'severe' = clear profanity/insults/threats, plus rude 1st/2nd-person pronouns (มึง/กู/etc) toward a customer — unacceptable in a sales/service role even without another swear word attached. 'minor' = dismissive/unprofessional tone that falls short of that. Matching is substring-based against the message with spaces/punctuation stripped and lowercased (Thai has no spaces between words, so there's no real 'whole word' boundary to check) — entries here should also be written with no spaces. Known trade-off: 'กู' as a rude pronoun will also match inside unrelated words that happen to start with the same letters, e.g. 'กู้เงิน' (borrow money) or 'กู้คืน' (restore) — flagged messages are for a human admin to review, not auto-punish, so an occasional harmless match here is an acceptable cost for not missing real cases.",
+  "_comment": "Word list used by moderation.service.js to flag outgoing agent messages — no AI/API involved, so this list is the ONLY thing controlling what gets caught. Edit freely: add/remove words, redeploy, done. 'severe' = clear profanity/insults/threats, plus rude 1st/2nd-person pronouns (มึง/กู/etc) toward a customer — unacceptable in a sales/service role even without another swear word attached. 'minor' = dismissive/unprofessional tone that falls short of that. Entries here are written with no spaces (spaces are stripped before matching either way). Thai entries are matched against Wordcut-segmented tokens — a hit only counts if it's boundary-aligned (not sitting in the middle of a longer real word), so 'กู' no longer matches inside 'กู้เงิน'/'กู้คืน', 'บ้า' no longer matches inside 'บ้าง'/'บ้าน', etc. — see moderation.service.js and scripts/test-moderation.js for the mechanism and the regression suite. English entries still use plain substring matching (English already has space-delimited words, and none of these are short/common enough to plausibly nest inside an innocent English word here). Known residual gap: a handful of harsh-but-not-identical compound words that Wordcut's dictionary treats as their own single token (e.g. 'เหี้ยม' ruthless, distinct from 'เหี้ย') won't trigger a hit even though they're in the same spirit — add them here explicitly by name if they turn out to matter in practice, the same way 'โง่เขลา' was added alongside 'โง่'.",
   "severe": [
     "เหี้ย",
     "สัส",
@@ -52,6 +52,7 @@
   ],
   "minor": [
     "โง่",
+    "โง่เขลา",
     "งี่เง่า",
     "บ้า",
     "บ้าเหรอ",
