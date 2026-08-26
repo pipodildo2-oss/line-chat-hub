@@ -2348,6 +2348,23 @@ export default function Inbox() {
 
           {showDetail && (
             <CustomerPanel
+              // Forces a full remount on every conversation switch. Without
+              // this, React reuses the same CustomerPanel instance across
+              // customers (same component type/position), so its local
+              // state — noteEntries in particular — survives the switch.
+              // The notes GET effect below is keyed on conv.id and does
+              // refetch correctly, but if an addNote/saveEditNote/deleteNote
+              // request from the PREVIOUS conversation is still in flight
+              // when the switch happens, its response lands after the
+              // switch and unconditionally patches whatever noteEntries
+              // currently holds — which by then belongs to the NEW
+              // conversation. That's why a note added to customer A could
+              // show up under customer B (it's really saved under A, just
+              // rendered under B), and why it then "disappears" on F5 (the
+              // fresh fetch for B correctly doesn't include A's note).
+              // Remounting makes any such late response land on an
+              // unmounted instance instead — a no-op in React 18.
+              key={selected.id}
               conv={selected}
               tags={tags}
               onUpdate={updateConv}
