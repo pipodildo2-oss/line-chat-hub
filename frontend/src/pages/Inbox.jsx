@@ -1635,12 +1635,22 @@ export default function Inbox() {
 
   useEffect(() => {
     if (!socket) return;
-    socket.on('new_message', ({ message, conversation }) => {
+    // Named handlers (not inline arrows) so the cleanup below can pass the
+    // exact same reference to socket.off(event, handler) — calling
+    // socket.off(event) with no handler removes EVERY listener bound to
+    // that event name, which used to also rip out Sidebar.jsx's own
+    // 'conversation_updated' listener (registered separately on this same
+    // shared socket) every time this effect re-ran, e.g. on selecting a
+    // different conversation (selected?.id is a dep below). Sidebar's own
+    // effect never re-runs to reattach it, so its badge went silently dead
+    // the moment an agent opened any chat — only a full page reload (which
+    // remounts Sidebar) brought it back.
+    function onNewMessage({ message, conversation }) {
       if (selected?.id === conversation.id) {
         setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
       }
-    });
-    socket.on('conversation_updated', (rawConv) => {
+    }
+    function onConversationUpdated(rawConv) {
       // The backend emits the newest message as `lastMessage` (singular) on
       // this event, but ConversationItem's preview text reads
       // `conv.messages[0]` — the shape GET /api/conversations returns
@@ -1685,12 +1695,12 @@ export default function Inbox() {
       // list filter — filters only govern the sidebar list, not whatever chat
       // an agent is actively replying in.
       setSelected(prev => (prev?.id === conv.id ? { ...prev, ...conv } : prev));
-    });
+    }
     // Admin-only audit trail, live update: someone else (or this agent, in another
     // tab) just opened the conversation without replying, or just cleared their own
     // tag by replying. Non-admins never render ViewerTags, but skip touching state
     // for them anyway — no reason to hold data they shouldn't see.
-    socket.on('message_view', ({ messageId, agentId, agentName }) => {
+    function onMessageView({ messageId, agentId, agentName }) {
       if (agent?.role !== 'admin') return;
       setMessages(prev => prev.map(m => {
         if (m.id !== messageId) return m;
@@ -1698,19 +1708,19 @@ export default function Inbox() {
         if (views.some(v => v.agentId === agentId)) return m;
         return { ...m, views: [...views, { agentId, agent: { name: agentName } }] };
       }));
-    });
+    }
     // Fired when an agent sends any reply — clears THAT agent's tag from every
     // message in this conversation (not just one), since replying means they
     // didn't leave it for someone else, even if a newer customer message had
     // already arrived since they viewed it.
-    socket.on('message_view_cleared', ({ agentId }) => {
+    function onMessageViewCleared({ agentId }) {
       if (agent?.role !== 'admin') return;
       setMessages(prev => prev.map(m => {
         if (!m.views?.length) return m;
         const filtered = m.views.filter(v => v.agentId !== agentId);
         return filtered.length === m.views.length ? m : { ...m, views: filtered };
       }));
-    });
+    }
     // Room-scoped like 'new_message' above (see socket?.emit('join', ...)) —
     // only agents who currently have THIS conversation open receive it, so no
     // conversationId check is needed here to know it's relevant. Patches the
@@ -1718,7 +1728,7 @@ export default function Inbox() {
     // up instantly for every other agent viewing the same chat, and drops any
     // of those ids from this agent's own in-progress selection so they can't
     // still submit them.
-    socket.on('upsell_claimed', ({ messageIds, agentName }) => {
+    function onUpsellClaimed({ messageIds, agentName }) {
       setMessages(prev => prev.map(m => (
         messageIds.includes(m.id) ? { ...m, upsellItem: { submission: { agent: { name: agentName } } } } : m
       )));
@@ -1728,20 +1738,26 @@ export default function Inbox() {
         messageIds.forEach(id => next.delete(id));
         return next;
       });
-    });
+    }
     // Fired when an admin deletes a submission from the review page — frees
     // the messages back up so they can be claimed again, reflected live
     // instead of needing a reload to see the lock badge disappear.
-    socket.on('upsell_unclaimed', ({ messageIds }) => {
+    function onUpsellUnclaimed({ messageIds }) {
       setMessages(prev => prev.map(m => (messageIds.includes(m.id) ? { ...m, upsellItem: null } : m)));
-    });
+    }
+    socket.on('new_message', onNewMessage);
+    socket.on('conversation_updated', onConversationUpdated);
+    socket.on('message_view', onMessageView);
+    socket.on('message_view_cleared', onMessageViewCleared);
+    socket.on('upsell_claimed', onUpsellClaimed);
+    socket.on('upsell_unclaimed', onUpsellUnclaimed);
     return () => {
-      socket.off('new_message');
-      socket.off('conversation_updated');
-      socket.off('message_view');
-      socket.off('message_view_cleared');
-      socket.off('upsell_claimed');
-      socket.off('upsell_unclaimed');
+      socket.off('new_message', onNewMessage);
+      socket.off('conversation_updated', onConversationUpdated);
+      socket.off('message_view', onMessageView);
+      socket.off('message_view_cleared', onMessageViewCleared);
+      socket.off('upsell_claimed', onUpsellClaimed);
+      socket.off('upsell_unclaimed', onUpsellUnclaimed);
     };
   }, [socket, selected?.id, agent?.id, agent?.role]);
 
