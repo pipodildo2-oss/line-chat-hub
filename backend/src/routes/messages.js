@@ -182,7 +182,7 @@ router.get('/:conversationId', auth, async (req, res) => {
 // as a base64 data URL) attached from the composer.
 router.post('/:conversationId', auth, async (req, res) => {
   try {
-    const { content, imageData } = req.body;
+    const { content, imageData, clientId } = req.body;
     if (!content?.trim() && !imageData) return res.status(400).json({ error: 'Content required' });
     if (imageData && !isValidImageDataUrl(imageData)) {
       return res.status(400).json({ error: 'ไฟล์ที่แนบต้องเป็นรูปภาพ (JPEG/PNG/GIF/WebP) ขนาดไม่เกิน 15MB' });
@@ -306,10 +306,17 @@ router.post('/:conversationId', auth, async (req, res) => {
     // it goes anywhere near a socket emit or API response.
     const safeConversation = { ...conversation, channel: { id: conversation.channel.id, name: conversation.channel.name, active: conversation.channel.active } };
 
-    emitToConversation(conversation.id, 'new_message', { message, conversation: safeConversation });
+    // clientId (if the sender passed one — see Inbox.jsx's optimistic send)
+    // rides along on both the response AND the socket echo without being
+    // persisted anywhere, purely so the sender's own browser can match this
+    // confirmed message back to the optimistic bubble it already rendered —
+    // whichever of the two arrives first does the replacing, the other is a
+    // no-op (see the 'new_message' handler and sendOne in Inbox.jsx).
+    const messageWithClientId = clientId ? { ...message, clientId } : message;
+    emitToConversation(conversation.id, 'new_message', { message: messageWithClientId, conversation: safeConversation });
     emitToAll('conversation_updated', { ...safeConversation, lastMessage: message });
 
-    res.status(201).json(message);
+    res.status(201).json(messageWithClientId);
 
     prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: now } })
       .catch(e => console.error('lastMessageAt update failed (message already sent+recorded):', e.message));

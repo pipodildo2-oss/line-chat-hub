@@ -373,7 +373,13 @@ function UpsellBadge({ msg }) {
 // customer has sent ANYTHING back afterward in this conversation (concrete
 // proof they were in the chat, even if we can't know exactly when they saw
 // this particular message).
-function DeliveryTick({ repliedTo, onBubble }) {
+function DeliveryTick({ repliedTo, onBubble, pending }) {
+  // `pending` = this bubble is still an optimistic placeholder (see
+  // handleSend/sendOne) — the agent hit send, but nothing has come back
+  // from the server yet confirming it actually reached LINE. No tick at
+  // all until that's confirmed, rather than showing "sent" for something
+  // that might still fail.
+  if (pending) return null;
   const Icon = repliedTo ? CheckCheck : Check;
   const activeCls = onBubble ? 'text-indigo-200' : 'text-aurora-tealDeep dark:text-aurora-teal';
   const inactiveCls = onBubble ? 'text-white/50' : 'text-gray-400 dark:text-slate-500';
@@ -394,7 +400,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
     <p className={`text-xs mt-1 ${timeCls}`}>
       {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
       {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-      {!isUser && <DeliveryTick repliedTo={repliedTo} onBubble />}
+      {!isUser && <DeliveryTick repliedTo={repliedTo} pending={msg._pending} onBubble />}
     </p>
   );
 
@@ -406,7 +412,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} pending={msg._pending} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
           <UpsellBadge msg={msg} />
@@ -431,7 +437,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} pending={msg._pending} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
           <UpsellBadge msg={msg} />
@@ -453,7 +459,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} pending={msg._pending} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
           <UpsellBadge msg={msg} />
@@ -474,7 +480,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}
-            {!isUser && <DeliveryTick repliedTo={repliedTo} />}
+            {!isUser && <DeliveryTick repliedTo={repliedTo} pending={msg._pending} />}
           </p>
           <ViewerTags msg={msg} isAdmin={isAdmin} />
           <UpsellBadge msg={msg} />
@@ -1668,7 +1674,20 @@ export default function Inbox() {
     // remounts Sidebar) brought it back.
     function onNewMessage({ message, conversation }) {
       if (selected?.id === conversation.id) {
-        setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
+        setMessages(prev => {
+          if (prev.some(m => m.id === message.id)) return prev; // sendOne's own POST response already landed and replaced it
+          // message.clientId (see messages.js POST) rides along specifically for
+          // this: this socket event can arrive BEFORE the POST response that
+          // triggered it does (the emit happens server-side before the HTTP
+          // response is sent) — if handleSend's optimistic bubble for this exact
+          // send is still sitting in `messages` under its temp id, replace it
+          // here instead of appending a duplicate; sendOne's own reconciliation
+          // becomes a no-op when it runs afterward, since the temp id's gone.
+          if (message.clientId && prev.some(m => m.id === message.clientId)) {
+            return prev.map(m => (m.id === message.clientId ? message : m));
+          }
+          return [...prev, message];
+        });
       }
     }
     function onConversationUpdated(rawConv) {
@@ -1817,18 +1836,31 @@ export default function Inbox() {
 
   // Sends one piece (an image, or a text message) and reports success/failure —
   // the actual network call. Split out from handleSend so that function can
-  // enqueue this without awaiting it.
-  async function sendOne(convId, { image, content }) {
+  // enqueue this without awaiting it. imageTempId/textTempId identify the
+  // optimistic bubble(s) handleSend already added to `messages` (see there),
+  // so this can replace each one in place once its real message comes back
+  // (matched by id first — the 'new_message' socket echo for this same send
+  // may well arrive and do the replacing first, see that handler below — or
+  // drop it if the send failed.
+  async function sendOne(convId, { image, content, imageTempId, textTempId }) {
     try {
       if (image) {
-        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64 }, { timeout: SEND_REQUEST_TIMEOUT_MS });
-        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64, clientId: imageTempId }, { timeout: SEND_REQUEST_TIMEOUT_MS });
+        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : prev.map(m => (m.id === imageTempId ? data : m))));
       }
       if (content) {
-        const { data } = await axios.post(`/api/messages/${convId}`, { content }, { timeout: SEND_REQUEST_TIMEOUT_MS });
-        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+        const { data } = await axios.post(`/api/messages/${convId}`, { content, clientId: textTempId }, { timeout: SEND_REQUEST_TIMEOUT_MS });
+        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : prev.map(m => (m.id === textTempId ? data : m))));
       }
     } catch (err) {
+      // Whichever optimistic bubble(s) didn't make it never actually went
+      // anywhere — drop them rather than leave a permanently "unsent" bubble
+      // in the chat. Safe to do unconditionally for both ids even when only
+      // one of image/content was actually attempted (e.g. the image failed
+      // before the text POST ever ran): a tempId already replaced by the
+      // success path above simply isn't in `messages` anymore, so filtering
+      // it out again is a no-op.
+      setMessages(prev => prev.filter(m => m.id !== imageTempId && m.id !== textTempId));
       // Restore whatever failed back into the composer — appended, not
       // replacing, so it doesn't clobber anything the agent has already
       // started typing since. Sends for the same conversation resolve in
@@ -1869,8 +1901,51 @@ export default function Inbox() {
     // made back-to-back messages feel like they had a built-in ~1s delay).
     if (image) setPendingImage(null);
     if (content) setInput('');
+
+    // Optimistic bubble(s) — shown in the chat immediately, before the
+    // network round-trip even starts, WITHOUT a delivery tick (see
+    // DeliveryTick's `pending` prop) since nothing is confirmed sent yet.
+    // Each gets its own client-generated id so sendOne (or the
+    // 'new_message' socket echo, whichever lands first) can find and
+    // replace exactly this bubble once the real message comes back — see
+    // there for why this can't just be "the last message in the array".
+    const nowIso = new Date().toISOString();
+    const optimistic = [];
+    const imageTempId = image ? crypto.randomUUID() : null;
+    const textTempId = content ? crypto.randomUUID() : null;
+    if (image) {
+      optimistic.push({
+        id: imageTempId,
+        conversationId: convId,
+        sender: 'agent',
+        senderName: agent?.name || '',
+        senderId: agent?.id,
+        type: 'image',
+        content: '[Image]',
+        metadata: JSON.stringify({ url: image.previewUrl }),
+        read: true,
+        createdAt: nowIso,
+        _pending: true,
+      });
+    }
+    if (content) {
+      optimistic.push({
+        id: textTempId,
+        conversationId: convId,
+        sender: 'agent',
+        senderName: agent?.name || '',
+        senderId: agent?.id,
+        type: 'text',
+        content,
+        read: true,
+        createdAt: nowIso,
+        _pending: true,
+      });
+    }
+    setMessages(prev => [...prev, ...optimistic]);
+
     const prevTail = sendQueueRef.current.get(convId) || Promise.resolve();
-    const thisSend = prevTail.catch(() => {}).then(() => sendOne(convId, { image, content }));
+    const thisSend = prevTail.catch(() => {}).then(() => sendOne(convId, { image, content, imageTempId, textTempId }));
     sendQueueRef.current.set(convId, thisSend);
   }
 
