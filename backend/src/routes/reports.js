@@ -160,18 +160,18 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
 // range," not a full historical log of every view that ever happened.
 //
 // A row disappears (never counted here) as soon as EITHER that agent
-// personally replies, OR anyone (including that agent) replies while ANY
-// currently-open viewer of the same conversation is still within THEIR own
-// grace window — see clearMessageViewsAfterReply (lib/messageViewClear.js),
-// called from both messages.js and quickReplies.js after a send succeeds.
-// The clock is per viewer (their own viewedAt + the grace window), not
-// shared: multiple agents having the same still-unanswered chat open at
-// once is normal, not misconduct, and one of them opening it later just
-// means their own personal deadline is later too. Only once EVERY viewer's
-// own deadline has passed with nobody having replied in time does a row
-// survive to actually get flagged below — a row that's SURVIVED to this
-// point but hasn't hit its own deadline yet is still within grace and
-// deliberately excluded, not yet a verdict.
+// personally replies (however late), OR anyone else replies while THIS
+// row's own grace window hasn't expired yet — see clearMessageViewsAfterReply
+// (lib/messageViewClear.js), called from both messages.js and
+// quickReplies.js after a send succeeds. Purely per-viewer, no group
+// effect: multiple agents having the same still-unanswered chat open at
+// once is normal, not misconduct, but a teammate's timely reply does NOT
+// retroactively save someone whose own deadline (their viewedAt + the
+// grace window) had already passed before it landed — an agent who opened
+// the chat later simply has a later personal deadline than one who opened
+// it right away. The cutoff below mirrors that same per-viewer deadline —
+// a row that's SURVIVED to this point but hasn't hit its own deadline yet
+// is still within grace and deliberately excluded, not yet a verdict.
 function agentConductViewCutoff(graceSeconds) {
   return new Date(Date.now() - graceSeconds * 1000);
 }
