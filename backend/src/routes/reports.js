@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
+const { getAgentConductGraceSeconds } = require('../lib/systemSettings');
 
 const prisma = new PrismaClient();
 
@@ -152,20 +153,32 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
 // them scattered: (1) flagged messages (moderation.service.js result on
 // content this agent typed — see /flagged-messages above) and (2) the
 // "viewed a customer message but didn't reply" audit trail (MessageView —
-// see schema.prisma and messages.js POST /:conversationId, which deletes an
-// agent's own MessageView rows the moment they DO reply). Both are bounded by
-// the same from/to range as the rest of this report, filtered on
-// MessageView.viewedAt (when the agent opened it) — note a row only exists
-// at all while still unanswered (it's deleted the moment that agent replies,
-// see messages.js), so this reads as "still-unresolved items that were first
-// opened during this date range," not a full historical log of every view
-// that ever happened.
+// see schema.prisma). Both are bounded by the same from/to range as the rest
+// of this report, filtered on MessageView.viewedAt (when the agent opened
+// it) — note a row only exists at all while still unanswered, so this reads
+// as "still-unresolved items that were first opened during this date
+// range," not a full historical log of every view that ever happened.
+//
+// A row disappears (never counted here) as soon as EITHER that agent
+// personally replies, OR anyone else does within the configured grace
+// window of the customer message that triggered it — see
+// clearMessageViewsAfterReply (lib/messageViewClear.js), called from both
+// messages.js and quickReplies.js after a send succeeds. Multiple agents
+// having the same still-unanswered chat open at once is normal, not
+// misconduct on its own; only the ones still sitting unanswered past the
+// grace window (Settings > "ระบบ", default 60s) actually get flagged below —
+// a row that's SURVIVED to this point but hasn't hit that age yet is still
+// within its grace period and deliberately excluded, not yet a verdict.
+function agentConductViewCutoff(graceSeconds) {
+  return new Date(Date.now() - graceSeconds * 1000);
+}
 
 // GET /api/reports/agent-conduct?from=&to= — overview, one row per agent.
 router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
   const { from, to } = req.query;
+  const graceSeconds = await getAgentConductGraceSeconds();
   const flaggedWhere = { flagged: true, senderId: { not: null } };
-  const viewWhere = {};
+  const viewWhere = { message: { createdAt: { lte: agentConductViewCutoff(graceSeconds) } } };
   if (from || to) {
     flaggedWhere.createdAt = {};
     viewWhere.viewedAt = {};
@@ -222,9 +235,10 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
 router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
   const { agentId } = req.params;
   const { from, to } = req.query;
+  const graceSeconds = await getAgentConductGraceSeconds();
 
   const flaggedWhere = { flagged: true, senderId: agentId };
-  const viewWhere = { agentId };
+  const viewWhere = { agentId, message: { createdAt: { lte: agentConductViewCutoff(graceSeconds) } } };
   if (from || to) {
     flaggedWhere.createdAt = {};
     viewWhere.viewedAt = {};

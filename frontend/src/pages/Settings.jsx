@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Search, Link2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Search, Link2, ChevronUp, ChevronDown, Cog } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -491,6 +491,8 @@ function useCategories() {
     channels: { label: t('settings_channels'), icon: MessageSquare },
     agents: { label: t('settings_agents'), icon: Users },
     tags: { label: t('settings_tags'), icon: TagIcon },
+    'approved-links': { label: 'ลิงค์ที่อนุญาต', icon: Link2 },
+    system: { label: 'ระบบ', icon: Cog },
   };
 }
 
@@ -523,6 +525,14 @@ export default function Settings() {
   // an unregistered site.
   const [approvedLinks, setApprovedLinks] = useState([]);
   const [approvedLinkForm, setApprovedLinkForm] = useState({ domain: '', label: '' });
+  // "ระบบ" — global app-level settings (backend/src/lib/systemSettings.js).
+  // graceInput is the text field's own draft value, kept separate from
+  // systemSettings (the last-saved value from the server) so typing a new
+  // number doesn't look "saved" until the PATCH actually succeeds.
+  const [systemSettings, setSystemSettings] = useState(null);
+  const [graceInput, setGraceInput] = useState('');
+  const [savingSystemSettings, setSavingSystemSettings] = useState(false);
+  const [systemSettingsSaved, setSystemSettingsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -559,6 +569,10 @@ export default function Settings() {
     axios.get('/api/channel-category-groups').then(r => setChannelCategoryGroups(r.data));
     axios.get('/api/agent-categories').then(r => setAgentCategories(r.data));
     axios.get('/api/approved-links').then(r => setApprovedLinks(r.data)).catch(() => {});
+    axios.get('/api/settings/system').then(r => {
+      setSystemSettings(r.data);
+      setGraceInput(String(r.data.agentConductGraceSeconds));
+    }).catch(() => {});
   }, []);
 
   async function addChannelCategory(e) {
@@ -860,6 +874,27 @@ export default function Settings() {
     if (!confirm('ลบโดเมนนี้ออกจากรายการที่อนุญาต? ข้อความที่ส่งลิงค์นี้ในอนาคตจะถูกแจ้งเตือนว่าเป็นลิงค์ไม่ได้รับอนุญาต')) return;
     await axios.delete(`/api/approved-links/${id}`);
     setApprovedLinks(prev => prev.filter(l => l.id !== id));
+  }
+
+  async function saveSystemSettings(e) {
+    e.preventDefault();
+    const seconds = Number(graceInput);
+    if (!Number.isInteger(seconds) || seconds < 0) {
+      setError('grace window ต้องเป็นจำนวนเต็มวินาที ตั้งแต่ 0 ขึ้นไป');
+      return;
+    }
+    setSavingSystemSettings(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { agentConductGraceSeconds: seconds });
+      setSystemSettings(data);
+      setGraceInput(String(data.agentConductGraceSeconds));
+      setSystemSettingsSaved(true);
+      setTimeout(() => setSystemSettingsSaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingSystemSettings(false);
+    }
   }
 
   const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
@@ -1379,6 +1414,48 @@ export default function Settings() {
               เพิ่มโดเมน
             </button>
           </form>
+        </div>
+      )}
+
+      {/* System — "ระบบ" */}
+      {tab === 'system' && (
+        <div className="space-y-4 max-w-2xl">
+          <div className={cardCls}>
+            <h3 className="font-medium text-slate-100 mb-1">Grace window สำหรับรายงาน "อ่านแล้วไม่ตอบ"</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              เมื่อลูกค้าส่งข้อความ นับจากเวลานั้นเป็นต้นไป ถ้ามีพนักงานคนใดคนหนึ่งในบรรดาผู้ที่เปิดดูแชทนั้นตอบกลับภายในเวลาที่ตั้งไว้นี้
+              ทุกคนที่เปิดดูจะไม่โดนนับว่า "อ่านแล้วไม่ตอบ" ในรายงาน พนักงาน (เพราะลูกค้าได้รับการตอบแล้วจริง) —
+              แต่ถ้าเลยเวลานี้ไปแล้วยังไม่มีใครตอบเลย ทุกคนที่เปิดดูแชทนั้นจะถูกนับในรายงานตามเดิม
+            </p>
+            {agent?.role === 'admin' ? (
+              <form onSubmit={saveSystemSettings} className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Grace window (วินาที)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className={`${inputCls} w-32`}
+                    value={graceInput}
+                    onChange={e => setGraceInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingSystemSettings || graceInput === '' || (systemSettings && String(systemSettings.agentConductGraceSeconds) === graceInput)}
+                  className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50"
+                >
+                  {savingSystemSettings ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                {systemSettingsSaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
+              </form>
+            ) : (
+              <p className="text-sm text-slate-100">
+                ค่าปัจจุบัน: {systemSettings ? `${systemSettings.agentConductGraceSeconds} วินาที` : '...'}
+                <span className="text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+              </p>
+            )}
+          </div>
         </div>
       )}
 

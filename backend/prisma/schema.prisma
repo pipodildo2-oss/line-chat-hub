@@ -452,3 +452,21 @@ model UpsellSubmissionItem {
   @@index([submissionId])
   @@index([messageId])
 }
+
+// Single-row table for global app-level settings — deliberately not a
+// generic key-value store, since there's only ever been one of these so
+// far; add more scalar columns here as more system-wide settings show up
+// rather than reaching for a KV pattern this codebase otherwise doesn't
+// use anywhere else. Always read/written through the fixed id "singleton"
+// (see backend/src/lib/systemSettings.js) so there's exactly one row ever.
+model SystemSetting {
+  id                       String   @id @default("singleton")
+  // How long (in seconds), counted from the customer's message that
+  // triggered a MessageView row, an agent reply from ANYONE viewing that
+  // conversation still counts as "answered in time" — see
+  // backend/src/lib/messageViewClear.js and the Agent Conduct report
+  // (reports.js) for where this is actually applied. Settings > "ระบบ" in
+  // the frontend is the only place this gets changed.
+  agentConductGraceSeconds Int      @default(60)
+  updatedAt                DateTime @updatedAt
+}

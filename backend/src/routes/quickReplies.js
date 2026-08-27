@@ -5,6 +5,7 @@ const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
 const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
 const { canAccessChannel } = require('../lib/conversationQuery');
+const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
 const prisma = new PrismaClient();
 
@@ -712,10 +713,7 @@ router.post('/:id/send', auth, async (req, res) => {
     // not confirmation the agent needs before seeing their message went through.
     prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: now } })
       .catch(e => console.error('lastMessageAt update failed (message already sent+recorded):', e.message));
-    prisma.messageView.deleteMany({ where: { agentId: req.agent.id, message: { conversationId: conversation.id } } })
-      .then(cleared => {
-        if (cleared.count > 0) emitToConversation(conversation.id, 'message_view_cleared', { agentId: req.agent.id });
-      })
+    clearMessageViewsAfterReply({ conversationId: conversation.id, agentId: req.agent.id, repliedAt: now })
       .catch(e => console.error('messageView cleanup failed (message already sent+recorded):', e.message));
   } catch (err) {
     console.error('Send quick reply failed:', err.message);
