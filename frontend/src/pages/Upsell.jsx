@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileText, Users, CheckCircle2, ChevronUp, ChevronDown, ChevronsUpDown, Trash2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -56,6 +56,24 @@ function DateRangeFilter({ preset, from, to, onPreset, onCustom }) {
   );
 }
 
+// Same backdrop+centered-image pattern as Inbox.jsx's own Lightbox — kept as
+// a separate local copy since that one isn't exported, but intentionally
+// identical so the viewing experience matches across the app.
+function Lightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-9 h-9 flex items-center justify-center"
+      >
+        <X size={20} />
+      </button>
+      <img src={src} alt="" className="max-w-full max-h-full rounded-lg object-contain" onClick={e => e.stopPropagation()} />
+    </div>
+  );
+}
+
 function Avatar({ name }) {
   return (
     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
@@ -76,7 +94,7 @@ const STATUS_LABEL = { pending: 'รอตรวจ', approved: 'ผ่าน', 
 // and can't be linked directly via <img src> — same blob-fetch pattern as
 // ImageMessage in Inbox.jsx. Agent-sent images (quick-reply/composer) have no
 // lineMessageId and are a plain, unauthenticated /uploads/... link instead.
-function CustomerImagePreview({ messageId }) {
+function CustomerImagePreview({ messageId, onImageClick }) {
   const [src, setSrc] = useState(null);
   const [failed, setFailed] = useState(false);
 
@@ -96,35 +114,68 @@ function CustomerImagePreview({ messageId }) {
     };
   }, [messageId]);
 
-  if (failed) return <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>;
-  if (!src) return <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
-  return <img src={src} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />;
+  if (failed) return <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>;
+  if (!src) return <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
+  return (
+    <img
+      src={src}
+      alt=""
+      onClick={() => onImageClick?.(src)}
+      className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
+    />
+  );
 }
 
-function AgentImagePreview({ msg }) {
+function AgentImagePreview({ msg, onImageClick }) {
   let url = null;
   try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
   return url ? (
-    <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+    <img
+      src={url}
+      alt=""
+      onClick={() => onImageClick?.(url)}
+      className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
+    />
   ) : (
-    <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>
+    <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>
   );
 }
 
-function SubmissionItemPreview({ item }) {
-  const msg = item.message;
-  if (!msg) return null;
-  if (msg.type === 'image') {
-    return msg.lineMessageId ? <CustomerImagePreview messageId={msg.lineMessageId} /> : <AgentImagePreview msg={msg} />;
-  }
+// Text and image items are laid out separately (images as a thumbnail strip,
+// text as stacked bubbles) instead of one wrapped row mixing both — much
+// easier to scan when a submission bundles several claimed messages together.
+function SubmissionItems({ items, onImageClick }) {
+  const imageItems = items.filter(i => i.message?.type === 'image');
+  const textItems = items.filter(i => i.message && i.message.type !== 'image');
+
   return (
-    <p className="text-sm text-gray-700 dark:text-slate-300 line-clamp-3 whitespace-pre-wrap break-words">
-      {msg.content}
-    </p>
+    <div className="space-y-2">
+      {textItems.length > 0 && (
+        <div className="space-y-1.5">
+          {textItems.map(item => (
+            <p
+              key={item.id}
+              className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words bg-gray-50 dark:bg-slate-800/60 rounded-lg px-3 py-2"
+            >
+              {item.message.content}
+            </p>
+          ))}
+        </div>
+      )}
+      {imageItems.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {imageItems.map(item => (
+            item.message.lineMessageId
+              ? <CustomerImagePreview key={item.id} messageId={item.message.lineMessageId} onImageClick={onImageClick} />
+              : <AgentImagePreview key={item.id} msg={item.message} onImageClick={onImageClick} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function SubmissionRow({ submission, onReview, onDelete, navigate }) {
+function SubmissionRow({ submission, onReview, onDelete, navigate, onImageClick }) {
   const [amount, setAmount] = useState(submission.amount ?? '');
   const [saving, setSaving] = useState(false);
   // Lets a reviewer reopen the amount+ผ่าน/ไม่ผ่าน form after already
@@ -196,9 +247,7 @@ function SubmissionRow({ submission, onReview, onDelete, navigate }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {submission.items.map(item => <SubmissionItemPreview key={item.id} item={item} />)}
-      </div>
+      <SubmissionItems items={submission.items} onImageClick={onImageClick} />
 
       {showForm ? (
         <div className="flex items-center gap-2 pt-1 flex-wrap">
@@ -265,6 +314,7 @@ function SubmissionRow({ submission, onReview, onDelete, navigate }) {
 
 function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
   const [data, setData] = useState(null);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
   function load() {
     axios.get(`/api/upsells/agents/${agentId}`).then(r => setData(r.data));
@@ -284,6 +334,7 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
         className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
@@ -308,11 +359,15 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
           ) : data.submissions.length === 0 ? (
             <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">ยังไม่มีรายการอัพเซลล์</p>
           ) : (
-            data.submissions.map(s => <SubmissionRow key={s.id} submission={s} onReview={handleReview} onDelete={handleDelete} navigate={navigate} />)
+            data.submissions.map(s => (
+              <SubmissionRow key={s.id} submission={s} onReview={handleReview} onDelete={handleDelete} navigate={navigate} onImageClick={setLightboxSrc} />
+            ))
           )}
         </div>
       </div>
     </div>
+    <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+    </>
   );
 }
 
@@ -321,7 +376,12 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
 // agent → approve/reject each submission with a ผ่าน/ไม่ผ่าน + amount.
 function UpsellReviewPage() {
   const [agents, setAgents] = useState(null);
-  const [selectedAgentId, setSelectedAgentId] = useState(null);
+  // Kept in the URL (not local state) so it survives a round trip to the
+  // chat and back: "ไปที่แชท" pushes /inbox onto history, and browser back
+  // then lands on this exact /upsell/review?agent=<id> URL again, reopening
+  // the same agent's modal instead of dropping back to the bare list.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedAgentId = searchParams.get('agent');
   // Shared across every team box, same sortable-header idea as คะแนน —
   // defaults to worklist-first (most รอตรวจ on top) since that's the whole
   // point of this page.
@@ -329,6 +389,24 @@ function UpsellReviewPage() {
   const [sortDir, setSortDir] = useState('desc');
   const { socket } = useSocket();
   const navigate = useNavigate();
+
+  function openAgent(id) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('agent', id);
+      return next;
+    });
+  }
+
+  // Explicit close uses replace so it doesn't leave a dead "agent selected"
+  // entry in history for back to land on again right after closing.
+  function closeAgent() {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('agent');
+      return next;
+    }, { replace: true });
+  }
 
   function handleSort(key) {
     if (sortKey === key) {
@@ -422,7 +500,7 @@ function UpsellReviewPage() {
                   {team.agents.map(a => (
                     <tr
                       key={a.id}
-                      onClick={() => setSelectedAgentId(a.id)}
+                      onClick={() => openAgent(a.id)}
                       className={`border-b border-gray-50 dark:border-slate-800/60 last:border-0 cursor-pointer transition-colors ${
                         a.pending > 0
                           ? 'bg-amber-50 dark:bg-amber-500/10 border-l-2 border-l-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20'
@@ -464,7 +542,7 @@ function UpsellReviewPage() {
       {selectedAgentId && (
         <UpsellAgentModal
           agentId={selectedAgentId}
-          onClose={() => setSelectedAgentId(null)}
+          onClose={closeAgent}
           navigate={navigate}
           onChanged={load}
         />
