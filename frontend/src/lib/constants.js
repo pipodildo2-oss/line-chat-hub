@@ -14,15 +14,17 @@ export function stageInfo(key) {
 export const STATUS_COLORS = {
   open: 'bg-emerald-100 text-emerald-700',
   pending: 'bg-amber-100 text-amber-700',
+  stopped: 'bg-indigo-100 text-indigo-700',
   closed: 'bg-gray-100 text-gray-600',
 };
 
-// Leading-dot color for the same open/pending/closed badges above — a small
-// solid circle before the label, same convention as the online/break/offline
-// status dot in Sidebar.jsx.
+// Leading-dot color for the same open/pending/stopped/closed badges above —
+// a small solid circle before the label, same convention as the
+// online/break/offline status dot in Sidebar.jsx.
 export const STATUS_DOT_COLORS = {
   open: 'bg-emerald-500',
   pending: 'bg-amber-500',
+  stopped: 'bg-indigo-500',
   closed: 'bg-gray-400',
 };
 

@@ -6,6 +6,12 @@ const { getVisibleChannelIds, canAccessChannel, buildConversationWhere, daysInac
 
 const prisma = new PrismaClient();
 
+// เปิด / รอ / หยุด / ปิด — see PATCH /:id below (the only place status is
+// ever written from the frontend) and line.service.js's reopen-on-message
+// logic, which treats 'pending' and 'stopped' the same way (deliberately
+// left untouched by an incoming message, unlike 'closed' which reopens).
+const CONVERSATION_STATUSES = ['open', 'pending', 'stopped', 'closed'];
+
 const CONV_INCLUDE = {
   channel: { select: { id: true, name: true, active: true } },
   agent: { select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } } },
@@ -165,12 +171,13 @@ router.get('/summary', auth, async (req, res) => {
   });
 
   const [
-    total, open, pending, closed, blockedCount, unansweredCandidates,
+    total, open, pending, stopped, closed, blockedCount, unansweredCandidates,
     inactive3, inactive7, inactive14, inactive30, inactive60, neverMessaged,
   ] = await Promise.all([
     prisma.conversation.count({ where: baseWhere }),
     prisma.conversation.count({ where: { ...baseWhere, status: 'open' } }),
     prisma.conversation.count({ where: { ...baseWhere, status: 'pending' } }),
+    prisma.conversation.count({ where: { ...baseWhere, status: 'stopped' } }),
     prisma.conversation.count({ where: { ...baseWhere, status: 'closed' } }),
     prisma.conversation.count({ where: { ...baseWhere, blocked: true } }),
     prisma.conversation.findMany({
@@ -192,7 +199,7 @@ router.get('/summary', auth, async (req, res) => {
   ).length;
 
   res.json({
-    total, open, pending, closed, blocked: blockedCount, unanswered,
+    total, open, pending, stopped, closed, blocked: blockedCount, unanswered,
     inactive3, inactive7, inactive14, inactive30, inactive60, neverMessaged,
   });
 });
@@ -228,6 +235,9 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     const { status, agentId, displayName, notes, lifecycleStage, blocked, caution, cautionReason } = req.body;
+    if (status && !CONVERSATION_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `status ต้องเป็นหนึ่งใน ${CONVERSATION_STATUSES.join(', ')}` });
+    }
     const data = {};
     if (status) data.status = status;
     if (agentId !== undefined) data.agentId = agentId || null;

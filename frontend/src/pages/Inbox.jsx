@@ -534,13 +534,13 @@ function FilterPanel({ filter, setFilter, channels, agents, tags, onClose }) {
       <div>
         <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5">สถานะ</p>
         <div className="flex gap-1 flex-wrap">
-          {['', 'open', 'pending', 'closed'].map(s => (
+          {['', 'open', 'pending', 'stopped', 'closed'].map(s => (
             <button
               key={s || 'all'}
               onClick={() => setFilter(f => ({ ...f, status: s }))}
               className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500'}`}
             >
-              {s === '' ? t('status_all') : s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : t('status_closed')}
+              {s === '' ? t('status_all') : s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : s === 'stopped' ? t('status_stopped') : t('status_closed')}
             </button>
           ))}
         </div>
@@ -2045,13 +2045,14 @@ export default function Inbox() {
 
   async function changeStatus(status) {
     const { data } = await axios.patch(`/api/conversations/${selected.id}`, { status });
-    if (status === 'closed') {
-      // Closing a case is naturally followed by "handle whatever's next," not
-      // staring at the one just finished — jump straight to the next open,
-      // unread conversation instead of leaving the closed one on screen.
-      // Scans forward from its position in the current list order (wrapping
-      // around); lands on null (the "select a conversation" placeholder) if
-      // nothing else is open and unread right now.
+    if (status === 'closed' || status === 'stopped') {
+      // Closing OR stopping a case is naturally followed by "handle
+      // whatever's next," not staring at the one just set aside — jump
+      // straight to the next open, unread conversation instead of leaving
+      // this one on screen. Scans forward from its position in the current
+      // list order (wrapping around); lands on null (the "select a
+      // conversation" placeholder) if nothing else is open and unread
+      // right now.
       const idx = conversations.findIndex(c => c.id === data.id);
       const ordered = idx === -1 ? conversations : [...conversations.slice(idx + 1), ...conversations.slice(0, idx)];
       const next = ordered.find(c => c.id !== data.id && c.status === 'open' && (c._count?.messages || 0) > 0);
@@ -2114,13 +2115,13 @@ export default function Inbox() {
             </button>
           </div>
           <div className="flex gap-1 flex-wrap">
-            {['open', 'pending', 'closed'].map(s => (
+            {['open', 'pending', 'stopped', 'closed'].map(s => (
               <button
                 key={s}
                 onClick={() => setFilter(f => ({ ...f, status: f.status === s ? '' : s }))}
                 className={`text-xs px-2 py-1 rounded-full border transition-colors ${filter.status === s ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
               >
-                {s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : t('status_closed')}
+                {s === 'open' ? t('status_open') : s === 'pending' ? t('status_pending') : s === 'stopped' ? t('status_stopped') : t('status_closed')}
               </button>
             ))}
           </div>
@@ -2218,6 +2219,7 @@ export default function Inbox() {
               >
                 <option value="open">เปิด</option>
                 <option value="pending">รอ</option>
+                <option value="stopped">หยุด</option>
                 <option value="closed">ปิด</option>
               </select>
               <button

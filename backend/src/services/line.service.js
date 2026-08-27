@@ -148,11 +148,12 @@ async function processLineEvent(channel, event) {
         lineDisplayName: displayName,
         pictureUrl,
         // A closed conversation reopens on a new message — it was "done",
-        // this is a fresh inquiry. "รอ" (pending) is different: an agent put
-        // it there on purpose (waiting on something), not because it's
-        // resolved, so a follow-up message shouldn't yank it back to "เปิด"
-        // out from under them — leave status untouched while pending.
-        ...(existingConv?.status === 'pending' ? {} : { status: 'open' }),
+        // this is a fresh inquiry. "รอ" (pending) and "หยุด" (stopped) are
+        // different: an agent put it there on purpose (waiting on something,
+        // or deliberately pausing this customer), not because it's resolved,
+        // so a follow-up message shouldn't yank it back to "เปิด" out from
+        // under them — leave status untouched in either case.
+        ...(['pending', 'stopped'].includes(existingConv?.status) ? {} : { status: 'open' }),
         // If they're messaging us, they're obviously not blocking us — covers
         // the edge case where an 'unfollow'-then-'follow' pair happened but a
         // 'follow' webhook delivery got lost somehow.

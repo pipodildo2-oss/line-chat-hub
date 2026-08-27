@@ -10,10 +10,11 @@ const STATUS_TABS = [
   { key: '', label: 'ทั้งหมด' },
   { key: 'open', label: 'เปิด' },
   { key: 'pending', label: 'รอ' },
+  { key: 'stopped', label: 'หยุด' },
   { key: 'closed', label: 'ปิด' },
 ];
 
-const STATUS_LABEL = { open: 'เปิด', pending: 'รอ', closed: 'ปิด' };
+const STATUS_LABEL = { open: 'เปิด', pending: 'รอ', stopped: 'หยุด', closed: 'ปิด' };
 
 // Values in minutes. This is the actual filter threshold applied to the list —
 // separate from the fixed 10-minute figure shown on the summary card, which is
@@ -144,6 +145,10 @@ export default function Customers() {
         <StatCard
           label="รอดำเนินการ" value={summary?.pending} cls="border-amber-500/25 bg-amber-500/10 text-amber-300"
           onClick={() => setStatus(s => s === 'pending' ? '' : 'pending')} active={status === 'pending'}
+        />
+        <StatCard
+          label="หยุด" value={summary?.stopped} cls="border-indigo-500/25 bg-indigo-500/10 text-indigo-300"
+          onClick={() => setStatus(s => s === 'stopped' ? '' : 'stopped')} active={status === 'stopped'}
         />
         <StatCard
           label="ปิดแล้ว" value={summary?.closed} cls="border-slate-700 bg-slate-800/60 text-slate-400"

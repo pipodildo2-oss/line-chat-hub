@@ -255,7 +255,7 @@ model Conversation {
   channel     LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   agentId     String?
   agent       Agent?      @relation(fields: [agentId], references: [id])
-  status      String      @default("open") // open | pending | closed
+  status      String      @default("open") // open | pending | stopped | closed — see conversations.js's CONVERSATION_STATUSES
   lifecycleStage String   @default("new") // new | contacted | qualified | negotiation | won | lost
   // Legacy single free-text note — superseded by noteEntries below (an
   // agent can now add multiple, timestamped notes instead of one block of

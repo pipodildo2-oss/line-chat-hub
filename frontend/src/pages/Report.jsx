@@ -1254,6 +1254,7 @@ const FOLLOWUP_STATUS_TABS = [
   { key: '', label: 'ทั้งหมด' },
   { key: 'open', label: 'เปิด' },
   { key: 'pending', label: 'รอ' },
+  { key: 'stopped', label: 'หยุด' },
   { key: 'closed', label: 'ปิด' },
 ];
 
@@ -2063,7 +2064,7 @@ function CustomerFollowupPage() {
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[c.status] || 'bg-gray-400'}`} />
-                        {c.status === 'open' ? 'เปิด' : c.status === 'pending' ? 'รอ' : 'ปิด'}
+                        {c.status === 'open' ? 'เปิด' : c.status === 'pending' ? 'รอ' : c.status === 'stopped' ? 'หยุด' : 'ปิด'}
                       </span>
                     </td>
                     <td className="px-4 py-2.5">

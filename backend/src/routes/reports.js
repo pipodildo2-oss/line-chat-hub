@@ -89,9 +89,10 @@ const UNANSWERED_GRACE_MS = 10 * 60 * 1000; // 10 minutes — don't flag a custo
 // this lists every open/closed conversation whose most recent message is
 // instead from the customer AND has been sitting unanswered for at least 10
 // minutes (a customer message from 30 seconds ago isn't "slipped through"
-// yet, it just hasn't been gotten to). "Pending" is deliberately excluded —
-// that bucket is for chats intentionally on hold, not ones that slipped
-// through, so it shouldn't show up on this worklist.
+// yet, it just hasn't been gotten to). "Pending" and "หยุด" (stopped) are
+// deliberately excluded — those buckets are for chats intentionally on
+// hold, not ones that slipped through, so neither should show up on this
+// worklist.
 // In practice, matching "closed" conversations should be rare-to-never: an
 // incoming LINE message always flips status back to 'open' (see
 // line.service.js), so a closed conversation can only end up here if that

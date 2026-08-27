@@ -78,7 +78,8 @@ function buildConversationWhere(query, meAgentId) {
   if (status) where.status = status;
   else if (unansweredMinutes) {
     // Business rule (see reports.js /unanswered): a conversation on "pending"
-    // isn't actionable — nobody's expected to reply while it's on hold.
+    // or "หยุด" (stopped) isn't actionable — nobody's expected to reply
+    // while it's deliberately on hold, so only open/closed count here.
     where.status = { in: ['open', 'closed'] };
   }
   if (lifecycleStage) where.lifecycleStage = lifecycleStage;
