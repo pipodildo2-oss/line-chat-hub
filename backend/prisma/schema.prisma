@@ -461,12 +461,14 @@ model UpsellSubmissionItem {
 // (see backend/src/lib/systemSettings.js) so there's exactly one row ever.
 model SystemSetting {
   id                       String   @id @default("singleton")
-  // How long (in seconds), counted from the customer's message that
-  // triggered a MessageView row, an agent reply from ANYONE viewing that
-  // conversation still counts as "answered in time" — see
-  // backend/src/lib/messageViewClear.js and the Agent Conduct report
-  // (reports.js) for where this is actually applied. Settings > "ระบบ" in
-  // the frontend is the only place this gets changed.
+  // How long (in seconds), counted from EACH agent's own MessageView.viewedAt
+  // (when they personally opened a still-unanswered conversation), a reply
+  // from anyone still counts as "answered in time" for the whole group that
+  // has it open — see backend/src/lib/messageViewClear.js and the Agent
+  // Conduct report (reports.js) for where this is actually applied. An
+  // agent who opens the chat later has a later personal deadline than one
+  // who opened it right away. Settings > "ระบบ" in the frontend is the only
+  // place this gets changed.
   agentConductGraceSeconds Int      @default(60)
   updatedAt                DateTime @updatedAt
 }

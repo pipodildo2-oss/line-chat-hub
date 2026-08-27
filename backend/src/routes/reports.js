@@ -160,17 +160,34 @@ router.get('/unanswered', auth, requireAdmin, async (req, res) => {
 // range," not a full historical log of every view that ever happened.
 //
 // A row disappears (never counted here) as soon as EITHER that agent
-// personally replies, OR anyone else does within the configured grace
-// window of the customer message that triggered it — see
-// clearMessageViewsAfterReply (lib/messageViewClear.js), called from both
-// messages.js and quickReplies.js after a send succeeds. Multiple agents
-// having the same still-unanswered chat open at once is normal, not
-// misconduct on its own; only the ones still sitting unanswered past the
-// grace window (Settings > "ระบบ", default 60s) actually get flagged below —
-// a row that's SURVIVED to this point but hasn't hit that age yet is still
-// within its grace period and deliberately excluded, not yet a verdict.
+// personally replies, OR anyone (including that agent) replies while ANY
+// currently-open viewer of the same conversation is still within THEIR own
+// grace window — see clearMessageViewsAfterReply (lib/messageViewClear.js),
+// called from both messages.js and quickReplies.js after a send succeeds.
+// The clock is per viewer (their own viewedAt + the grace window), not
+// shared: multiple agents having the same still-unanswered chat open at
+// once is normal, not misconduct, and one of them opening it later just
+// means their own personal deadline is later too. Only once EVERY viewer's
+// own deadline has passed with nobody having replied in time does a row
+// survive to actually get flagged below — a row that's SURVIVED to this
+// point but hasn't hit its own deadline yet is still within grace and
+// deliberately excluded, not yet a verdict.
 function agentConductViewCutoff(graceSeconds) {
   return new Date(Date.now() - graceSeconds * 1000);
+}
+
+// Combines the from/to date-range filter (this report's own date picker)
+// with the grace-window cutoff above on the SAME MessageView.viewedAt field
+// — whichever upper bound is earlier wins, so a report scoped to a past
+// date range still only shows rows whose personal grace window had
+// genuinely expired by the end of that range, while today's report
+// respects the live, ever-advancing cutoff.
+function viewedAtFilter(graceSeconds, from, to) {
+  const cutoff = agentConductViewCutoff(graceSeconds);
+  const filter = { lte: cutoff };
+  if (from) filter.gte = dayStart(from);
+  if (to) { const end = dayEnd(to); if (end < cutoff) filter.lte = end; }
+  return filter;
 }
 
 // GET /api/reports/agent-conduct?from=&to= — overview, one row per agent.
@@ -178,13 +195,9 @@ router.get('/agent-conduct', auth, requireAdmin, async (req, res) => {
   const { from, to } = req.query;
   const graceSeconds = await getAgentConductGraceSeconds();
   const flaggedWhere = { flagged: true, senderId: { not: null } };
-  const viewWhere = { message: { createdAt: { lte: agentConductViewCutoff(graceSeconds) } } };
-  if (from || to) {
-    flaggedWhere.createdAt = {};
-    viewWhere.viewedAt = {};
-    if (from) { flaggedWhere.createdAt.gte = dayStart(from); viewWhere.viewedAt.gte = dayStart(from); }
-    if (to) { flaggedWhere.createdAt.lte = dayEnd(to); viewWhere.viewedAt.lte = dayEnd(to); }
-  }
+  const viewWhere = { viewedAt: viewedAtFilter(graceSeconds, from, to) };
+  if (from) flaggedWhere.createdAt = { ...flaggedWhere.createdAt, gte: dayStart(from) };
+  if (to) flaggedWhere.createdAt = { ...flaggedWhere.createdAt, lte: dayEnd(to) };
 
   const [agents, flaggedGroups, viewGroups] = await Promise.all([
     // categoryId/category included so the frontend can group this same data
@@ -238,13 +251,9 @@ router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
   const graceSeconds = await getAgentConductGraceSeconds();
 
   const flaggedWhere = { flagged: true, senderId: agentId };
-  const viewWhere = { agentId, message: { createdAt: { lte: agentConductViewCutoff(graceSeconds) } } };
-  if (from || to) {
-    flaggedWhere.createdAt = {};
-    viewWhere.viewedAt = {};
-    if (from) { flaggedWhere.createdAt.gte = dayStart(from); viewWhere.viewedAt.gte = dayStart(from); }
-    if (to) { flaggedWhere.createdAt.lte = dayEnd(to); viewWhere.viewedAt.lte = dayEnd(to); }
-  }
+  const viewWhere = { agentId, viewedAt: viewedAtFilter(graceSeconds, from, to) };
+  if (from) flaggedWhere.createdAt = { ...flaggedWhere.createdAt, gte: dayStart(from) };
+  if (to) flaggedWhere.createdAt = { ...flaggedWhere.createdAt, lte: dayEnd(to) };
 
   const [agent, flaggedMessages, viewedNoReply] = await Promise.all([
     prisma.agent.findUnique({ where: { id: agentId }, select: { id: true, name: true, email: true, role: true } }),

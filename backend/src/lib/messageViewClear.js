@@ -12,24 +12,30 @@ const prisma = new PrismaClient();
 // The replying agent's own MessageView rows are always cleared outright —
 // they took action, full stop. Whether anyone ELSE who also viewed this
 // conversation (and didn't happen to be the one who replied) gets cleared
-// too depends on timing: if this reply landed within the configured grace
-// window of whatever customer message triggered the still-open MessageView
-// rows, the customer was genuinely served in time by the TEAM as a whole —
+// too depends on timing, and the clock is PER VIEWER, not shared: each
+// agent's own deadline is THEIR viewedAt (when they personally opened the
+// still-unanswered chat) plus the configured grace window — an agent who
+// opened it late gets a later personal deadline than one who opened it
+// right away, since they couldn't have answered before they even saw it.
+// If this reply landed before ANY currently-open viewer's own deadline —
+// even one agent still being within their own window is enough — the
+// customer was genuinely served in time by the TEAM as a whole, so EVERY
+// viewer is cleared, including ones whose own deadline had already passed:
 // multiple agents having the same chat open when only one needs to answer
-// is normal, not misconduct — so every viewer is cleared. A reply that
-// lands AFTER the grace window only clears the replier; everyone else's
-// rows are left for the Agent Conduct report (reports.js) to correctly
-// flag once it runs, since the customer genuinely waited too long before
-// anyone stepped in.
+// is normal, not misconduct. Only if EVERY viewer's own deadline has
+// already passed by the time this reply lands does it fall back to
+// clearing just the replier; everyone else's rows are left for the Agent
+// Conduct report (reports.js) to correctly flag once it runs, since by
+// then even the most recently arrived viewer waited too long.
 async function clearMessageViewsAfterReply({ conversationId, agentId, repliedAt }) {
   const graceMs = (await getAgentConductGraceSeconds()) * 1000;
   const views = await prisma.messageView.findMany({
     where: { message: { conversationId } },
-    select: { agentId: true, message: { select: { createdAt: true } } },
+    select: { agentId: true, viewedAt: true },
   });
   if (views.length === 0) return;
 
-  const repliedInTime = views.some(v => repliedAt - v.message.createdAt <= graceMs);
+  const repliedInTime = views.some(v => repliedAt - v.viewedAt <= graceMs);
   if (repliedInTime) {
     const distinctAgentIds = [...new Set(views.map(v => v.agentId))];
     await prisma.messageView.deleteMany({ where: { message: { conversationId } } });
