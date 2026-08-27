@@ -1,15 +1,22 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
-import { X, Check, Camera, Loader2 } from 'lucide-react';
+import { X, Check, Camera, Loader2, Monitor, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Keeps this in sync with the ~10MB cap LINE itself enforces on original
 // images (see imageStorage.js / line.service.js) — no reason to let an
 // avatar upload be more permissive than message attachments already are.
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 
+const COLOR_MODE_OPTIONS = [
+  { key: 'default', label: 'ค่าเริ่มต้น', icon: Monitor },
+  { key: 'light', label: 'โหมดสว่าง', icon: Sun },
+];
+
 export default function ProfileModal({ onClose }) {
   const { agent, updateAgent } = useAuth();
+  const { colorMode, setColorMode } = useTheme();
   const [name, setName] = useState(agent?.name || '');
   const [language, setLanguage] = useState(agent?.language === 'en' ? 'en' : 'th');
   const [showPasswordFields, setShowPasswordFields] = useState(false);
@@ -127,6 +134,27 @@ export default function ProfileModal({ onClose }) {
               <option value="th">ไทย (Thai)</option>
               <option value="en">English</option>
             </select>
+          </div>
+
+          <div>
+            <label className={labelCls}>โหมดสี</label>
+            <div className="flex gap-2">
+              {COLOR_MODE_OPTIONS.map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setColorMode(key)}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    colorMode === key
+                      ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white'
+                      : 'text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon size={16} />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {showPasswordFields ? (
