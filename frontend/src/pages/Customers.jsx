@@ -50,7 +50,7 @@ function StatCard({ label, value, cls, onClick, active }) {
       onClick={onClick}
       className={`text-left rounded-xl border px-4 py-2.5 min-w-[110px] transition-colors ${cls} ${onClick ? 'cursor-pointer hover:brightness-125' : ''} ${active ? 'ring-2 ring-offset-0 ring-current' : ''}`}
     >
-      <p className="text-xl font-bold text-white leading-tight">{value ?? '—'}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{value ?? '—'}</p>
       <p className="text-[11px] font-medium mt-0.5">{label}</p>
     </Tag>
   );
@@ -122,22 +122,22 @@ export default function Customers() {
   // otherwise you can get stranded on page 4 of a filter that only has 2 pages.
   useEffect(() => { setPage(1); }, [search, status, channelId, agentId, tagId, blocked, unansweredMinutes, sort]);
 
-  const selectCls = 'text-sm border border-slate-700 bg-slate-800 text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-aurora-teal';
+  const selectCls = 'text-sm border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-aurora-teal';
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
     <div className="p-6 overflow-y-auto h-full">
       <div className="flex items-center gap-2 mb-1">
-        <Contact size={20} className="text-slate-400" />
-        <h1 className="text-xl font-bold text-slate-100">ลูกค้า</h1>
+        <Contact size={20} className="text-gray-500 dark:text-slate-400" />
+        <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">ลูกค้า</h1>
       </div>
-      <p className="text-sm text-slate-500 mb-5">
+      <p className="text-sm text-gray-400 dark:text-slate-500 mb-5">
         ฐานข้อมูลลูกค้าทั้งหมดในทุกช่องทาง LINE OA — ใช้ตัวกรองด้านล่างเพื่อดูจำนวนลูกค้าตามเงื่อนไขที่ต้องการ เช่น ลูกค้าที่ยังไม่ได้รับการตอบกลับนานเกินไป
       </p>
 
       {/* Summary cards */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <StatCard label="ลูกค้าทั้งหมด" value={summary?.total} cls="border-slate-800 bg-slate-900 text-slate-400" />
+        <StatCard label="ลูกค้าทั้งหมด" value={summary?.total} cls="border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-gray-500 dark:text-slate-400" />
         <StatCard
           label="เปิดอยู่" value={summary?.open} cls="border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
           onClick={() => setStatus(s => s === 'open' ? '' : 'open')} active={status === 'open'}
@@ -151,7 +151,7 @@ export default function Customers() {
           onClick={() => setStatus(s => s === 'stopped' ? '' : 'stopped')} active={status === 'stopped'}
         />
         <StatCard
-          label="ปิดแล้ว" value={summary?.closed} cls="border-slate-700 bg-slate-800/60 text-slate-400"
+          label="ปิดแล้ว" value={summary?.closed} cls="border-gray-200 dark:border-slate-700 bg-gray-100 dark:bg-slate-800/60 text-gray-500 dark:text-slate-400"
           onClick={() => setStatus(s => s === 'closed' ? '' : 'closed')} active={status === 'closed'}
         />
         <StatCard
@@ -167,9 +167,9 @@ export default function Customers() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
           <input
-            className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500"
+            className="w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500"
             placeholder="ค้นหาชื่อหรือ LINE user ID"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -207,26 +207,26 @@ export default function Customers() {
           <button
             key={tab.key || 'all'}
             onClick={() => setStatus(tab.key)}
-            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${status === tab.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-slate-300 border-slate-700 hover:border-slate-500'}`}
+            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${status === tab.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
           >
             {tab.label}
           </button>
         ))}
-        <span className="text-sm text-slate-500 ml-2">
-          พบ <span className="font-semibold text-slate-200">{total}</span> รายการ
+        <span className="text-sm text-gray-400 dark:text-slate-500 ml-2">
+          พบ <span className="font-semibold text-gray-700 dark:text-slate-200">{total}</span> รายการ
         </span>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
+      <div className="rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
         {loading ? (
-          <p className="text-center text-slate-500 text-sm py-10">กำลังโหลด...</p>
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
         ) : conversations.length === 0 ? (
-          <p className="text-center text-slate-500 text-sm py-10">ไม่พบลูกค้าที่ตรงกับตัวกรองที่เลือก</p>
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ไม่พบลูกค้าที่ตรงกับตัวกรองที่เลือก</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-left text-slate-500">
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-400 dark:text-slate-500">
                 <th className="px-4 py-2.5 font-medium">ลูกค้า</th>
                 <th className="px-4 py-2.5 font-medium">ช่องทาง</th>
                 <th className="px-4 py-2.5 font-medium">สถานะ</th>
@@ -244,18 +244,18 @@ export default function Customers() {
                   <tr
                     key={c.id}
                     onClick={() => navigate(`/inbox?conv=${c.id}`)}
-                    className="border-b border-slate-800/60 hover:bg-slate-800/40 align-top cursor-pointer"
+                    className="border-b border-gray-100 dark:border-slate-800/60 hover:bg-gray-50 dark:hover:bg-slate-800/40 align-top cursor-pointer"
                   >
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
                         <Avatar name={c.displayName || c.lineUserId} pictureUrl={c.pictureUrl} />
                         <div className="min-w-0">
-                          <p className="text-slate-100 font-medium truncate max-w-[160px]">{c.displayName || c.lineUserId}</p>
+                          <p className="text-gray-900 dark:text-slate-100 font-medium truncate max-w-[160px]">{c.displayName || c.lineUserId}</p>
                           {c.blocked && <span className="text-[10px] text-rose-400 font-medium">🚫 บล็อคเราอยู่</span>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{c.channel?.name}</td>
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">{c.channel?.name}</td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[c.status] || ''}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[c.status] || 'bg-gray-400'}`} />
@@ -269,27 +269,27 @@ export default function Customers() {
                             {tag.name}
                           </span>
                         ))}
-                        {c.tags?.length > 2 && <span className="text-[10px] text-slate-500">+{c.tags.length - 2}</span>}
+                        {c.tags?.length > 2 && <span className="text-[10px] text-gray-400 dark:text-slate-500">+{c.tags.length - 2}</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">
-                      {c.agent?.name || <span className="text-slate-500">ยังไม่ได้ assign</span>}
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                      {c.agent?.name || <span className="text-gray-400 dark:text-slate-500">ยังไม่ได้ assign</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-400 max-w-xs">
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400 max-w-xs">
                       {last ? (
                         <>
-                          <p className="line-clamp-1 text-slate-300">{last.type === 'text' ? last.content : `[${last.type}]`}</p>
-                          <p className={`text-[11px] mt-0.5 ${isUnanswered ? 'text-amber-400 font-medium' : 'text-slate-500'}`}>
+                          <p className="line-clamp-1 text-gray-600 dark:text-slate-300">{last.type === 'text' ? last.content : `[${last.type}]`}</p>
+                          <p className={`text-[11px] mt-0.5 ${isUnanswered ? 'text-amber-400 font-medium' : 'text-gray-400 dark:text-slate-500'}`}>
                             {isUnanswered ? 'รอลูกค้า' : 'ตอบแล้ว'} · {formatDistanceToNow(new Date(last.createdAt), { locale: th, addSuffix: true })}
                           </p>
                         </>
-                      ) : <span className="text-slate-600">ยังไม่มีข้อความ</span>}
+                      ) : <span className="text-gray-300 dark:text-slate-600">ยังไม่มีข้อความ</span>}
                     </td>
                     <td className="px-4 py-2.5">
                       <button
                         onClick={(e) => { e.stopPropagation(); navigate(`/inbox?conv=${c.id}`); }}
                         title="ไปที่แชท"
-                        className="text-slate-500 hover:text-aurora-teal"
+                        className="text-gray-400 dark:text-slate-500 hover:text-aurora-teal"
                       >
                         <ExternalLink size={15} />
                       </button>
@@ -305,21 +305,21 @@ export default function Customers() {
       {/* Pagination */}
       {total > LIMIT && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-gray-400 dark:text-slate-500">
             หน้า {page} จาก {totalPages} ({total} รายการ)
           </p>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="flex items-center gap-1 text-sm text-slate-300 border border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-slate-500 disabled:opacity-30 disabled:hover:border-slate-700 transition-colors"
+              className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 disabled:hover:border-gray-200 dark:disabled:hover:border-slate-700 transition-colors"
             >
               <ChevronLeft size={14} /> ก่อนหน้า
             </button>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="flex items-center gap-1 text-sm text-slate-300 border border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-slate-500 disabled:opacity-30 disabled:hover:border-slate-700 transition-colors"
+              className="flex items-center gap-1 text-sm text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-gray-400 dark:hover:border-slate-500 disabled:opacity-30 disabled:hover:border-gray-200 dark:disabled:hover:border-slate-700 transition-colors"
             >
               ถัดไป <ChevronRight size={14} />
             </button>

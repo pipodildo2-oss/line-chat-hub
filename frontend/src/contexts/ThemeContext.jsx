@@ -38,6 +38,10 @@ export function ThemeProvider({ children }) {
     // flattening layer, only for the 'dark' (solid) mode specifically.
     root.classList.toggle('dark', colorMode !== 'light');
     root.classList.toggle('theme-solid', colorMode === 'dark');
+    // Keeps native browser chrome (scrollbars, date pickers, select
+    // dropdowns) in sync with the picked mode — otherwise those stay
+    // permanently dark-styled regardless of what the app itself shows.
+    root.style.colorScheme = colorMode === 'light' ? 'light' : 'dark';
   }, [colorMode]);
 
   function setColorMode(mode) {

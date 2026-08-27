@@ -1,17 +1,32 @@
 <!DOCTYPE html>
-<html lang="th" class="dark">
+<html lang="th">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Alpha Chat</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="color-scheme" content="dark" />
     <!-- App-wide font — Sarabun, full Thai script support at every weight
          the UI uses (body text, medium/semibold/bold labels and headings). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <style>html, body { background-color: #070B14; }</style>
+    <!-- Applies the saved color mode before first paint (mirrors
+         ThemeContext.jsx's own default/light/dark logic) so a light-mode
+         user doesn't see a flash of the dark palette while React boots. -->
+    <script>
+      (function () {
+        var mode = 'default';
+        try {
+          var saved = localStorage.getItem('color_mode');
+          if (saved === 'default' || saved === 'light' || saved === 'dark') mode = saved;
+        } catch (e) {}
+        var root = document.documentElement;
+        if (mode !== 'light') root.classList.add('dark');
+        if (mode === 'dark') root.classList.add('theme-solid');
+        root.style.colorScheme = mode === 'light' ? 'light' : 'dark';
+        root.style.backgroundColor = mode === 'light' ? '#f9fafb' : '#070B14';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

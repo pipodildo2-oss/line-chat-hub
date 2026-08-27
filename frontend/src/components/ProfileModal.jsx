@@ -49,8 +49,8 @@ export default function ProfileModal({ onClose }) {
     reader.readAsDataURL(file);
   }
 
-  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+  const fieldCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block';
 
   async function handleSave() {
     setError(''); setSaved(false);
@@ -78,13 +78,13 @@ export default function ProfileModal({ onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="font-semibold text-slate-100">โปรไฟล์</h3>
-            <p className="text-xs text-slate-500 mt-0.5">จัดการโปรไฟล์และการเข้าสู่ระบบของคุณ</p>
+            <h3 className="font-semibold text-gray-900 dark:text-slate-100">โปรไฟล์</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">จัดการโปรไฟล์และการเข้าสู่ระบบของคุณ</p>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={18} /></button>
         </div>
 
         <div className="flex items-center gap-3 mb-5">
@@ -108,8 +108,8 @@ export default function ProfileModal({ onClose }) {
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           <div className="min-w-0">
-            <p className="text-sm text-slate-300 truncate">{agent?.email}</p>
-            <p className="text-xs text-slate-500">{agent?.role === 'admin' ? 'Admin' : 'Agent'}</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300 truncate">{agent?.email}</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500">{agent?.role === 'admin' ? 'Admin' : 'Agent'}</p>
           </div>
         </div>
 
@@ -130,15 +130,15 @@ export default function ProfileModal({ onClose }) {
           </div>
 
           {showPasswordFields ? (
-            <div className="space-y-2.5 border border-slate-800 rounded-lg p-3">
-              <p className="text-xs font-medium text-slate-300">เปลี่ยนรหัสผ่าน</p>
+            <div className="space-y-2.5 border border-gray-100 dark:border-slate-800 rounded-lg p-3">
+              <p className="text-xs font-medium text-gray-600 dark:text-slate-300">เปลี่ยนรหัสผ่าน</p>
               <input type="password" className={fieldCls} placeholder="รหัสผ่านปัจจุบัน" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
               <input type="password" className={fieldCls} placeholder="รหัสผ่านใหม่" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
               <input type="password" className={fieldCls} placeholder="ยืนยันรหัสผ่านใหม่" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
               <button
                 type="button"
                 onClick={() => { setShowPasswordFields(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }}
-                className="text-xs text-slate-400 hover:text-slate-200"
+                className="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
               >
                 ยกเลิกการเปลี่ยนรหัสผ่าน
               </button>

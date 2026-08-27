@@ -31,7 +31,7 @@ function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onTog
     <div className="flex flex-wrap gap-2">
       {existingUrls.map((url, i) => !removedIndexes.has(i) && (
         <div key={`existing-${i}`} className="relative">
-          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-700" />
+          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
           <button
             type="button"
             onClick={() => onToggleRemove(i)}
@@ -43,7 +43,7 @@ function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onTog
       ))}
       {newImages.map((url, i) => (
         <div key={`new-${i}`} className="relative">
-          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-700" />
+          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
           <button
             type="button"
             onClick={() => setNewImages(prev => prev.filter((_, idx) => idx !== i))}
@@ -54,7 +54,7 @@ function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onTog
         </div>
       ))}
       {total < MAX_IMAGES && (
-        <label className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 border border-dashed border-slate-700 rounded-lg cursor-pointer hover:border-aurora-teal text-slate-500 hover:text-aurora-teal transition-colors">
+        <label className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 border border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-aurora-teal text-gray-400 dark:text-slate-500 hover:text-aurora-teal transition-colors">
           <ImagePlus size={16} />
           <span className="text-[9px]">{total}/{MAX_IMAGES}</span>
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} />
@@ -77,7 +77,7 @@ const qrKindLabel = (kind) => QR_KIND_OPTIONS.find(k => k.key === kind)?.label |
 function ExtraImagesBadge({ count }) {
   if (count <= 1) return null;
   return (
-    <span className="absolute -bottom-1 -right-1 bg-slate-950 text-slate-200 text-[9px] font-semibold rounded-full px-1 min-w-[16px] text-center border border-slate-700">
+    <span className="absolute -bottom-1 -right-1 bg-gray-50 dark:bg-slate-950 text-gray-700 dark:text-slate-200 text-[9px] font-semibold rounded-full px-1 min-w-[16px] text-center border border-gray-200 dark:border-slate-700">
       +{count - 1}
     </span>
   );
@@ -137,8 +137,8 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+  const fieldCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block';
 
   function toggleRemove(i) {
     setRemovedIndexes(prev => {
@@ -168,10 +168,10 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-slate-100">แก้ไขข้อความลัด</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+          <h3 className="font-semibold text-gray-900 dark:text-slate-100">แก้ไขข้อความลัด</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={18} /></button>
         </div>
         {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="space-y-3">
@@ -183,7 +183,7 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
                   key={opt.key}
                   type="button"
                   onClick={() => setKind(opt.key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+                  className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'}`}
                 >
                   {opt.label}
                 </button>
@@ -217,7 +217,7 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
           >
             บันทึก
           </button>
-          <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+          <button onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
         </div>
       </div>
     </div>
@@ -365,8 +365,8 @@ function QuickReplyCatalog({ isAdmin, channels }) {
     }
   }
 
-  const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
+  const inputCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const cardCls = 'bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-4';
 
   return (
     <div className="max-w-3xl space-y-5">
@@ -374,9 +374,9 @@ function QuickReplyCatalog({ isAdmin, channels }) {
 
       {/* 1. เลือกหมวดหมู่ (สร้างเองโดยพิมพ์ + เลือกไลน์ OA ที่จะแสดง) */}
       <div>
-        <label className="text-xs font-medium text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่</label>
+        <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">1. เลือกหมวดหมู่</label>
         <div className="flex flex-wrap gap-2 items-center">
-          {loadingCategories && <span className="text-sm text-slate-500">กำลังโหลด...</span>}
+          {loadingCategories && <span className="text-sm text-gray-400 dark:text-slate-500">กำลังโหลด...</span>}
           {!loadingCategories && categories.map(c => (
             <button
               key={c.id}
@@ -384,20 +384,20 @@ function QuickReplyCatalog({ isAdmin, channels }) {
               className={`group flex items-center gap-1.5 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium border transition-colors ${
                 categoryId === c.id
                   ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal'
-                  : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                  : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'
               }`}
             >
               {c.name}
               <span className="text-xs opacity-60">({c._count?.quickReplies ?? 0})</span>
               {c.channels?.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">{c.channels.length} ไลน์</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{c.channels.length} ไลน์</span>
               )}
               {isAdmin && (
                 <>
                   <span
                     role="button"
                     onClick={(e) => { e.stopPropagation(); openEditCategory(c); }}
-                    className="opacity-0 group-hover:opacity-100 hover:text-slate-100 w-4 h-4 flex items-center justify-center"
+                    className="opacity-0 group-hover:opacity-100 hover:text-gray-900 dark:hover:text-slate-100 w-4 h-4 flex items-center justify-center"
                   >
                     <Pencil size={11} />
                   </span>
@@ -412,7 +412,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
               )}
             </button>
           ))}
-          {!loadingCategories && categories.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีหมวดหมู่</span>}
+          {!loadingCategories && categories.length === 0 && <span className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีหมวดหมู่</span>}
           {isAdmin && !categoryForm && (
             <button onClick={openAddCategory} className="flex items-center gap-1 text-sm text-aurora-teal hover:brightness-110 font-medium">
               <Plus size={14} /> เพิ่มหมวดหมู่
@@ -422,9 +422,9 @@ function QuickReplyCatalog({ isAdmin, channels }) {
 
         {isAdmin && categoryForm && (
           <form onSubmit={submitCategoryForm} className={`${cardCls} space-y-3 mt-3 max-w-sm`}>
-            <h3 className="font-medium text-slate-100 text-sm">{categoryForm.id ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่'}</h3>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 text-sm">{categoryForm.id ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่'}</h3>
             <div>
-              <label className="text-xs font-medium text-slate-400 mb-1.5 block">ชื่อหมวดหมู่</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">ชื่อหมวดหมู่</label>
               <input
                 autoFocus
                 className={inputCls}
@@ -434,10 +434,10 @@ function QuickReplyCatalog({ isAdmin, channels }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-400 mb-1.5 block">เลือกไลน์ OA ที่จะแสดงหมวดหมู่นี้</label>
-              <div className="border border-slate-700 rounded-lg p-2 space-y-1 max-h-36 overflow-y-auto">
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">เลือกไลน์ OA ที่จะแสดงหมวดหมู่นี้</label>
+              <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-2 space-y-1 max-h-36 overflow-y-auto">
                 {channels.map(ch => (
-                  <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-slate-800 cursor-pointer text-slate-200">
+                  <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-800 cursor-pointer text-gray-700 dark:text-slate-200">
                     <input
                       type="checkbox"
                       className="accent-aurora-teal"
@@ -447,13 +447,13 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                     {ch.name}
                   </label>
                 ))}
-                {channels.length === 0 && <p className="text-xs text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+                {channels.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = ยังไม่แสดงกับไลน์ไหนเลย (ต้องเลือกอย่างน้อย 1 ไลน์ก่อนถึงจะขึ้น)</p>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">ไม่เลือก = ยังไม่แสดงกับไลน์ไหนเลย (ต้องเลือกอย่างน้อย 1 ไลน์ก่อนถึงจะขึ้น)</p>
             </div>
             <div className="flex gap-2">
               <button type="submit" disabled={savingCategory} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
-              <button type="button" onClick={() => setCategoryForm(null)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+              <button type="button" onClick={() => setCategoryForm(null)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
             </div>
           </form>
         )}
@@ -463,7 +463,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
       {categoryId && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-slate-400">ข้อความลัดในหมวดหมู่นี้</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">ข้อความลัดในหมวดหมู่นี้</label>
             {!showAddQr && (
               <button
                 onClick={() => setShowAddQr(true)}
@@ -476,21 +476,21 @@ function QuickReplyCatalog({ isAdmin, channels }) {
 
           {showAddQr && (
             <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
-              <h3 className="font-medium text-slate-100">{isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}</h3>
+              <h3 className="font-medium text-gray-900 dark:text-slate-100">{isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}</h3>
               {!isAdmin && (
-                <p className="text-xs text-slate-400 bg-slate-800/60 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800/60 rounded-lg px-3 py-2">
                   ข้อความที่คุณเพิ่มจะถูกส่งเป็นคำขอ รอแอดมินตรวจสอบและอนุมัติก่อน ถึงจะใช้งานได้จริง — ดูสถานะได้ที่แท็บ "คำขอ"
                 </p>
               )}
               <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">เลือกประเภท</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">เลือกประเภท</label>
                 <div className="flex gap-2">
                   {QR_KIND_OPTIONS.map(opt => (
                     <button
                       key={opt.key}
                       type="button"
                       onClick={() => setQrForm(f => ({ ...f, kind: opt.key }))}
-                      className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${qrForm.kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+                      className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${qrForm.kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'}`}
                     >
                       {opt.label}
                     </button>
@@ -498,22 +498,22 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">ตั้งชื่อข้อความ</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">ตั้งชื่อข้อความ</label>
                 <input className={inputCls} placeholder="เช่น ทักทายลูกค้าใหม่" value={qrForm.name} onChange={e => setQrForm(f => ({ ...f, name: e.target.value }))} required />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">รายละเอียดข้อความ</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">รายละเอียดข้อความ</label>
                 <textarea className={inputCls} rows={3} placeholder="ข้อความที่จะส่งให้ลูกค้า" value={qrForm.content} onChange={e => setQrForm(f => ({ ...f, content: e.target.value }))} required />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">แนบรูปภาพ (สูงสุด {MAX_IMAGES} รูป)</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">แนบรูปภาพ (สูงสุด {MAX_IMAGES} รูป)</label>
                 <MultiImagePicker newImages={qrImages} setNewImages={setQrImages} />
               </div>
               <div className="flex gap-2">
                 <button type="submit" disabled={savingQr} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">
                   {isAdmin ? 'บันทึก' : 'ส่งคำขอ'}
                 </button>
-                <button type="button" onClick={() => setShowAddQr(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+                <button type="button" onClick={() => setShowAddQr(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
               </div>
             </form>
           )}
@@ -521,7 +521,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
             <div className="bg-emerald-500/10 text-emerald-400 text-sm px-3 py-2 rounded-lg">ส่งคำขอแล้ว รอแอดมินอนุมัติ</div>
           )}
 
-          {loadingReplies && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
+          {loadingReplies && <p className="text-sm text-gray-400 dark:text-slate-500">กำลังโหลด...</p>}
           {!loadingReplies && quickReplies.map((qr, i) => (
             <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
               {isAdmin && (
@@ -529,14 +529,14 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                   <button
                     onClick={() => moveQuickReply(qr.id, 'up')}
                     disabled={i === 0}
-                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                    className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
                   >
                     <ChevronUp size={14} />
                   </button>
                   <button
                     onClick={() => moveQuickReply(qr.id, 'down')}
                     disabled={i === quickReplies.length - 1}
-                    className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 p-0.5"
+                    className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
                   >
                     <ChevronDown size={14} />
                   </button>
@@ -544,26 +544,26 @@ function QuickReplyCatalog({ isAdmin, channels }) {
               )}
               {qr.imageCount > 0 && (
                 <div className="relative flex-shrink-0">
-                  <img src={`/api/quick-replies/${qr.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800" />
+                  <img src={`/api/quick-replies/${qr.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-gray-100 dark:border-slate-800" />
                   <ExtraImagesBadge count={qr.imageCount} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium text-slate-100 text-sm">{qr.name}</p>
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
+                  <p className="font-medium text-gray-900 dark:text-slate-100 text-sm">{qr.name}</p>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
               </div>
               {isAdmin && (
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => setEditTarget(qr)} className="text-slate-500 hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
-                  <button onClick={() => deleteQuickReply(qr.id)} className="text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
+                  <button onClick={() => setEditTarget(qr)} className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
+                  <button onClick={() => deleteQuickReply(qr.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
                 </div>
               )}
             </div>
           ))}
-          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
+          {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
         </div>
       )}
 
@@ -612,7 +612,7 @@ function AdminReviewControls({ requestId, onReview }) {
       <div className="mt-3 space-y-2">
         <textarea
           autoFocus
-          className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500"
+          className="w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500"
           rows={2}
           placeholder={expanded === 'needs_revision' ? 'บอกเหตุผลที่ต้องแก้ไข เช่น พิมพ์ตกหล่น / รูปไม่ตรงกับข้อความ' : 'บอกเหตุผลที่ไม่อนุมัติ'}
           value={note}
@@ -628,7 +628,7 @@ function AdminReviewControls({ requestId, onReview }) {
           >
             ยืนยัน
           </button>
-          <button onClick={() => { setExpanded(null); setNote(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-3 py-1.5">ยกเลิก</button>
+          <button onClick={() => { setExpanded(null); setNote(''); }} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-3 py-1.5">ยกเลิก</button>
         </div>
       </div>
     );
@@ -683,10 +683,10 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
     } finally { setSaving(false); }
   }
 
-  const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
+  const inputCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 space-y-3 border-t border-slate-800 pt-3">
+    <form onSubmit={handleSubmit} className="mt-3 space-y-3 border-t border-gray-100 dark:border-slate-800 pt-3">
       {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg">{error}</div>}
       <div className="flex gap-2">
         {QR_KIND_OPTIONS.map(opt => (
@@ -694,7 +694,7 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
             key={opt.key}
             type="button"
             onClick={() => setKind(opt.key)}
-            className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+            className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'}`}
           >
             {opt.label}
           </button>
@@ -711,7 +711,7 @@ function ResubmitForm({ req, onSubmit, onCancel }) {
       />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">ส่งใหม่</button>
-        <button type="button" onClick={onCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
       </div>
     </form>
   );
@@ -725,25 +725,25 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
   const imageUrls = Array.from({ length: req.imageCount || 0 }, (_, i) => `/api/quick-replies/requests/${req.id}/image/${i}`);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-4">
       <div className="flex items-start gap-3">
         {req.imageCount > 0 && (
           <button type="button" onClick={() => setLightboxIndex(0)} className="relative flex-shrink-0">
-            <img src={imageUrls[0]} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-800 hover:opacity-80 transition-opacity" />
+            <img src={imageUrls[0]} alt="" className="w-14 h-14 rounded-lg object-cover border border-gray-100 dark:border-slate-800 hover:opacity-80 transition-opacity" />
             <ExtraImagesBadge count={req.imageCount} />
           </button>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium text-slate-100 text-sm">{req.name}</p>
-            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">{qrKindLabel(req.kind)}</span>
+            <p className="font-medium text-gray-900 dark:text-slate-100 text-sm">{req.name}</p>
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{qrKindLabel(req.kind)}</span>
             <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${meta.cls}`}>{meta.label}</span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
             {req.category?.name}
             {isAdmin && req.requestedBy?.name ? ` • โดย ${req.requestedBy.name}` : ''}
           </p>
-          <p className="text-sm text-slate-400 mt-1.5 whitespace-pre-wrap line-clamp-4">{req.content}</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1.5 whitespace-pre-wrap line-clamp-4">{req.content}</p>
           {req.reviewNote && (req.status === 'needs_revision' || req.status === 'rejected') && (
             <p className="text-xs text-amber-400 mt-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
               หมายเหตุจากแอดมิน: {req.reviewNote}
@@ -751,7 +751,7 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
           )}
         </div>
         {!isAdmin && isMine && (req.status === 'pending' || req.status === 'needs_revision') && (
-          <button onClick={() => onWithdraw(req.id)} className="text-slate-500 hover:text-rose-400 p-1.5 flex-shrink-0" title="ยกเลิกคำขอ">
+          <button onClick={() => onWithdraw(req.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5 flex-shrink-0" title="ยกเลิกคำขอ">
             <Trash2 size={14} />
           </button>
         )}
@@ -829,7 +829,7 @@ function QuickReplyRequests({ isAdmin, myId }) {
               key={f.key || 'all'}
               onClick={() => setStatusFilter(f.key)}
               className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
-                statusFilter === f.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                statusFilter === f.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'
               }`}
             >
               {f.label}
@@ -837,8 +837,8 @@ function QuickReplyRequests({ isAdmin, myId }) {
           ))}
         </div>
       )}
-      {loading && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
-      {!loading && requests.length === 0 && <p className="text-sm text-slate-500">ไม่มีคำขอ</p>}
+      {loading && <p className="text-sm text-gray-400 dark:text-slate-500">กำลังโหลด...</p>}
+      {!loading && requests.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ไม่มีคำขอ</p>}
       {!loading && requests.map(req => (
         <QuickReplyRequestCard
           key={req.id}
@@ -867,12 +867,12 @@ const AUDIT_ACTION_META = {
   category_created: { label: 'เพิ่มหมวดหมู่', cls: 'bg-emerald-500/15 text-emerald-400' },
   category_updated: { label: 'แก้ไขหมวดหมู่', cls: 'bg-sky-500/15 text-sky-400' },
   category_deleted: { label: 'ลบหมวดหมู่', cls: 'bg-rose-500/15 text-rose-400' },
-  request_submitted: { label: 'ส่งคำขอ', cls: 'bg-slate-700 text-slate-300' },
-  request_resubmitted: { label: 'ส่งคำขอใหม่', cls: 'bg-slate-700 text-slate-300' },
+  request_submitted: { label: 'ส่งคำขอ', cls: 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300' },
+  request_resubmitted: { label: 'ส่งคำขอใหม่', cls: 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300' },
   request_approved: { label: 'อนุมัติคำขอ', cls: 'bg-emerald-500/15 text-emerald-400' },
   request_needs_revision: { label: 'ส่งคำขอกลับให้แก้ไข', cls: 'bg-amber-500/15 text-amber-400' },
   request_rejected: { label: 'ไม่อนุมัติคำขอ', cls: 'bg-rose-500/15 text-rose-400' },
-  request_withdrawn: { label: 'ยกเลิกคำขอ', cls: 'bg-slate-700 text-slate-300' },
+  request_withdrawn: { label: 'ยกเลิกคำขอ', cls: 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300' },
 };
 
 const HISTORY_ACTION_FILTERS = [
@@ -911,26 +911,26 @@ function QuickReplyHistory() {
             key={f.key || 'all'}
             onClick={() => setActionFilter(f.key)}
             className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
-              actionFilter === f.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-slate-700 text-slate-300 hover:border-slate-500'
+              actionFilter === f.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'
             }`}
           >
             {f.label}
           </button>
         ))}
       </div>
-      {loading && <p className="text-sm text-slate-500">กำลังโหลด...</p>}
-      {!loading && logs.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีประวัติ</p>}
+      {loading && <p className="text-sm text-gray-400 dark:text-slate-500">กำลังโหลด...</p>}
+      {!loading && logs.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีประวัติ</p>}
       {!loading && logs.map(log => {
-        const meta = AUDIT_ACTION_META[log.action] || { label: log.action, cls: 'bg-slate-700 text-slate-300' };
+        const meta = AUDIT_ACTION_META[log.action] || { label: log.action, cls: 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300' };
         return (
-          <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={log.id} className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-4">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${meta.cls}`}>{meta.label}</span>
-              {log.itemName && <p className="font-medium text-slate-100 text-sm">{log.itemName}</p>}
-              {log.categoryName && <span className="text-xs text-slate-500">({log.categoryName})</span>}
+              {log.itemName && <p className="font-medium text-gray-900 dark:text-slate-100 text-sm">{log.itemName}</p>}
+              {log.categoryName && <span className="text-xs text-gray-400 dark:text-slate-500">({log.categoryName})</span>}
             </div>
-            <p className="text-xs text-slate-500 mt-1">โดย {log.actorName} • {formatLogTime(log.createdAt)}</p>
-            {log.detail && <p className="text-sm text-slate-400 mt-1.5 whitespace-pre-wrap">{log.detail}</p>}
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">โดย {log.actorName} • {formatLogTime(log.createdAt)}</p>
+            {log.detail && <p className="text-sm text-gray-500 dark:text-slate-400 mt-1.5 whitespace-pre-wrap">{log.detail}</p>}
           </div>
         );
       })}
@@ -983,17 +983,17 @@ export default function QuickReplies() {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="flex items-center gap-2 mb-5">
-        <Zap size={18} className="text-slate-500" />
-        <h2 className="text-base font-semibold text-slate-100">ข้อความลัด</h2>
+        <Zap size={18} className="text-gray-400 dark:text-slate-500" />
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">ข้อความลัด</h2>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b border-slate-800 pb-3">
+      <div className="flex gap-2 mb-6 border-b border-gray-100 dark:border-slate-800 pb-3">
         {visibleTabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => navigate(`/quick-replies/${key}`)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === key ? 'bg-aurora-teal/15 text-aurora-teal' : 'text-slate-400 hover:bg-slate-800'
+              activeTab === key ? 'bg-aurora-teal/15 text-aurora-teal' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800'
             }`}
           >
             <Icon size={14} /> {label}

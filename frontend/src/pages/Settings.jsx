@@ -15,7 +15,7 @@ function CopyButton({ text }) {
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <button type="button" onClick={copy} className="text-slate-500 hover:text-slate-300 flex-shrink-0">
+    <button type="button" onClick={copy} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 flex-shrink-0">
       {copied ? <Check size={14} className="text-aurora-teal" /> : <Copy size={14} />}
     </button>
   );
@@ -24,7 +24,7 @@ function CopyButton({ text }) {
 function ChannelListCard({ channel, onManage }) {
   const isActive = channel.active !== false;
   return (
-    <div className={`relative rounded-xl border border-slate-800 bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4 ${!isActive ? 'opacity-60' : ''}`}>
+    <div className={`relative rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 min-h-[168px] flex flex-col gap-4 ${!isActive ? 'opacity-60' : ''}`}>
       {!channel.webhookRedeliveryConfirmed && (
         <span
           title='อย่าลืมเปิด "Use webhook redelivery" ในหน้า Messaging API ของ LINE Developers Console — ถ้าไม่เปิด ข้อความที่ลูกค้าทักเข้ามาตอนระบบมีปัญหาชั่วคราวจะหายไปถาวร'
@@ -36,21 +36,21 @@ function ChannelListCard({ channel, onManage }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold text-slate-100 text-base truncate">{channel.name}</p>
+            <p className="font-semibold text-gray-900 dark:text-slate-100 text-base truncate">{channel.name}</p>
             {!isActive && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-medium flex-shrink-0" title="หยุดรับ-ส่งข้อความชั่วคราว แชทเดิมยังอยู่ครบ">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300 font-medium flex-shrink-0" title="หยุดรับ-ส่งข้อความชั่วคราว แชทเดิมยังอยู่ครบ">
                 ปิดใช้งาน
               </span>
             )}
           </div>
-          <p className="text-sm text-slate-500 truncate mt-0.5">LINE (ID: {channel.lineId || '—'})</p>
+          <p className="text-sm text-gray-400 dark:text-slate-500 truncate mt-0.5">LINE (ID: {channel.lineId || '—'})</p>
         </div>
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white flex-shrink-0">
           <MessageCircle size={20} />
         </div>
       </div>
       <div className="flex-1" />
-      <div className="border-t border-slate-800 pt-3 flex justify-end">
+      <div className="border-t border-gray-100 dark:border-slate-800 pt-3 flex justify-end">
         <button
           onClick={onManage}
           className="text-sm text-aurora-teal font-medium border border-aurora-teal/30 rounded-lg px-4 py-2 hover:bg-aurora-teal/10 transition-colors"
@@ -96,9 +96,9 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
   const handle = lineId ? `@${lineId.replace(/^@/, '')}` : null;
   const chatLink = handle ? `https://line.me/R/ti/p/${encodeURIComponent(handle)}` : null;
 
-  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
-  const readonlyCls = 'w-full border border-slate-800 bg-slate-800/50 text-slate-500 rounded-lg px-3 py-2 text-sm cursor-not-allowed';
+  const fieldCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block';
+  const readonlyCls = 'w-full border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50 text-gray-400 dark:text-slate-500 rounded-lg px-3 py-2 text-sm cursor-not-allowed';
 
   async function handleSave() {
     setSaving(true); setSaved(false);
@@ -118,11 +118,11 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
 
   return (
     <div className="max-w-xl">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 mb-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 mb-4">
         <ArrowLeft size={15} /> กลับไปหน้ารายการ
       </button>
-      <h2 className="text-lg font-semibold text-slate-100 mb-0.5">ตั้งค่า LINE OA</h2>
-      <p className="text-sm text-slate-500 mb-6">จัดการข้อมูลและการตั้งค่าของช่องทางนี้</p>
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-0.5">ตั้งค่า LINE OA</h2>
+      <p className="text-sm text-gray-400 dark:text-slate-500 mb-6">จัดการข้อมูลและการตั้งค่าของช่องทางนี้</p>
 
       {!channel.webhookRedeliveryConfirmed && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-4">
@@ -160,8 +160,8 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
           <div>
             <label className={labelCls}>Chat Link</label>
             <div className="flex items-center gap-2">
-              <div className="flex-1 border border-slate-700 bg-slate-800 rounded-lg px-3 py-2 flex items-center gap-2">
-                <code className="text-sm text-slate-300 flex-1 truncate">{chatLink}</code>
+              <div className="flex-1 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-lg px-3 py-2 flex items-center gap-2">
+                <code className="text-sm text-gray-600 dark:text-slate-300 flex-1 truncate">{chatLink}</code>
                 <CopyButton text={chatLink} />
               </div>
               <button
@@ -176,7 +176,7 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(chatLink)}`}
                 alt="QR code"
-                className="mt-2 rounded-lg border border-slate-700 bg-white p-2"
+                className="mt-2 rounded-lg border border-gray-200 dark:border-slate-700 null dark:bg-white p-2"
                 width={120}
                 height={120}
               />
@@ -219,8 +219,8 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
 
         <div>
           <label className={labelCls}>Webhook URL</label>
-          <div className="flex items-center gap-2 border border-slate-800 bg-slate-800/50 rounded-lg px-3 py-2">
-            <code className="text-sm text-slate-400 flex-1 truncate">{webhookUrl}</code>
+          <div className="flex items-center gap-2 border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50 rounded-lg px-3 py-2">
+            <code className="text-sm text-gray-500 dark:text-slate-400 flex-1 truncate">{webhookUrl}</code>
             <CopyButton text={webhookUrl} />
           </div>
         </div>
@@ -237,9 +237,9 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
         </div>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-slate-800">
-        <h3 className="font-semibold text-slate-100 mb-1">ปิดใช้งานช่องทาง</h3>
-        <p className="text-xs text-slate-500 mb-3">
+      <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800">
+        <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-1">ปิดใช้งานช่องทาง</h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
           หยุดรับ-ส่งข้อความผ่านช่องทางนี้ชั่วคราว แต่แชทและข้อความเดิมทั้งหมดยังอยู่ครบ กดเปิดใช้งานกลับมาได้ทุกเมื่อ
           — ใช้ตัวนี้แทนการลบ ถ้าไม่แน่ใจหรือแค่อยากพักช่องทางไว้ก่อน
         </p>
@@ -247,18 +247,18 @@ function ChannelConfigure({ channel, categories, onBack, onSave, onRequestDelete
           <button
             onClick={handleToggleActive}
             disabled={togglingActive}
-            className={`relative inline-flex overflow-hidden w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-slate-700'}`}
+            className={`relative inline-flex overflow-hidden w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
           >
-            <span className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
+            <span className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full null dark:bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
-          <span className="text-sm text-slate-300">
+          <span className="text-sm text-gray-600 dark:text-slate-300">
             {isActive ? 'เปิดใช้งานอยู่' : 'ปิดใช้งานอยู่'}
           </span>
         </div>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-slate-800">
-        <h3 className="font-semibold text-slate-100 mb-3">Danger Zone</h3>
+      <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800">
+        <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-3">Danger Zone</h3>
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
           <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-xs text-amber-400">
@@ -291,17 +291,17 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onCancel}>
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold text-slate-100 mb-1.5">ลบ "{channel.name}" ถาวร?</h3>
-        <p className="text-sm text-slate-400 mb-3">
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-1.5">ลบ "{channel.name}" ถาวร?</h3>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-3">
           {convCount > 0
             ? `การสนทนาทั้งหมด ${convCount} รายการและข้อความในนั้นจะถูกลบถาวรไปด้วย กู้คืนไม่ได้`
             : 'การกระทำนี้กู้คืนไม่ได้'}
         </p>
-        <p className="text-xs text-slate-400 mb-1.5">พิมพ์ <span className="font-semibold text-slate-200">{channel.name}</span> เพื่อยืนยันการลบ</p>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-1.5">พิมพ์ <span className="font-semibold text-gray-700 dark:text-slate-200">{channel.name}</span> เพื่อยืนยันการลบ</p>
         <input
           autoFocus
-          className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 mb-3"
+          className="w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 mb-3"
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder={channel.name}
@@ -314,7 +314,7 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
           >
             ลบถาวร
           </button>
-          <button onClick={onCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+          <button onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
         </div>
       </div>
     </div>
@@ -323,24 +323,24 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
 
 function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
   return (
-    <div className="group relative rounded-xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-700 hover:bg-slate-800/30 transition-colors">
+    <div className="group relative rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 hover:border-gray-200 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors">
       {canManage && (
         <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} title="แก้ไข" className="p-1.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors">
+          <button onClick={onEdit} title="แก้ไข" className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
             <Pencil size={13} />
           </button>
-          <button onClick={onDelete} title="ลบ" className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors">
+          <button onClick={onDelete} title="ลบ" className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors">
             <Trash2 size={13} />
           </button>
         </div>
       )}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-slate-950/60">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-gray-200 dark:ring-slate-950/60">
           {a.name[0].toUpperCase()}
         </div>
         <div className="min-w-0 flex-1 pr-9">
-          <p className="font-medium text-slate-100 text-sm truncate">{a.name}</p>
-          <p className="text-xs text-slate-500 truncate mt-0.5">{a.email}</p>
+          <p className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">{a.name}</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{a.email}</p>
         </div>
       </div>
       <div className="flex items-center gap-1.5 mt-3">
@@ -348,7 +348,7 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
           {a.role === 'admin' ? 'Admin' : 'Agent'}
         </span>
         {isMe && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">คุณ</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 font-medium">คุณ</span>
         )}
       </div>
     </div>
@@ -366,8 +366,8 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
   const [resetDone, setResetDone] = useState(false);
   const [error, setError] = useState('');
 
-  const fieldCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const labelCls = 'text-xs font-medium text-slate-400 mb-1.5 block';
+  const fieldCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const labelCls = 'text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block';
 
   function toggleChannel(id) {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -398,13 +398,13 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="font-semibold text-slate-100">{agentItem.name}</h3>
-            <p className="text-xs text-slate-500">{agentItem.email}</p>
+            <h3 className="font-semibold text-gray-900 dark:text-slate-100">{agentItem.name}</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500">{agentItem.email}</p>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={18} /></button>
         </div>
 
         {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
@@ -428,19 +428,19 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
 
           <div>
             <label className={labelCls}>{t('channel_visibility')}</label>
-            <div className="border border-slate-700 rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto">
+            <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto">
               {channels.map(ch => (
-                <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-slate-800 cursor-pointer text-slate-200">
+                <label key={ch.id} className="flex items-center gap-2 text-sm px-1.5 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-800 cursor-pointer text-gray-700 dark:text-slate-200">
                   <input type="checkbox" checked={selectedIds.includes(ch.id)} onChange={() => toggleChannel(ch.id)} className="accent-aurora-teal" />
                   {ch.name}
                 </label>
               ))}
-              {channels.length === 0 && <p className="text-xs text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
+              {channels.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500 px-1.5 py-1">ยังไม่มีช่องทาง</p>}
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">ไม่เลือก = มองเห็นทุกช่องทาง</p>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">ไม่เลือก = มองเห็นทุกช่องทาง</p>
           </div>
 
-          <div className="border-t border-slate-800 pt-4">
+          <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
             <label className={labelCls}>{t('reset_password')}</label>
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -453,7 +453,7 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
                   autoComplete="new-password"
                   name="reset-agent-password"
                 />
-                <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
                   {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
@@ -478,7 +478,7 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
           >
             {t('save')}
           </button>
-          <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">{t('cancel')}</button>
+          <button onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">{t('cancel')}</button>
         </div>
       </div>
     </div>
@@ -677,23 +677,23 @@ export default function Settings() {
             <>
               <input
                 autoFocus
-                className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                className="border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
                 value={editingChannelCategoryName}
                 onChange={e => setEditingChannelCategoryName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && saveChannelCategoryEdit(cat.id)}
               />
               <button onClick={() => saveChannelCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
-              <button onClick={() => setEditingChannelCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+              <button onClick={() => setEditingChannelCategoryId(null)} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={14} /></button>
             </>
           ) : (
             <>
-              <p className="text-sm font-semibold text-slate-200">{cat.name}</p>
-              <span className="text-[10px] text-slate-500">{catChannels.length} ไลน์</span>
-              <button onClick={() => startEditChannelCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
-              <button onClick={() => deleteChannelCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
+              <p className="text-sm font-semibold text-gray-700 dark:text-slate-200">{cat.name}</p>
+              <span className="text-[10px] text-gray-400 dark:text-slate-500">{catChannels.length} ไลน์</span>
+              <button onClick={() => startEditChannelCategory(cat)} className="text-gray-300 dark:text-slate-600 hover:text-gray-600 dark:hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></button>
+              <button onClick={() => deleteChannelCategory(cat.id)} className="text-gray-300 dark:text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={13} /></button>
               {channelCategoryGroups.length > 0 && (
                 <select
-                  className="text-[11px] bg-slate-800 border border-slate-700 text-slate-400 rounded-md px-1.5 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-aurora-teal"
+                  className="text-[11px] bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 rounded-md px-1.5 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-aurora-teal"
                   value={cat.groupId || ''}
                   onChange={e => assignCategoryGroup(cat.id, e.target.value)}
                   title="ใส่ในหมวดหมู่ใหญ่"
@@ -716,7 +716,7 @@ export default function Settings() {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-600">ยังไม่มีไลน์ในหมวดหมู่นี้ — ไปที่ Manage ของไลน์แล้วเลือกหมวดหมู่นี้</p>
+          <p className="text-xs text-gray-300 dark:text-slate-600">ยังไม่มีไลน์ในหมวดหมู่นี้ — ไปที่ Manage ของไลน์แล้วเลือกหมวดหมู่นี้</p>
         )}
       </div>
     );
@@ -924,8 +924,8 @@ export default function Settings() {
     }
   }
 
-  const inputCls = 'w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500';
-  const cardCls = 'bg-slate-900 border border-slate-800 rounded-xl p-4';
+  const inputCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
+  const cardCls = 'bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-4';
   const CATEGORIES = useCategories();
   const active = CATEGORIES[tab] || CATEGORIES.channels;
   const manageChannel = channels.find(c => c.id === manageChannelId);
@@ -933,8 +933,8 @@ export default function Settings() {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="flex items-center gap-2 mb-6">
-        <active.icon size={18} className="text-slate-500" />
-        <h2 className="text-base font-semibold text-slate-100">{active.label}</h2>
+        <active.icon size={18} className="text-gray-400 dark:text-slate-500" />
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">{active.label}</h2>
       </div>
 
       {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-4 py-2 rounded-lg mb-4">{error}</div>}
@@ -952,7 +952,7 @@ export default function Settings() {
         ) : (
           <div className="space-y-6 max-w-6xl">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ไลน์ OA</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">หมวดหมู่ไลน์ OA</p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowAddChannelCategoryGroup(v => !v)}
@@ -979,7 +979,7 @@ export default function Settings() {
                   onChange={e => setChannelCategoryGroupName(e.target.value)}
                 />
                 <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
-                <button type="button" onClick={() => { setShowAddChannelCategoryGroup(false); setChannelCategoryGroupName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+                <button type="button" onClick={() => { setShowAddChannelCategoryGroup(false); setChannelCategoryGroupName(''); }} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2">ยกเลิก</button>
               </form>
             )}
 
@@ -993,7 +993,7 @@ export default function Settings() {
                   onChange={e => setChannelCategoryName(e.target.value)}
                 />
                 <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
-                <button type="button" onClick={() => { setShowAddChannelCategory(false); setChannelCategoryName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+                <button type="button" onClick={() => { setShowAddChannelCategory(false); setChannelCategoryName(''); }} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2">ยกเลิก</button>
               </form>
             )}
 
@@ -1005,7 +1005,7 @@ export default function Settings() {
                 ))}
                 <button
                   onClick={() => setShowAddChannel(true)}
-                  className="rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
+                  className="rounded-xl border border-dashed border-gray-200 dark:border-slate-700 hover:border-aurora-teal text-gray-400 dark:text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
                 >
                   <Plus size={26} />
                   <span className="text-sm">เพิ่ม LINE OA</span>
@@ -1016,26 +1016,26 @@ export default function Settings() {
                 {channelCategoryGroups.map(group => {
                   const groupCats = channelCategories.filter(c => c.groupId === group.id);
                   return (
-                    <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                    <div key={group.id} className="rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-900/40 p-4">
                       <div className="flex items-center gap-2 mb-4 group/g">
                         {editingChannelCategoryGroupId === group.id ? (
                           <>
                             <input
                               autoFocus
-                              className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                              className="border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
                               value={editingChannelCategoryGroupName}
                               onChange={e => setEditingChannelCategoryGroupName(e.target.value)}
                               onKeyDown={e => e.key === 'Enter' && saveChannelCategoryGroupEdit(group.id)}
                             />
                             <button onClick={() => saveChannelCategoryGroupEdit(group.id)} className="text-aurora-teal"><Check size={14} /></button>
-                            <button onClick={() => setEditingChannelCategoryGroupId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                            <button onClick={() => setEditingChannelCategoryGroupId(null)} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={14} /></button>
                           </>
                         ) : (
                           <>
-                            <p className="text-sm font-bold text-white uppercase tracking-wide">{group.name}</p>
-                            <span className="text-[10px] text-slate-500">{groupCats.length} หมวดหมู่ย่อย</span>
-                            <button onClick={() => startEditChannelCategoryGroup(group)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover/g:opacity-100 transition-opacity"><Pencil size={12} /></button>
-                            <button onClick={() => deleteChannelCategoryGroup(group.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover/g:opacity-100 transition-opacity"><X size={13} /></button>
+                            <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wide">{group.name}</p>
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500">{groupCats.length} หมวดหมู่ย่อย</span>
+                            <button onClick={() => startEditChannelCategoryGroup(group)} className="text-gray-300 dark:text-slate-600 hover:text-gray-600 dark:hover:text-slate-300 opacity-0 group-hover/g:opacity-100 transition-opacity"><Pencil size={12} /></button>
+                            <button onClick={() => deleteChannelCategoryGroup(group.id)} className="text-gray-300 dark:text-slate-600 hover:text-rose-400 opacity-0 group-hover/g:opacity-100 transition-opacity"><X size={13} /></button>
                           </>
                         )}
                       </div>
@@ -1044,7 +1044,7 @@ export default function Settings() {
                           {groupCats.map(cat => renderChannelCategoryBlock(cat))}
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-600">ยังไม่มีหมวดหมู่ย่อยในหมวดหมู่ใหญ่นี้ — เลือกหมวดหมู่ใหญ่นี้จากหมวดหมู่ย่อยด้านล่าง</p>
+                        <p className="text-xs text-gray-300 dark:text-slate-600">ยังไม่มีหมวดหมู่ย่อยในหมวดหมู่ใหญ่นี้ — เลือกหมวดหมู่ใหญ่นี้จากหมวดหมู่ย่อยด้านล่าง</p>
                       )}
                     </div>
                   );
@@ -1052,13 +1052,13 @@ export default function Settings() {
 
                 <div className="space-y-6">
                   {channelCategoryGroups.length > 0 && channelCategories.some(c => !c.groupId) && (
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ย่อยที่ยังไม่ได้จัดเข้าหมวดหมู่ใหญ่</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">หมวดหมู่ย่อยที่ยังไม่ได้จัดเข้าหมวดหมู่ใหญ่</p>
                   )}
                   {channelCategories.filter(c => !c.groupId).map(cat => renderChannelCategoryBlock(cat))}
                 </div>
 
                 <div>
-                  <p className="text-sm font-semibold text-slate-200 mb-2">ยังไม่มีหมวดหมู่</p>
+                  <p className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-2">ยังไม่มีหมวดหมู่</p>
                   <div className="flex flex-wrap gap-4">
                     {channels.filter(ch => !ch.categoryId).map(ch => (
                       <div key={ch.id} className="w-64 flex-shrink-0">
@@ -1067,7 +1067,7 @@ export default function Settings() {
                     ))}
                     <button
                       onClick={() => setShowAddChannel(true)}
-                      className="w-64 flex-shrink-0 rounded-xl border border-dashed border-slate-700 hover:border-aurora-teal text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
+                      className="w-64 flex-shrink-0 rounded-xl border border-dashed border-gray-200 dark:border-slate-700 hover:border-aurora-teal text-gray-400 dark:text-slate-500 hover:text-aurora-teal flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[168px]"
                     >
                       <Plus size={26} />
                       <span className="text-sm">เพิ่ม LINE OA</span>
@@ -1079,7 +1079,7 @@ export default function Settings() {
 
             {showAddChannel && (
               <form onSubmit={addChannel} className={`${cardCls} space-y-3 max-w-xl`}>
-                <h3 className="font-medium text-slate-100">เพิ่ม LINE OA</h3>
+                <h3 className="font-medium text-gray-900 dark:text-slate-100">เพิ่ม LINE OA</h3>
                 <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
                 <input className={inputCls} placeholder="LINE ID (เช่น abc1234 ไม่ต้องใส่ @) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
                 <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
@@ -1109,7 +1109,7 @@ export default function Settings() {
                 </div>
                 <div className="flex gap-2">
                   <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
-                  <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+                  <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
                 </div>
               </form>
             )}
@@ -1121,23 +1121,23 @@ export default function Settings() {
       {tab === 'agents' && (
         <div className="max-w-5xl space-y-6">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 min-w-[88px]">
-              <p className="text-xl font-semibold text-slate-100 leading-tight">{agents.length}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">ทั้งหมด</p>
+            <div className="rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 min-w-[88px]">
+              <p className="text-xl font-semibold text-gray-900 dark:text-slate-100 leading-tight">{agents.length}</p>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">ทั้งหมด</p>
             </div>
             <div className="rounded-xl border border-aurora-purple/25 bg-aurora-purple/10 px-4 py-2.5 min-w-[88px]">
-              <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{agents.filter(a => a.role === 'admin').length}</p>
               <p className="text-[11px] text-aurora-cyan font-medium mt-0.5">แอดมิน</p>
             </div>
             <div className="rounded-xl border border-aurora-teal/25 bg-aurora-teal/10 px-4 py-2.5 min-w-[88px]">
-              <p className="text-xl font-bold text-white leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{agents.filter(a => a.role !== 'admin').length}</p>
               <p className="text-[11px] text-aurora-teal font-medium mt-0.5">พนักงาน</p>
             </div>
             <div className="flex-1" />
             <div className="relative w-full sm:w-56">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
               <input
-                className="w-full border border-slate-700 bg-slate-800 text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-slate-500"
+                className="w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="ค้นหาชื่อหรืออีเมล"
                 value={agentSearch}
                 onChange={e => setAgentSearch(e.target.value)}
@@ -1158,7 +1158,7 @@ export default function Settings() {
 
           {agent?.role === 'admin' && showAddAgent && (
             <form onSubmit={addAgent} className={`${cardCls} space-y-3 max-w-md`}>
-              <h3 className="font-medium text-slate-100">เพิ่ม Agent</h3>
+              <h3 className="font-medium text-gray-900 dark:text-slate-100">เพิ่ม Agent</h3>
               <input className={inputCls} placeholder="ชื่อ" value={agentForm.name} onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))} required />
               <input type="email" className={inputCls} placeholder="Email" value={agentForm.email} onChange={e => setAgentForm(f => ({ ...f, email: e.target.value }))} required />
               <div className="relative">
@@ -1175,7 +1175,7 @@ export default function Settings() {
                 <button
                   type="button"
                   onClick={() => setShowAgentPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
                 >
                   {showAgentPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
@@ -1192,14 +1192,14 @@ export default function Settings() {
               </select>
               <div className="flex gap-2">
                 <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
-                <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-slate-400 px-4 py-2">ยกเลิก</button>
+                <button type="button" onClick={() => setShowAddAgent(false)} className="text-sm text-gray-500 dark:text-slate-400 px-4 py-2">ยกเลิก</button>
               </div>
             </form>
           )}
 
           {agent?.role === 'admin' && (
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">หมวดหมู่ทีมงาน</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">หมวดหมู่ทีมงาน</p>
               <button
                 onClick={() => setShowAddAgentCategory(v => !v)}
                 className="text-xs text-aurora-teal font-medium flex items-center gap-1 hover:brightness-110"
@@ -1219,7 +1219,7 @@ export default function Settings() {
                 onChange={e => setAgentCategoryName(e.target.value)}
               />
               <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap">บันทึก</button>
-              <button type="button" onClick={() => { setShowAddAgentCategory(false); setAgentCategoryName(''); }} className="text-sm text-slate-400 hover:text-slate-200 px-2">ยกเลิก</button>
+              <button type="button" onClick={() => { setShowAddAgentCategory(false); setAgentCategoryName(''); }} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2">ยกเลิก</button>
             </form>
           )}
 
@@ -1239,7 +1239,7 @@ export default function Settings() {
             );
             // Section headings need to actually read as headings — bumped up from
             // the body-text size they were sharing with the card names before.
-            const headingCls = 'text-base font-bold text-white';
+            const headingCls = 'text-base font-bold text-gray-900 dark:text-white';
 
             // Admins are never sorted into categories — they always stay pinned
             // in their own section up top, same as before this feature existed.
@@ -1249,24 +1249,24 @@ export default function Settings() {
             return (
               <div className="space-y-8">
                 <div>
-                  <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length} คน</span></p>
+                  <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-gray-400 dark:text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length} คน</span></p>
                   {admins.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                       {admins.map(card)}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+                    <p className="text-sm text-gray-300 dark:text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
                   )}
                 </div>
 
                 {agentCategories.length === 0 ? (
                   // No categories created yet — plain flat grid of non-admin agents.
                   <div>
-                    <p className={`${headingCls} mb-3`}>พนักงาน <span className="text-slate-500 font-medium text-sm">· {nonAdmins.length} คน</span></p>
+                    <p className={`${headingCls} mb-3`}>พนักงาน <span className="text-gray-400 dark:text-slate-500 font-medium text-sm">· {nonAdmins.length} คน</span></p>
                     {(() => {
                       const visible = nonAdmins.filter(matches);
                       return visible.length === 0 ? (
-                        <p className="text-sm text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
+                        <p className="text-sm text-gray-300 dark:text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                           {visible.map(card)}
@@ -1286,13 +1286,13 @@ export default function Settings() {
                               <>
                                 <input
                                   autoFocus
-                                  className="border border-slate-700 bg-slate-800 text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
+                                  className="border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal"
                                   value={editingAgentCategoryName}
                                   onChange={e => setEditingAgentCategoryName(e.target.value)}
                                   onKeyDown={e => e.key === 'Enter' && saveAgentCategoryEdit(cat.id)}
                                 />
                                 <button onClick={() => saveAgentCategoryEdit(cat.id)} className="text-aurora-teal"><Check size={14} /></button>
-                                <button onClick={() => setEditingAgentCategoryId(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                                <button onClick={() => setEditingAgentCategoryId(null)} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><X size={14} /></button>
                               </>
                             ) : (
                               <>
@@ -1301,25 +1301,25 @@ export default function Settings() {
                                     <button
                                       onClick={() => moveAgentCategory(cat.id, 'up')}
                                       disabled={i === 0}
-                                      className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 leading-none"
+                                      className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 leading-none"
                                     >
                                       <ChevronUp size={14} />
                                     </button>
                                     <button
                                       onClick={() => moveAgentCategory(cat.id, 'down')}
                                       disabled={i === agentCategories.length - 1}
-                                      className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:hover:text-slate-500 leading-none"
+                                      className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 leading-none"
                                     >
                                       <ChevronDown size={14} />
                                     </button>
                                   </div>
                                 )}
                                 <p className={headingCls}>{cat.name}</p>
-                                <span className="text-sm text-slate-500 font-medium">· {allInCat.length} คน</span>
+                                <span className="text-sm text-gray-400 dark:text-slate-500 font-medium">· {allInCat.length} คน</span>
                                 {agent?.role === 'admin' && (
                                   <>
-                                    <button onClick={() => startEditAgentCategory(cat)} className="text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={13} /></button>
-                                    <button onClick={() => deleteAgentCategory(cat.id)} className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
+                                    <button onClick={() => startEditAgentCategory(cat)} className="text-gray-300 dark:text-slate-600 hover:text-gray-600 dark:hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={13} /></button>
+                                    <button onClick={() => deleteAgentCategory(cat.id)} className="text-gray-300 dark:text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
                                   </>
                                 )}
                               </>
@@ -1330,7 +1330,7 @@ export default function Settings() {
                               {catAgents.map(card)}
                             </div>
                           ) : (
-                            <p className="text-xs text-slate-600">
+                            <p className="text-xs text-gray-300 dark:text-slate-600">
                               {q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}" ในหมวดหมู่นี้` : 'ยังไม่มีใครอยู่ในหมวดหมู่นี้ — ไปที่แก้ไขของแต่ละคนแล้วเลือกหมวดหมู่นี้'}
                             </p>
                           )}
@@ -1347,7 +1347,7 @@ export default function Settings() {
                             {uncategorized.map(card)}
                           </div>
                         ) : (
-                          <p className="text-xs text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
+                          <p className="text-xs text-gray-300 dark:text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
                         );
                       })()}
                     </div>
@@ -1371,21 +1371,21 @@ export default function Settings() {
                 </button>
               </div>
             ))}
-            {tags.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีแท็ก</p>}
+            {tags.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีแท็ก</p>}
           </div>
 
           <form onSubmit={addTag} className={`${cardCls} space-y-3`}>
-            <h3 className="font-medium text-slate-100">สร้างแท็กใหม่</h3>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100">สร้างแท็กใหม่</h3>
             <input className={inputCls} placeholder="ชื่อแท็ก เช่น VIP, สนใจซื้อ" value={tagForm.name} onChange={e => setTagForm(f => ({ ...f, name: e.target.value }))} required />
             <div>
-              <p className="text-xs text-slate-400 mb-1.5">สี</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mb-1.5">สี</p>
               <div className="flex gap-2">
                 {TAG_COLOR_PRESETS.map(c => (
                   <button
                     type="button"
                     key={c}
                     onClick={() => setTagForm(f => ({ ...f, color: c }))}
-                    className={`w-6 h-6 rounded-full ${tagForm.color === c ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-slate-400' : ''}`}
+                    className={`w-6 h-6 rounded-full ${tagForm.color === c ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-gray-400 dark:ring-slate-400' : ''}`}
                     style={{ backgroundColor: c }}
                   />
                 ))}
@@ -1400,7 +1400,7 @@ export default function Settings() {
           against, flagging anything else in รายงาน > ตรวจสอบ. */}
       {tab === 'approved-links' && (
         <div className="space-y-4 max-w-2xl">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-gray-500 dark:text-slate-400">
             ระบบจะแจ้งเตือนในหน้ารายงาน &gt; ตรวจสอบ ทันทีที่พนักงานส่งลิงค์ที่ไม่อยู่ในรายการนี้ให้ลูกค้า — ใส่แค่โดเมนก็พอ (ไม่ต้องมี https:// หรือ path) ระบบจะอนุญาตทุก path/subdomain ของโดเมนนั้นให้อัตโนมัติ
           </p>
           <div className="space-y-2">
@@ -1409,20 +1409,20 @@ export default function Settings() {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Link2 size={16} className="text-aurora-teal flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-slate-100 truncate">{l.domain}</p>
-                    {l.label && <p className="text-xs text-slate-500 truncate">{l.label}</p>}
+                    <p className="text-gray-900 dark:text-slate-100 truncate">{l.domain}</p>
+                    {l.label && <p className="text-xs text-gray-400 dark:text-slate-500 truncate">{l.label}</p>}
                   </div>
                 </div>
-                <button onClick={() => deleteApprovedLink(l.id)} className="text-slate-500 hover:text-rose-400 flex-shrink-0">
+                <button onClick={() => deleteApprovedLink(l.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 flex-shrink-0">
                   <Trash2 size={16} />
                 </button>
               </div>
             ))}
-            {approvedLinks.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีโดเมนที่อนุญาต — ทุกลิงค์ที่พนักงานส่งจะถูกแจ้งเตือน</p>}
+            {approvedLinks.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีโดเมนที่อนุญาต — ทุกลิงค์ที่พนักงานส่งจะถูกแจ้งเตือน</p>}
           </div>
 
           <form onSubmit={addApprovedLink} className={`${cardCls} space-y-3`}>
-            <h3 className="font-medium text-slate-100">เพิ่มโดเมนที่อนุญาต</h3>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100">เพิ่มโดเมนที่อนุญาต</h3>
             <input
               className={inputCls}
               placeholder="โดเมน เช่น mysite.com"
@@ -1448,8 +1448,8 @@ export default function Settings() {
       {tab === 'system' && (
         <div className="space-y-4 max-w-2xl">
           <div className={cardCls}>
-            <h3 className="font-medium text-slate-100 mb-1">Grace window สำหรับรายงาน "อ่านแล้วไม่ตอบ"</h3>
-            <p className="text-sm text-slate-400 mb-4">
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">Grace window สำหรับรายงาน "อ่านแล้วไม่ตอบ"</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
               เมื่อพนักงานคนใดเปิดดูแชทที่ยังไม่ได้ตอบ ระบบจะเริ่มนับเวลาของคนนั้นเอง (แต่ละคนมีเวลานับแยกกันไปตามเวลาที่ตัวเองเปิดดู ไม่เกี่ยวกับคนอื่น) —
               ถ้ามีคนตอบกลับ<b>ก่อน</b>เวลาของตัวเองหมด จะไม่โดนนับว่า "อ่านแล้วไม่ตอบ" ในรายงานพนักงาน (ไม่ว่าจะเป็นคนที่ตอบเอง หรือคนอื่นที่เปิดดูอยู่แต่เวลาตัวเองยังไม่หมด) —
               แต่ถ้าเวลาของใครหมดไปแล้วก่อนจะมีคนตอบ คนนั้นจะโดนนับในรายงานทันที ต่อให้หลังจากนั้นมีคนอื่นตอบทันเวลาของตัวเองก็ไม่ช่วยย้อนเคลียร์ให้คนที่เวลาหมดไปแล้ว
@@ -1457,7 +1457,7 @@ export default function Settings() {
             {agent?.role === 'admin' ? (
               <form onSubmit={saveSystemSettings} className="flex items-end gap-3 flex-wrap">
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">Grace window (วินาที)</label>
+                  <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">Grace window (วินาที)</label>
                   <input
                     type="number"
                     min="0"
@@ -1477,22 +1477,22 @@ export default function Settings() {
                 {systemSettingsSaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
               </form>
             ) : (
-              <p className="text-sm text-slate-100">
+              <p className="text-sm text-gray-900 dark:text-slate-100">
                 ค่าปัจจุบัน: {systemSettings ? `${systemSettings.agentConductGraceSeconds} วินาที` : '...'}
-                <span className="text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+                <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}
           </div>
 
           <div className={cardCls}>
-            <h3 className="font-medium text-slate-100 mb-1">เกณฑ์อัตราตอบขั้นต่ำสำหรับตาราง "อัตราการตอบเทียบกับการเปิดดู"</h3>
-            <p className="text-sm text-slate-400 mb-4">
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">เกณฑ์อัตราตอบขั้นต่ำสำหรับตาราง "อัตราการตอบเทียบกับการเปิดดู"</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
               แถวที่ "อัตราตอบเอง (%)" ต่ำกว่าเกณฑ์นี้ จะถูกเน้นด้วยสีแดงในตารางที่หน้ารายงาน &gt; พนักงาน — ไว้แค่ช่วยให้สังเกตเห็นง่ายขึ้น ไม่มีผลต่อการคำนวณอื่นใด
             </p>
             {agent?.role === 'admin' ? (
               <form onSubmit={saveResponseRateThreshold} className="flex items-end gap-3 flex-wrap">
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">เกณฑ์อัตราตอบขั้นต่ำ (%)</label>
+                  <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">เกณฑ์อัตราตอบขั้นต่ำ (%)</label>
                   <input
                     type="number"
                     min="0"
@@ -1513,9 +1513,9 @@ export default function Settings() {
                 {thresholdSaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
               </form>
             ) : (
-              <p className="text-sm text-slate-100">
+              <p className="text-sm text-gray-900 dark:text-slate-100">
                 ค่าปัจจุบัน: {systemSettings ? `${systemSettings.responseRateThresholdPercent}%` : '...'}
-                <span className="text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+                <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}
           </div>
