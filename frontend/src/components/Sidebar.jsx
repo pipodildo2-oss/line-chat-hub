@@ -1,19 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2, Cog } from 'lucide-react';
+import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2, Cog, Monitor, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
+import { useTheme } from '../contexts/ThemeContext';
 import ProfileModal from './ProfileModal';
 
 const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
 const STATUS_LABEL_TH = { online: 'ออนไลน์', break: 'พัก', offline: 'ออฟไลน์' };
+const COLOR_MODE_OPTIONS = [
+  { key: 'default', label: 'ค่าเริ่มต้น', icon: Monitor },
+  { key: 'light', label: 'โหมดสว่าง', icon: Sun },
+  { key: 'dark', label: 'โหมดมืด', icon: Moon },
+];
 
 export default function Sidebar() {
   const { agent, logout, updateAgent } = useAuth();
   const { t } = useLanguage();
+  const { colorMode, setColorMode } = useTheme();
   const location = useLocation();
   const isAdmin = agent?.role === 'admin';
   const onSettings = location.pathname.startsWith('/settings');
@@ -318,6 +325,27 @@ export default function Sidebar() {
             >
               <User size={15} /> {t('profile')}
             </button>
+            <div className="px-3 py-2.5 border-t border-slate-700">
+              <p className="text-[11px] font-medium text-slate-500 mb-1.5">โหมดสี</p>
+              <div className="flex gap-1">
+                {COLOR_MODE_OPTIONS.map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    title={label}
+                    onClick={() => setColorMode(key)}
+                    className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] transition-colors ${
+                      colorMode === key
+                        ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white'
+                        : 'text-slate-400 hover:bg-slate-700'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               onClick={logout}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-rose-400 hover:bg-slate-700 transition-colors border-t border-slate-700"
