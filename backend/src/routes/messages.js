@@ -168,6 +168,15 @@ router.get('/:conversationId', auth, async (req, res) => {
         create: { messageId: latestMessage.id, agentId: req.agent.id },
         update: {},
       });
+      // Permanent log for the "อัตราการตอบเทียบกับการเปิดดู" table (reports.js,
+      // AgentActivityLog — see schema.prisma) — unlike the upsert above, this
+      // always inserts a fresh row, uncapped: re-opening the same
+      // still-unanswered chat 3 times logs 3 views, since the point here is
+      // literally counting how many times an agent opened one, not tracking
+      // one outstanding item.
+      await prisma.agentActivityLog.create({
+        data: { agentId: req.agent.id, conversationId: req.params.conversationId, kind: 'view' },
+      });
       emitToConversation(req.params.conversationId, 'message_view', {
         messageId: latestMessage.id,
         agentId: req.agent.id,

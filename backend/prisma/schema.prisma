@@ -34,6 +34,7 @@ model Agent {
   quickReplyReviews  QuickReplyRequest[] @relation("QuickReplyReviewer")
   quickReplyAuditLogs QuickReplyAuditLog[]
   conversationNotes ConversationNote[]
+  activityLogs      AgentActivityLog[]
 
   @@index([categoryId])
 }
@@ -284,6 +285,7 @@ model Conversation {
   lastMessageAt DateTime?
   broadcastRecipients BroadcastRecipient[]
   upsellSubmissions UpsellSubmission[]
+  activityLogs AgentActivityLog[]
 
   @@unique([lineUserId, channelId])
   @@index([channelId])
@@ -392,6 +394,38 @@ model MessageView {
   @@index([messageId])
 }
 
+// Permanent, append-only activity log for the "อัตราการตอบเทียบกับการเปิดดู"
+// (response rate vs. views) table on the Agent Conduct report — unlike
+// MessageView above (which gets deleted the moment a view is resolved, since
+// it exists only to track CURRENTLY outstanding items), rows here are never
+// deleted, so a cumulative rate can be computed over any date range.
+// kind:
+//   'view'        — logged every time an agent opens a still-unanswered
+//                    conversation (same trigger as MessageView's upsert, see
+//                    messages.js GET /:conversationId), once per open, not
+//                    deduplicated the way MessageView is — opening the same
+//                    still-unanswered chat 3 times logs 3 rows here.
+//   'self_reply'  — logged once per reply that clears the REPLYING agent's
+//                    own still-outstanding MessageView row(s) for that
+//                    conversation (see clearMessageViewsAfterReply) — i.e.
+//                    "I opened this and I'm also the one who answered it."
+// อัตราตอบเอง (%) = count(kind='self_reply') / count(kind='view') * 100,
+// computed in reports.js — a rate over totals, not a per-view outcome (one
+// open can't be individually traced to one specific reply when the same
+// still-unanswered message was opened more than once).
+model AgentActivityLog {
+  id             String   @id @default(cuid())
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  kind           String   // 'view' | 'self_reply'
+  createdAt      DateTime @default(now())
+
+  @@index([agentId, kind])
+  @@index([conversationId])
+}
+
 // Admin-registered domains an agent is allowed to send a customer — anything
 // else found in an outgoing agent text message gets flagged (see
 // backend/src/lib/linkGuard.js), so a supervisor can catch an agent quietly
@@ -463,12 +497,18 @@ model SystemSetting {
   id                       String   @id @default("singleton")
   // How long (in seconds), counted from EACH agent's own MessageView.viewedAt
   // (when they personally opened a still-unanswered conversation), a reply
-  // from anyone still counts as "answered in time" for the whole group that
-  // has it open — see backend/src/lib/messageViewClear.js and the Agent
-  // Conduct report (reports.js) for where this is actually applied. An
+  // still counts as "answered in time" for THAT agent specifically — see
+  // backend/src/lib/messageViewClear.js and the Agent Conduct report
+  // (reports.js) for where this is actually applied. Purely per-viewer: an
   // agent who opens the chat later has a later personal deadline than one
-  // who opened it right away. Settings > "ระบบ" in the frontend is the only
-  // place this gets changed.
+  // who opened it right away, and a teammate's timely reply does not save
+  // someone whose own deadline had already passed. Settings > "ระบบ" in the
+  // frontend is the only place this gets changed.
   agentConductGraceSeconds Int      @default(60)
+  // Below this self-reply rate (see AgentActivityLog above for how it's
+  // computed), a row in the "อัตราการตอบเทียบกับการเปิดดู" table gets
+  // highlighted red — a visual cue only, doesn't affect any other logic.
+  // Settings > "ระบบ" is the only place this gets changed.
+  responseRateThresholdPercent Int  @default(50)
   updatedAt                DateTime @updatedAt
 }

@@ -526,13 +526,18 @@ export default function Settings() {
   const [approvedLinks, setApprovedLinks] = useState([]);
   const [approvedLinkForm, setApprovedLinkForm] = useState({ domain: '', label: '' });
   // "ระบบ" — global app-level settings (backend/src/lib/systemSettings.js).
-  // graceInput is the text field's own draft value, kept separate from
-  // systemSettings (the last-saved value from the server) so typing a new
-  // number doesn't look "saved" until the PATCH actually succeeds.
+  // graceInput/thresholdInput are each field's own draft value, kept separate
+  // from systemSettings (the last-saved value from the server) so typing a
+  // new number doesn't look "saved" until its PATCH actually succeeds. Two
+  // independent saving/saved flags so submitting one field's form doesn't
+  // show a stray "บันทึกแล้ว" on the other.
   const [systemSettings, setSystemSettings] = useState(null);
   const [graceInput, setGraceInput] = useState('');
   const [savingSystemSettings, setSavingSystemSettings] = useState(false);
   const [systemSettingsSaved, setSystemSettingsSaved] = useState(false);
+  const [thresholdInput, setThresholdInput] = useState('');
+  const [savingThreshold, setSavingThreshold] = useState(false);
+  const [thresholdSaved, setThresholdSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -572,6 +577,7 @@ export default function Settings() {
     axios.get('/api/settings/system').then(r => {
       setSystemSettings(r.data);
       setGraceInput(String(r.data.agentConductGraceSeconds));
+      setThresholdInput(String(r.data.responseRateThresholdPercent));
     }).catch(() => {});
   }, []);
 
@@ -894,6 +900,27 @@ export default function Settings() {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingSystemSettings(false);
+    }
+  }
+
+  async function saveResponseRateThreshold(e) {
+    e.preventDefault();
+    const percent = Number(thresholdInput);
+    if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
+      setError('เกณฑ์อัตราตอบขั้นต่ำต้องเป็นจำนวนเต็ม ระหว่าง 0-100');
+      return;
+    }
+    setSavingThreshold(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { responseRateThresholdPercent: percent });
+      setSystemSettings(data);
+      setThresholdInput(String(data.responseRateThresholdPercent));
+      setThresholdSaved(true);
+      setTimeout(() => setThresholdSaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingThreshold(false);
     }
   }
 
@@ -1452,6 +1479,42 @@ export default function Settings() {
             ) : (
               <p className="text-sm text-slate-100">
                 ค่าปัจจุบัน: {systemSettings ? `${systemSettings.agentConductGraceSeconds} วินาที` : '...'}
+                <span className="text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+              </p>
+            )}
+          </div>
+
+          <div className={cardCls}>
+            <h3 className="font-medium text-slate-100 mb-1">เกณฑ์อัตราตอบขั้นต่ำสำหรับตาราง "อัตราการตอบเทียบกับการเปิดดู"</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              แถวที่ "อัตราตอบเอง (%)" ต่ำกว่าเกณฑ์นี้ จะถูกเน้นด้วยสีแดงในตารางที่หน้ารายงาน &gt; พนักงาน — ไว้แค่ช่วยให้สังเกตเห็นง่ายขึ้น ไม่มีผลต่อการคำนวณอื่นใด
+            </p>
+            {agent?.role === 'admin' ? (
+              <form onSubmit={saveResponseRateThreshold} className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">เกณฑ์อัตราตอบขั้นต่ำ (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className={`${inputCls} w-32`}
+                    value={thresholdInput}
+                    onChange={e => setThresholdInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingThreshold || thresholdInput === '' || (systemSettings && String(systemSettings.responseRateThresholdPercent) === thresholdInput)}
+                  className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50"
+                >
+                  {savingThreshold ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                {thresholdSaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
+              </form>
+            ) : (
+              <p className="text-sm text-slate-100">
+                ค่าปัจจุบัน: {systemSettings ? `${systemSettings.responseRateThresholdPercent}%` : '...'}
                 <span className="text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}

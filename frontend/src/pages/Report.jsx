@@ -516,6 +516,132 @@ const CONDUCT_THEAD = (
   </thead>
 );
 
+// Every sortable numeric column in ResponseRateTable below shares this same
+// click-to-toggle header — clicking a new column sorts by it descending
+// (มาก→น้อย) first, clicking the SAME column again flips direction, matching
+// the spreadsheet-style convention most agents already expect.
+function SortableTh({ label, sortKey, activeKey, dir, onClick }) {
+  const active = activeKey === sortKey;
+  return (
+    <th className="px-4 py-2.5 font-medium">
+      <button
+        type="button"
+        onClick={() => onClick(sortKey)}
+        className={`flex items-center gap-1 hover:text-gray-700 dark:hover:text-slate-200 ${active ? 'text-aurora-tealDeep dark:text-aurora-teal font-semibold' : ''}`}
+      >
+        {label}
+        <span className="text-[10px] leading-none">{active ? (dir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+      </button>
+    </th>
+  );
+}
+
+// "อัตราการตอบเทียบกับการเปิดดู" — sits right below the "อ่านไม่ตอบ" table on
+// the same tab (rendered from AgentConductSection below), sharing its
+// from/to date range. Sourced from AgentActivityLog (a PERMANENT log —
+// unlike MessageView, which is deleted the moment a view resolves — see
+// schema.prisma and reports.js's GET /response-rate), so it can report a
+// rate over any date range rather than only "currently outstanding" items.
+function ResponseRateTable({ from, to }) {
+  const [data, setData] = useState(null);
+  const [sortKey, setSortKey] = useState('responseRatePercent');
+  const [sortDir, setSortDir] = useState('asc'); // worst (lowest rate) first by default
+
+  useEffect(() => {
+    axios.get('/api/reports/response-rate', { params: { from, to } }).then(r => setData(r.data));
+  }, [from, to]);
+
+  const employees = data?.agents || [];
+  // Settings > "ระบบ" — default 50 if this admin hasn't saved a value yet
+  // (matches backend/src/lib/systemSettings.js's own fallback), so the very
+  // first load highlights correctly with no setup required.
+  const threshold = data?.responseRateThresholdPercent ?? 50;
+
+  const sorted = useMemo(() => {
+    const list = [...employees];
+    list.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // responseRatePercent can be null (no views logged yet) — always sinks
+      // to the bottom regardless of sort direction, since there's no rate to
+      // rank it by.
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return sortDir === 'asc' ? av - bv : bv - av;
+    });
+    return list;
+  }, [employees, sortKey, sortDir]);
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2 mb-1">
+        <Repeat size={18} className="text-aurora-teal" />
+        อัตราการตอบเทียบกับการเปิดดู
+      </h2>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+        อัตราตอบเอง (%) = จำนวนครั้งที่ตอบเองหลังเปิดดู ÷ จำนวนครั้งที่เปิดดูทั้งหมด (เฉพาะช่วงเวลาที่เลือกด้านบน) —
+        แถวที่ต่ำกว่าเกณฑ์ที่ตั้งไว้ (<span className="font-semibold text-gray-700 dark:text-slate-300">{threshold}%</span>) จะถูกเน้นสีแดง — ปรับเกณฑ์ได้ที่ Settings &gt; ระบบ
+      </p>
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        {!data ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
+        ) : employees.length === 0 ? (
+          <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
+        ) : (
+          <div className="max-h-[460px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
+                <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
+                  <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                  <SortableTh label="จำนวนครั้งที่เปิดดู" sortKey="viewCount" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="จำนวนครั้งที่ตอบเอง" sortKey="selfReplyCount" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="อัตราตอบเอง (%)" sortKey="responseRatePercent" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(a => (
+                  <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <AgentAvatar name={a.name} />
+                        <div className="min-w-0">
+                          <p className="text-gray-800 dark:text-slate-200 truncate max-w-[160px]">{a.name}</p>
+                          <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate max-w-[160px]">{a.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300">{a.viewCount}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-slate-300">{a.selfReplyCount}</td>
+                    <td className="px-4 py-2.5">
+                      {a.responseRatePercent === null ? (
+                        <span className="text-gray-400 dark:text-slate-500">—</span>
+                      ) : (
+                        <span className={`font-semibold ${a.responseRatePercent < threshold ? 'text-rose-500 dark:text-rose-400' : 'text-gray-700 dark:text-slate-300'}`}>
+                          {a.responseRatePercent}%
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Rolls up two existing signals — the "viewed but didn't reply" audit trail
 // and AI-flagged messages — into one per-agent scorecard, sortable worst-first,
 // with a click-through to the full detail for anyone the numbers look off for.
@@ -755,6 +881,8 @@ function AgentConductSection({ from, to, navigate }) {
           </div>
         )}
       </div>
+
+      <ResponseRateTable from={from} to={to} />
 
       {selectedAgentId && (
         <AgentConductModal

@@ -36,6 +36,16 @@ async function clearMessageViewsAfterReply({ conversationId, agentId, repliedAt 
   for (const id of new Set(toClear.map(v => v.agentId))) {
     emitToConversation(conversationId, 'message_view_cleared', { agentId: id });
   }
+
+  // "อัตราการตอบเทียบกับการเปิดดู" (reports.js) — the replying agent gets ONE
+  // 'self_reply' log entry per reply that resolved their own outstanding
+  // view(s) for this conversation, regardless of how many separate times
+  // they'd opened this same still-unanswered chat (matches the "count
+  // events, not resolve-one-view-at-a-time" spirit of the 'view' log in
+  // messages.js — see AgentActivityLog in schema.prisma).
+  if (toClear.some(v => v.agentId === agentId)) {
+    await prisma.agentActivityLog.create({ data: { agentId, conversationId, kind: 'self_reply' } });
+  }
 }
 
 module.exports = { clearMessageViewsAfterReply };

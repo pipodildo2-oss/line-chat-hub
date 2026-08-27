@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
-const { getAgentConductGraceSeconds } = require('../lib/systemSettings');
+const { getAgentConductGraceSeconds, getResponseRateThresholdPercent } = require('../lib/systemSettings');
 
 const prisma = new PrismaClient();
 
@@ -284,6 +284,64 @@ router.get('/agent-conduct/:agentId', auth, requireAdmin, async (req, res) => {
 
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
   res.json({ agent, flaggedMessages, viewedNoReply });
+});
+
+// GET /api/reports/response-rate?from=&to= — "อัตราการตอบเทียบกับการเปิดดู",
+// sits right below the Agent Conduct table on the same "พนักงาน" report tab.
+// Sourced from AgentActivityLog (schema.prisma) — a PERMANENT log, unlike
+// MessageView above (which is deleted the moment a view resolves), so this
+// can report a rate over any date range instead of only "currently
+// outstanding" items. viewCount = every time the agent opened a
+// still-unanswered chat; selfReplyCount = every reply of theirs that
+// resolved one of their own still-outstanding views (see
+// clearMessageViewsAfterReply, lib/messageViewClear.js). responseRatePercent
+// is null (not 0) when viewCount is 0 — nothing to judge a rate from yet,
+// the frontend shows "—" rather than a misleading 0%.
+router.get('/response-rate', auth, requireAdmin, async (req, res) => {
+  const { from, to } = req.query;
+  const where = {};
+  if (from) where.createdAt = { ...where.createdAt, gte: dayStart(from) };
+  if (to) where.createdAt = { ...where.createdAt, lte: dayEnd(to) };
+
+  const [agents, groups, responseRateThresholdPercent] = await Promise.all([
+    prisma.agent.findMany({
+      select: { id: true, name: true, email: true, role: true, categoryId: true, category: { select: { id: true, name: true } } },
+    }),
+    prisma.agentActivityLog.groupBy({ by: ['agentId', 'kind'], where, _count: { _all: true } }),
+    // Rides along here (rather than a separate /api/settings/system call from
+    // the frontend) purely so the table's red-highlight threshold and its
+    // data always come from one request — see Settings > "ระบบ" for where
+    // this is actually set.
+    getResponseRateThresholdPercent(),
+  ]);
+
+  const countsByAgent = {}; // agentId -> { view, self_reply }
+  for (const g of groups) {
+    const bucket = (countsByAgent[g.agentId] ||= { view: 0, self_reply: 0 });
+    bucket[g.kind] = g._count._all;
+  }
+
+  const summary = agents
+    // Admins never accumulate either kind of log entry by design (see
+    // messages.js — the view-tracking block is skipped entirely for
+    // admins), so excluding them here just keeps the response consistent
+    // with the Agent Conduct table above rather than showing 0/— rows.
+    .filter(a => a.role !== 'admin')
+    .map(a => {
+      const c = countsByAgent[a.id] || { view: 0, self_reply: 0 };
+      return {
+        id: a.id,
+        name: a.name,
+        email: a.email,
+        categoryId: a.categoryId,
+        categoryName: a.category?.name || null,
+        viewCount: c.view,
+        selfReplyCount: c.self_reply,
+        responseRatePercent: c.view > 0 ? Math.round((c.self_reply / c.view) * 100) : null,
+      };
+    });
+
+  res.json({ agents: summary, responseRateThresholdPercent });
 });
 
 module.exports = router;
