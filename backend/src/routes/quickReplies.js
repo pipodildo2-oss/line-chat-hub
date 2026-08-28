@@ -218,10 +218,13 @@ router.get('/', auth, async (req, res) => {
   res.json(quickReplies.map(qr => imageMeta(qr)));
 });
 
-// PATCH /api/quick-replies/reorder — admin only. Body: { categoryId, ids: [...] }
-// (ids listed in the desired display order). Sets each item's `order` to its index —
-// this is what controls the order agents see them in the Inbox quick-reply picker.
-router.patch('/reorder', auth, requireAdmin, async (req, res) => {
+// PATCH /api/quick-replies/reorder — any authenticated agent (not admin-only,
+// unlike create/edit/delete/toggle below) — reordering doesn't change content,
+// so agents are trusted to organize the picker order for their own workflow.
+// Body: { categoryId, ids: [...] } (ids listed in the desired display order).
+// Sets each item's `order` to its index — this is what controls the order
+// agents see them in the Inbox quick-reply picker.
+router.patch('/reorder', auth, async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });

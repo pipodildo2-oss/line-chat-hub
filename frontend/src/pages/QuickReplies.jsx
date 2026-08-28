@@ -228,10 +228,11 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
 //    (ไม่เลือกไลน์เลย = แสดงกับทุกไลน์)
 // 2. เลือกประเภท = ตอบกลับ / วิธีการ / โปรโมชั่น
 // 3-5. ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
-// Category CRUD and existing-item reorder/edit/delete stay isAdmin-only, but any
-// authenticated agent can browse categories and submit a NEW quick reply — for a
-// non-admin that submission goes through /requests instead of landing live, see
-// addQuickReply below.
+// Category CRUD and existing-item edit/delete/toggle stay isAdmin-only, but any
+// authenticated agent can browse categories, reorder existing items (it's just
+// organizing the picker, not changing content), and submit a NEW quick reply —
+// for a non-admin that submission goes through /requests instead of landing
+// live, see addQuickReply below.
 function QuickReplyCatalog({ isAdmin, channels }) {
   const [categories, setCategories] = useState([]);
   const [categoryId, setCategoryId] = useState('');
@@ -526,24 +527,22 @@ function QuickReplyCatalog({ isAdmin, channels }) {
             const isActive = qr.active !== false;
             return (
             <div key={qr.id} className={`${cardCls} flex items-start gap-3 ${!isActive ? 'opacity-60' : ''}`}>
-              {isAdmin && (
-                <div className="flex flex-col flex-shrink-0 -my-1">
-                  <button
-                    onClick={() => moveQuickReply(qr.id, 'up')}
-                    disabled={i === 0}
-                    className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    onClick={() => moveQuickReply(qr.id, 'down')}
-                    disabled={i === quickReplies.length - 1}
-                    className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </div>
-              )}
+              <div className="flex flex-col flex-shrink-0 -my-1">
+                <button
+                  onClick={() => moveQuickReply(qr.id, 'up')}
+                  disabled={i === 0}
+                  className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  onClick={() => moveQuickReply(qr.id, 'down')}
+                  disabled={i === quickReplies.length - 1}
+                  className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-20 disabled:hover:text-gray-400 dark:disabled:hover:text-slate-500 p-0.5"
+                >
+                  <ChevronDown size={14} />
+                </button>
+              </div>
               {qr.imageCount > 0 && (
                 <div className="relative flex-shrink-0">
                   <img src={`/api/quick-replies/${qr.id}/image/0`} alt="" className="w-14 h-14 rounded-lg object-cover border border-gray-100 dark:border-slate-800" />
