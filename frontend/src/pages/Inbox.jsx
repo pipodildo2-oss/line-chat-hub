@@ -1076,7 +1076,7 @@ function QuickReplyPicker({ channelId, onSend, onClose }) {
 
   useEffect(() => {
     setLoading(true);
-    axios.get('/api/quick-replies', { params: { kind, channelId } }).then(r => setItems(r.data)).finally(() => setLoading(false));
+    axios.get('/api/quick-replies', { params: { kind, channelId, activeOnly: 1 } }).then(r => setItems(r.data)).finally(() => setLoading(false));
   }, [kind, channelId]);
 
   async function handlePick(item) {

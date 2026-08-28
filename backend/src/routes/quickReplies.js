@@ -197,13 +197,17 @@ router.delete('/categories/:id', auth, requireAdmin, async (req, res) => {
 // explicitly picks at least one channel for it in Settings — see
 // CATEGORY_INCLUDE / POST/PATCH /categories below for where that's set.
 router.get('/', auth, async (req, res) => {
-  const { categoryId, kind, channelId } = req.query;
+  const { categoryId, kind, channelId, activeOnly } = req.query;
   const where = {};
   if (categoryId) where.categoryId = categoryId;
   if (kind) where.kind = kind;
   if (channelId) {
     where.category = { channels: { some: { id: channelId } } };
   }
+  // Opt-in — the admin catalog view (QuickReplies.jsx) still wants disabled
+  // items back so it can show them dimmed with a toggle to re-enable; only
+  // the agent-facing Inbox picker asks for this, so it never offers one.
+  if (activeOnly === '1') where.active = true;
   const quickReplies = await prisma.quickReply.findMany({
     where,
     include: { category: { select: { id: true, name: true } } },
@@ -271,7 +275,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 // ever needing to hand the client a real stored path to echo back.
 router.patch('/:id', auth, requireAdmin, async (req, res) => {
   try {
-    const { name, content, categoryId, kind, removeImageIndexes, addImages } = req.body;
+    const { name, content, categoryId, kind, active, removeImageIndexes, addImages } = req.body;
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
     if (addImages !== undefined) {
       if (!Array.isArray(addImages)) return res.status(400).json({ error: 'ข้อมูลรูปภาพไม่ถูกต้อง' });
@@ -285,6 +289,8 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     if (kind) data.kind = kind;
     if (name?.trim()) data.name = name.trim();
     if (content?.trim()) data.content = content.trim();
+    // Explicit !== undefined (not truthiness) — `false` is a legitimate value here.
+    if (active !== undefined) data.active = !!active;
 
     let removedFiles = [];
     let legacyImageToClean = null;
@@ -309,6 +315,7 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     if (data.content) changedFields.push('เนื้อหา');
     if (data.kind) changedFields.push('ประเภท');
     if (data.categoryId) changedFields.push('หมวดหมู่');
+    if (data.active !== undefined) changedFields.push(data.active ? 'เปิดใช้งาน' : 'ปิดใช้งาน');
     if (removeImageIndexes !== undefined || addImages !== undefined) changedFields.push('รูปภาพ');
     const category = await prisma.quickReplyCategory.findUnique({ where: { id: quickReply.categoryId }, select: { name: true } });
     await logAudit('updated', req.agent, {
@@ -605,6 +612,9 @@ router.post('/:id/send', auth, async (req, res) => {
       prisma.conversation.findUnique({ where: { id: conversationId }, include: { channel: true } }),
     ]);
     if (!quickReply) return res.status(404).json({ error: 'Quick reply not found' });
+    if (quickReply.active === false) {
+      return res.status(409).json({ error: 'ข้อความลัดนี้ถูกปิดใช้งานอยู่' });
+    }
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
     // Without this, a channel-restricted agent could push a real LINE
     // message into any conversation outside their assigned channels just by

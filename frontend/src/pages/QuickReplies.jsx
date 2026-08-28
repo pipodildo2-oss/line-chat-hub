@@ -522,8 +522,10 @@ function QuickReplyCatalog({ isAdmin, channels }) {
           )}
 
           {loadingReplies && <p className="text-sm text-gray-400 dark:text-slate-500">กำลังโหลด...</p>}
-          {!loadingReplies && quickReplies.map((qr, i) => (
-            <div key={qr.id} className={`${cardCls} flex items-start gap-3`}>
+          {!loadingReplies && quickReplies.map((qr, i) => {
+            const isActive = qr.active !== false;
+            return (
+            <div key={qr.id} className={`${cardCls} flex items-start gap-3 ${!isActive ? 'opacity-60' : ''}`}>
               {isAdmin && (
                 <div className="flex flex-col flex-shrink-0 -my-1">
                   <button
@@ -552,17 +554,28 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-gray-900 dark:text-slate-100 text-sm">{qr.name}</p>
                   <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex-shrink-0">{qrKindLabel(qr.kind)}</span>
+                  {!isActive && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300 font-medium flex-shrink-0">ปิดใช้งาน</span>
+                  )}
                 </div>
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
               </div>
               {isAdmin && (
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => saveQuickReplyEdit(qr.id, { active: !isActive })}
+                    title={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                    className={`relative inline-flex overflow-hidden w-8 h-4 rounded-full transition-colors flex-shrink-0 mr-1 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
+                  >
+                    <span className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
                   <button onClick={() => setEditTarget(qr)} className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
                   <button onClick={() => deleteQuickReply(qr.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {!loadingReplies && quickReplies.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">ยังไม่มีข้อความลัดในหมวดหมู่นี้</p>}
         </div>
       )}

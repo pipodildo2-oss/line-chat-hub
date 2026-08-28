@@ -158,6 +158,9 @@ model QuickReply {
   imageData  String?            // legacy single-image column, superseded by `images` — kept read-only for old rows
   images     String[]           @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
   order      Int                @default(0) // display position within its category, agent-controlled
+  active     Boolean            @default(true) // "เปิด/ปิด" — hides it from the agent picker
+                                                // and blocks sending it, reversibly (same idea
+                                                // as LineChannel.active)
   createdAt  DateTime           @default(now())
 
   @@index([categoryId])
