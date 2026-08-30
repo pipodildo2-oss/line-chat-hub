@@ -259,13 +259,19 @@ router.get('/', auth, requireAdmin, async (req, res) => {
   res.json({ submissions: rows });
 });
 
-// GET /api/upsells/agents/:agentId — admin drill-down for one agent's submissions.
+// GET /api/upsells/agents/:agentId?status= — admin drill-down for one
+// agent's submissions. status (optional) narrows to just that column of
+// ตรวจสอบ's ทั้งหมด/รอตรวจ/ผ่าน/ไม่ผ่าน filter tabs; omitted means every status.
 router.get('/agents/:agentId', auth, requireAdmin, async (req, res) => {
+  const { status } = req.query;
+  if (status && !['pending', 'approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
+  }
   const agent = await prisma.agent.findUnique({ where: { id: req.params.agentId }, select: { id: true, name: true, email: true } });
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
   const submissions = await prisma.upsellSubmission.findMany({
-    where: { agentId: req.params.agentId },
+    where: { agentId: req.params.agentId, ...(status ? { status } : {}) },
     include: {
       items: { select: SUBMISSION_ITEM_SELECT },
       reviewedBy: { select: { id: true, name: true } },

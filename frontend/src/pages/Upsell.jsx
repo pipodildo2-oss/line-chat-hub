@@ -312,14 +312,27 @@ function SubmissionRow({ submission, onReview, onDelete, navigate, onImageClick 
   );
 }
 
-function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
+// Shared by both the ตรวจสอบ per-agent modal and the รายงาน detail table —
+// same four tabs, same labels, same "empty key = no filter" convention.
+const STATUS_TABS = [
+  { key: '', label: 'ทั้งหมด' },
+  { key: 'pending', label: 'รอตรวจ' },
+  { key: 'approved', label: 'ผ่าน' },
+  { key: 'rejected', label: 'ไม่ผ่าน' },
+];
+
+// agentSummary (optional) is that agent's row from the ตรวจสอบ list
+// (total/pending/approved/rejected already loaded there) — passed down just
+// so each tab can show its count without a second round-trip.
+function UpsellAgentModal({ agentId, agentSummary, onClose, navigate, onChanged }) {
   const [data, setData] = useState(null);
+  const [status, setStatus] = useState('');
   const [lightboxSrc, setLightboxSrc] = useState(null);
 
   function load() {
-    axios.get(`/api/upsells/agents/${agentId}`).then(r => setData(r.data));
+    axios.get(`/api/upsells/agents/${agentId}`, { params: { status: status || undefined } }).then(r => setData(r.data));
   }
-  useEffect(() => { load(); }, [agentId]);
+  useEffect(() => { load(); }, [agentId, status]);
 
   async function handleReview(submissionId, status, amount) {
     await axios.patch(`/api/upsells/${submissionId}`, { status, amount: amount === '' ? null : amount });
@@ -353,11 +366,28 @@ function UpsellAgentModal({ agentId, onClose, navigate, onChanged }) {
           </button>
         </div>
 
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 rounded-lg p-1 mx-5 mt-4">
+          {STATUS_TABS.map(s => {
+            const count = agentSummary ? (s.key === '' ? agentSummary.total : agentSummary[s.key]) : null;
+            return (
+              <button
+                key={s.key}
+                onClick={() => setStatus(s.key)}
+                className={`flex-1 text-sm px-3 py-1.5 rounded-md transition-colors ${status === s.key ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm' : 'text-gray-500 dark:text-slate-400'}`}
+              >
+                {s.label}{count != null && ` (${count})`}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="overflow-y-auto px-5 py-4 space-y-3">
           {!data ? (
             <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">กำลังโหลด...</p>
           ) : data.submissions.length === 0 ? (
-            <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">ยังไม่มีรายการอัพเซลล์</p>
+            <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-8">
+              {status ? `ไม่มีรายการที่${STATUS_TABS.find(s => s.key === status)?.label}` : 'ยังไม่มีรายการอัพเซลล์'}
+            </p>
           ) : (
             data.submissions.map(s => (
               <SubmissionRow key={s.id} submission={s} onReview={handleReview} onDelete={handleDelete} navigate={navigate} onImageClick={setLightboxSrc} />
@@ -542,6 +572,7 @@ function UpsellReviewPage() {
       {selectedAgentId && (
         <UpsellAgentModal
           agentId={selectedAgentId}
+          agentSummary={agents?.find(a => a.id === selectedAgentId)}
           onClose={closeAgent}
           navigate={navigate}
           onChanged={load}
@@ -774,13 +805,6 @@ function UpsellScorePage() {
   );
 }
 
-const REPORT_STATUS_TABS = [
-  { key: '', label: 'ทั้งหมด' },
-  { key: 'pending', label: 'รอตรวจ' },
-  { key: 'approved', label: 'ผ่าน' },
-  { key: 'rejected', label: 'ไม่ผ่าน' },
-];
-
 // "รายงาน" — the detailed, filterable log behind the คะแนน rollup: every
 // submission across every agent/team, one row each, for record-keeping and
 // spot-checking rather than scoring at a glance.
@@ -971,7 +995,7 @@ function UpsellReportPage() {
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 rounded-lg p-1">
-          {REPORT_STATUS_TABS.map(s => (
+          {STATUS_TABS.map(s => (
             <button
               key={s.key}
               onClick={() => setStatus(s.key)}
