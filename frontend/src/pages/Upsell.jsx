@@ -673,13 +673,11 @@ function UpsellScorePage() {
     return () => socket.off('upsell_reviewed', load);
   }, [socket, from, to]);
 
-  // Overall (org-wide) rank, computed once across every agent regardless of
-  // team, so the medal/rank number shown next to a name inside its team
-  // section still reflects how they stack up company-wide.
+  // Only used for the two org-wide totals cards above the team tables —
+  // NOT for ranking, which must stay scoped per team (see teams below).
   const overallRanked = useMemo(() => (
-    agents ? [...agents].filter(a => a.approved > 0).sort((a, b) => b.approvedAmount - a.approvedAmount || b.approved - a.approved) : []
+    agents ? agents.filter(a => a.approved > 0) : []
   ), [agents]);
-  const rankById = useMemo(() => Object.fromEntries(overallRanked.map((a, i) => [a.id, i])), [overallRanked]);
 
   const teams = useMemo(() => {
     if (!overallRanked.length) return [];
@@ -694,16 +692,23 @@ function UpsellScorePage() {
       approvedAmount: g.agents.reduce((s, a) => s + a.approvedAmount, 0),
     }));
     groups.sort((x, y) => y.approvedAmount - x.approvedAmount);
-    // Row order within each team follows whichever column was last clicked —
-    // the rank badge itself (rankById, computed above) always stays the
-    // fixed org-wide standing regardless of how the rows are currently sorted.
     const dirMul = sortDir === 'asc' ? 1 : -1;
     for (const g of groups) {
-      g.agents = [...g.agents].sort((a, b) => {
-        if (sortKey === 'name') return dirMul * a.name.localeCompare(b.name);
-        if (sortKey === 'approved') return dirMul * (a.approved - b.approved);
-        return dirMul * (a.approvedAmount - b.approvedAmount);
-      });
+      // Rank is scoped to this team ONLY — each team's #1 earner is always
+      // rank 0 regardless of how they'd stack up against other teams, so a
+      // team's badges run 1..N with no gaps from other teams' agents being
+      // interleaved in. Computed independently of the currently selected
+      // sort column, so the medal stays put even when rows are reordered by
+      // name/รายการ/ยอดเงิน.
+      const rankedWithinTeam = [...g.agents].sort((a, b) => b.approvedAmount - a.approvedAmount || b.approved - a.approved);
+      const teamRankById = Object.fromEntries(rankedWithinTeam.map((a, i) => [a.id, i]));
+      g.agents = [...g.agents]
+        .sort((a, b) => {
+          if (sortKey === 'name') return dirMul * a.name.localeCompare(b.name);
+          if (sortKey === 'approved') return dirMul * (a.approved - b.approved);
+          return dirMul * (a.approvedAmount - b.approvedAmount);
+        })
+        .map(a => ({ ...a, teamRank: teamRankById[a.id] }));
     }
     return groups;
   }, [overallRanked, sortKey, sortDir]);
@@ -775,7 +780,7 @@ function UpsellScorePage() {
                   </thead>
                   <tbody>
                     {team.agents.map(a => {
-                      const rank = rankById[a.id];
+                      const rank = a.teamRank;
                       return (
                         <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800/40">
                           <td className="px-4 py-2.5 w-10 text-center">
