@@ -42,11 +42,41 @@ const TWO_LABEL_SUFFIXES = new Set([
 // ever under-exclude (worst case, some other "title.word" pattern still
 // slips through as a false positive) — it can never cause a real violation
 // to go undetected, which is the safer direction to err in here.
-const TITLE_PREFIXES = new Set(['mr', 'mrs', 'ms', 'miss', 'mstr', 'dr', 'prof']);
+const TITLE_PREFIXES = new Set(['mr', 'mrs', 'ms', 'mis', 'miss', 'mstr', 'dr', 'prof']);
 
 function looksLikeTitlePrefix(host) {
   const labels = host.split('.');
   return labels.length === 2 && TITLE_PREFIXES.has(labels[0]);
+}
+
+// General version of the same idea, per explicit admin sign-off (this was a
+// deliberate trade-off decision, not a default): a bare, path-less, ALL-CAPS
+// "word.word" token ("MIS.PHALLY", "MR.TOEK", "JOHN.SMITH") is how agents
+// actually type a customer's name or title+name in this app's chat, and
+// matches LINK_REGEX's shape without being a domain. Real links pasted in
+// this business's traffic are essentially never typed in shouting-case, so
+// this is a safe general signal that doesn't require enumerating every
+// possible name/title (unlike TITLE_PREFIXES, which still only covers named
+// entries) — and unlike the reverted TLD-allowlist (see
+// recoverLinkFlagsMissedByTldAllowlistBug), it doesn't depend on
+// enumerating every real TLD either, so it can't silently swallow a whole
+// class of unauthorized domains. Allows 2+ labels, not just exactly 2 — a
+// name can carry the same "subdomain-style" prefix a real domain would
+// (e.g. "APP.MIS.PHALLY" for a department + person), and each of those
+// extra parts is still just another all-caps word, not a real subdomain.
+// Scoped narrowly on purpose otherwise: only a raw, protocol-less, www-
+// less, path-less, fully-uppercase token qualifies — a link actually being
+// pasted (with http(s)://, www., or a path) still gets caught regardless
+// of case, and mixed- or lower-case "word.word" text still goes through
+// the normal check. Accepted risk: an agent who deliberately types a real
+// unauthorized link in ALL CAPS with no protocol/path (e.g. "BADSITE.COM"
+// or "SHOP.BADSITE.COM") would evade this check — judged unlikely enough
+// in practice to be worth it here.
+function looksLikeShoutedName(raw) {
+  if (/^(https?:\/\/|www\.)/i.test(raw)) return false;
+  if (/[/?#]/.test(raw)) return false;
+  const labels = raw.split('.');
+  return labels.length >= 2 && labels.every(l => /^[A-Z]+$/.test(l));
 }
 
 // The name a domain is actually "sold under" — e.g. "sure87" for
@@ -96,6 +126,9 @@ function findUnauthorizedLink(text, approvedDomains) {
     if (!host) continue;
     // "MR.TOEK"-shaped text, not a domain — see looksLikeTitlePrefix.
     if (looksLikeTitlePrefix(host)) continue;
+    // "MIS.PHALLY"-shaped text (any name, not just a known title) — see
+    // looksLikeShoutedName.
+    if (looksLikeShoutedName(raw)) continue;
     if (!isApprovedHost(host, approvedDomains)) return raw;
   }
   return null;
