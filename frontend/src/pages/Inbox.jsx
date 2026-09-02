@@ -315,6 +315,35 @@ function UpsellConfirmModal({ messages, submitting, onConfirm, onCancel, onImage
   );
 }
 
+// Shown when a send fails because the LINE OA's monthly message quota is
+// used up (see messages.js/quickReplies.js's `quotaExceeded` flag) — a
+// styled popup instead of the browser's native alert(), which would just
+// echo LINE's raw English error text at the agent.
+function QuotaExceededModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xl w-full max-w-sm p-5 text-center"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="mx-auto w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center mb-3">
+          <Wallet size={22} className="text-amber-500" />
+        </div>
+        <p className="font-semibold text-gray-900 dark:text-slate-100">ข้อความไลน์ไม่เพียงพอ</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1.5">
+          ข้อความไลน์ของคุณไม่เพียงพอ โปรดซื้อข้อความไลน์ของคุณเผื่อไว้ด้วยนะคะ
+        </p>
+        <button
+          onClick={onClose}
+          className="mt-4 w-full text-sm px-4 py-2 rounded-lg bg-gradient-to-r from-aurora-teal to-aurora-purple text-white font-medium hover:brightness-110"
+        >
+          ตกลง
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function formatDayLabel(date) {
   if (isToday(date)) return 'วันนี้';
   if (isYesterday(date)) return 'เมื่อวาน';
@@ -1222,6 +1251,11 @@ export default function Inbox() {
   const [upsellMode, setUpsellMode] = useState(false);
   const [selectedUpsellIds, setSelectedUpsellIds] = useState(() => new Set());
   const [showUpsellConfirm, setShowUpsellConfirm] = useState(false);
+  // Shown instead of the normal failed-send alert when LINE's monthly
+  // message quota is used up (see messages.js/quickReplies.js's
+  // `quotaExceeded` flag) — a plain alert() would just parrot LINE's raw
+  // English error text at the agent.
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [submittingUpsell, setSubmittingUpsell] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null); // src of the image currently open in the in-app viewer
   const [typingMap, setTypingMap] = useState({}); // { [conversationId]: agentName } — who else is currently typing a reply
@@ -1882,6 +1916,8 @@ export default function Inbox() {
       // only shown when the backend has confirmed nothing was sent.
       if (err.response?.data?.uncertain || !err.response) {
         alert('ไม่สามารถยืนยันได้ว่าข้อความนี้ส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชทก่อนส่งซ้ำ');
+      } else if (err.response?.data?.quotaExceeded) {
+        setQuotaExceeded(true);
       } else {
         alert(err.response?.data?.error || 'ส่งข้อความไม่สำเร็จ ลองใหม่อีกครั้ง');
       }
@@ -1999,9 +2035,13 @@ export default function Inbox() {
       // appended above; this just makes sure the agent notices the rest
       // didn't, rather than assuming the whole thing went through.
       if (data.partial) {
-        alert(data.uncertain
-          ? 'ส่งได้บางส่วน และไม่สามารถยืนยันได้ว่าส่วนที่เหลือส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชท'
-          : 'ส่งได้บางส่วนเท่านั้น กรุณาตรวจสอบในแชทว่าต้องส่งส่วนที่เหลือซ้ำหรือไม่');
+        if (data.quotaExceeded) {
+          setQuotaExceeded(true);
+        } else {
+          alert(data.uncertain
+            ? 'ส่งได้บางส่วน และไม่สามารถยืนยันได้ว่าส่วนที่เหลือส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชท'
+            : 'ส่งได้บางส่วนเท่านั้น กรุณาตรวจสอบในแชทว่าต้องส่งส่วนที่เหลือซ้ำหรือไม่');
+        }
       }
     } catch (err) {
       // Same "don't imply it's safe to blindly retry" rule as handleSend
@@ -2009,6 +2049,8 @@ export default function Inbox() {
       // push actually reached the customer.
       if (err.response?.data?.uncertain || !err.response) {
         alert('ไม่สามารถยืนยันได้ว่าข้อความลัดนี้ส่งถึงลูกค้าหรือไม่ กรุณาตรวจสอบในแชทก่อนส่งซ้ำ');
+      } else if (err.response?.data?.quotaExceeded) {
+        setQuotaExceeded(true);
       } else {
         alert(err.response?.data?.error || 'ส่งข้อความลัดไม่สำเร็จ ลองใหม่อีกครั้ง');
       }
@@ -2510,6 +2552,7 @@ export default function Inbox() {
           onImageClick={setLightboxSrc}
         />
       )}
+      {quotaExceeded && <QuotaExceededModal onClose={() => setQuotaExceeded(false)} />}
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );

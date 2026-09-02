@@ -690,6 +690,7 @@ router.post('/:id/send', auth, async (req, res) => {
       // Nothing went out at all — clean, safe-to-retry failure, same as
       // messages.js POST /:conversationId.
       if (sendErr.isSendTimeout) return res.status(504).json({ error: sendErr.message, uncertain: true });
+      if (sendErr.isQuotaExceeded) return res.status(429).json({ error: sendErr.message, quotaExceeded: true });
       return res.status(500).json({ error: sendErr.message });
     }
 
@@ -715,7 +716,7 @@ router.post('/:id/send', auth, async (req, res) => {
     if (sendErr) {
       // 207 (not 201) — the frontend keys off this to warn the agent only the
       // failed piece needs resending, not the whole quick reply again.
-      res.status(207).json({ messages: created, partial: true, error: sendErr.message, uncertain: !!sendErr.isSendTimeout });
+      res.status(207).json({ messages: created, partial: true, error: sendErr.message, uncertain: !!sendErr.isSendTimeout, quotaExceeded: !!sendErr.isQuotaExceeded });
     } else {
       res.status(201).json({ messages: created });
     }

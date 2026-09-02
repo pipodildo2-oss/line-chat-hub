@@ -398,6 +398,10 @@ router.post('/:conversationId', auth, async (req, res) => {
     // since blindly retrying here is exactly what causes a real duplicate
     // send if the original push actually did land.
     if (err.isSendTimeout) return res.status(504).json({ error: err.message, uncertain: true });
+    // LINE's monthly message quota is used up — see QuotaExceededError
+    // (line.service.js) — flagged so the frontend shows its own "buy more
+    // messages" popup instead of the generic failure alert.
+    if (err.isQuotaExceeded) return res.status(429).json({ error: err.message, quotaExceeded: true });
     res.status(500).json({ error: err.message });
   }
 });

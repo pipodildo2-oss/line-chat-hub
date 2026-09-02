@@ -31,6 +31,22 @@ class SendTimeoutError extends Error {
   }
 }
 
+// LINE's own message when the OA's monthly free/paid message quota is used
+// up ("You have reached your monthly limit.") — surfaced as-is by
+// describeLineError below, which reads badly as a raw English string in an
+// agent's UI. Tagged separately (mirroring isSendTimeout) so the route layer
+// can turn it into a proper Thai "buy more messages" prompt instead of a
+// generic failure. Matched on LINE's own wording rather than an error code,
+// since the SDK's HTTPFetchError doesn't expose a stable machine-readable
+// reason for this case — see describeLineError's comment on why the real
+// reason is buried in a JSON string on err.body in the first place.
+class QuotaExceededError extends Error {
+  constructor() {
+    super('ข้อความไลน์ของคุณไม่เพียงพอ โปรดซื้อข้อความไลน์ของคุณเผื่อไว้ด้วยนะคะ');
+    this.isQuotaExceeded = true;
+  }
+}
+
 function withSendTimeout(promise) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new SendTimeoutError()), SEND_TIMEOUT_MS);
@@ -54,6 +70,17 @@ function describeLineError(err) {
     } catch { /* body wasn't JSON — fall through to err.message */ }
   }
   return err?.message || 'ส่งข้อความไม่สำเร็จ';
+}
+
+// Turns a raw LINE push failure into the right thrown error: QuotaExceededError
+// for the monthly-limit case (see its own comment), otherwise describeLineError's
+// unwrapped text as a plain Error. Shared by sendMessage/sendImageMessage so both
+// paths surface the quota case identically instead of it depending on which one
+// happened to fail.
+function toSendError(err) {
+  if (err.isSendTimeout) return err;
+  if (/monthly limit/i.test(describeLineError(err))) return new QuotaExceededError();
+  return new Error(describeLineError(err));
 }
 
 // Flips the blocked flag on a conversation (if we have one for this user on
@@ -239,8 +266,7 @@ async function sendMessage(channel, lineUserId, text) {
     // as "safe to retry" — see SendTimeoutError above).
     await withSendTimeout(client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] }, crypto.randomUUID()));
   } catch (err) {
-    if (err.isSendTimeout) throw err;
-    throw new Error(describeLineError(err));
+    throw toSendError(err);
   }
 }
 
@@ -260,8 +286,7 @@ async function sendImageMessage(channel, lineUserId, imageUrl, previewUrl = imag
       messages: [{ type: 'image', originalContentUrl: imageUrl, previewImageUrl: previewUrl }],
     }, crypto.randomUUID()));
   } catch (err) {
-    if (err.isSendTimeout) throw err;
-    throw new Error(describeLineError(err));
+    throw toSendError(err);
   }
 }
 
