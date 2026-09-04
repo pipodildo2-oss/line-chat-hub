@@ -350,6 +350,21 @@ function QuickReplyCatalog({ isAdmin, channels }) {
     setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: Math.max(0, (c._count?.quickReplies || 1) - 1) } } : c));
   }
 
+  // Non-admin agents can't delete a QuickReply directly — this submits a
+  // request instead, same "รอแอดมินอนุมัติ" flow as addQuickReply above.
+  // The item stays visible/usable until an admin actually approves it.
+  async function requestDeleteQuickReply(id) {
+    if (!confirm('ส่งคำขอลบข้อความลัดนี้? ข้อความจะยังใช้งานได้จนกว่าแอดมินจะอนุมัติคำขอ')) return;
+    setError('');
+    try {
+      await axios.post(`/api/quick-replies/${id}/delete-request`);
+      setRequestSubmitted(true);
+      setTimeout(() => setRequestSubmitted(false), 5000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    }
+  }
+
   // Swaps qr with its neighbor above/below, updates the list order shown here,
   // and persists the new order so it's what agents see in the Inbox picker too.
   async function moveQuickReply(id, direction) {
@@ -572,6 +587,15 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                   <button onClick={() => deleteQuickReply(qr.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
                 </div>
               )}
+              {!isAdmin && (
+                <button
+                  onClick={() => requestDeleteQuickReply(qr.id)}
+                  title="ขอลบข้อความลัดนี้"
+                  className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5 flex-shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
             );
           })}
@@ -606,7 +630,9 @@ const ADMIN_STATUS_FILTERS = [
 // Buttons per spec: อนุมัติ (green), แก้ไข (yellow), ไม่อนุมัติ (red). แก้ไข/ไม่อนุมัติ
 // need a reason attached before submitting, อนุมัติ doesn't — approving is a
 // direct action once the admin's checked the text/image are correct.
-function AdminReviewControls({ requestId, onReview }) {
+// A "delete" request has nothing to revise (there's no content to fix), so
+// it skips แก้ไข entirely — just อนุมัติ (deletes the live item) or ไม่อนุมัติ.
+function AdminReviewControls({ requestId, type, onReview }) {
   const [expanded, setExpanded] = useState(null); // 'needs_revision' | 'rejected' | null
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -651,9 +677,11 @@ function AdminReviewControls({ requestId, onReview }) {
       <button disabled={busy} onClick={() => submit('approved', false)} className="text-sm px-3 py-1.5 rounded-lg font-medium bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
         อนุมัติ
       </button>
-      <button disabled={busy} onClick={() => setExpanded('needs_revision')} className="text-sm px-3 py-1.5 rounded-lg font-medium bg-amber-500 hover:bg-amber-400 text-slate-900 disabled:opacity-50">
-        แก้ไข
-      </button>
+      {type !== 'delete' && (
+        <button disabled={busy} onClick={() => setExpanded('needs_revision')} className="text-sm px-3 py-1.5 rounded-lg font-medium bg-amber-500 hover:bg-amber-400 text-slate-900 disabled:opacity-50">
+          แก้ไข
+        </button>
+      )}
       <button disabled={busy} onClick={() => setExpanded('rejected')} className="text-sm px-3 py-1.5 rounded-lg font-medium bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50">
         ไม่อนุมัติ
       </button>
@@ -749,6 +777,9 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-gray-900 dark:text-slate-100 text-sm">{req.name}</p>
             <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400">{qrKindLabel(req.kind)}</span>
+            {req.type === 'delete' && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium bg-rose-500/15 text-rose-400">ขอลบ</span>
+            )}
             <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${meta.cls}`}>{meta.label}</span>
           </div>
           <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
@@ -770,10 +801,10 @@ function QuickReplyRequestCard({ req, isAdmin, myId, onReview, onWithdraw, onRes
       </div>
 
       {isAdmin && req.status === 'pending' && (
-        <AdminReviewControls requestId={req.id} onReview={onReview} />
+        <AdminReviewControls requestId={req.id} type={req.type} onReview={onReview} />
       )}
 
-      {!isAdmin && isMine && req.status === 'needs_revision' && !resubmitting && (
+      {!isAdmin && isMine && req.type !== 'delete' && req.status === 'needs_revision' && !resubmitting && (
         <button onClick={() => setResubmitting(true)} className="mt-3 flex items-center gap-1.5 text-sm text-aurora-teal hover:brightness-110 font-medium">
           <Pencil size={13} /> แก้ไขและส่งใหม่
         </button>

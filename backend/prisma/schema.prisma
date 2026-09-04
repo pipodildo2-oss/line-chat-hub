@@ -118,50 +118,65 @@ model QuickReplyCategory {
   requests     QuickReplyRequest[]
 }
 
-// A non-admin agent can't create a QuickReply directly (see quickReplies.js
-// POST /, requireAdmin) — they submit a request here instead, which an
-// admin reviews (อนุมัติ/แก้ไข/ไม่อนุมัติ — see PATCH /requests/:id/review)
-// before it becomes a real, live QuickReply. "แก้ไข" (needs_revision) sends
-// it back to the ORIGINAL REQUESTER to fix and resubmit (PATCH /requests/:id,
-// requester-only, only while status is exactly needs_revision) — it doesn't
-// mean the admin edits it themselves.
+// A non-admin agent can't create or delete a QuickReply directly (see
+// quickReplies.js POST / and DELETE /:id, both requireAdmin) — they submit a
+// request here instead, which an admin reviews (อนุมัติ/แก้ไข/ไม่อนุมัติ —
+// see PATCH /requests/:id/review) before it takes effect. "แก้ไข"
+// (needs_revision) sends it back to the ORIGINAL REQUESTER to fix and
+// resubmit (PATCH /requests/:id, requester-only, only while status is
+// exactly needs_revision) — it doesn't mean the admin edits it themselves.
+// `type` distinguishes the two flows this same model backs:
+// - "create" (default): categoryId/kind/name/content/images are the PROPOSED
+//   new QuickReply's own fields — approval creates a new QuickReply from them.
+// - "delete": those same fields are a read-only SNAPSHOT copied from the
+//   live `targetQuickReply` at request time (so the review UI can render it
+//   without joining), and images/imageData point at that live item's actual
+//   stored files rather than a private copy — approval deletes
+//   targetQuickReply itself (see quickReplies.js), and rejecting/withdrawing
+//   a delete request must NOT clean up those files, since the live item still
+//   owns them.
 model QuickReplyRequest {
-  id            String    @id @default(cuid())
-  categoryId    String
-  category      QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind          String    @default("reply")
-  name          String
-  content       String
-  imageData     String?   // legacy single-image column, superseded by `images` — kept read-only for old rows
-  images        String[]  @default([]) // up to 5 stored image paths (imageStorage.js), same convention as QuickReply.images
-  status        String    @default("pending") // pending | needs_revision | approved | rejected
-  requestedById String
-  requestedBy   Agent     @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
-  reviewNote    String?   // admin's feedback — why it needs revision / was rejected
-  reviewedById  String?
-  reviewedBy    Agent?    @relation("QuickReplyReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-  reviewedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  type               String    @default("create") // create | delete
+  categoryId         String
+  category           QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind               String    @default("reply")
+  name               String
+  content            String
+  imageData          String?   // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images             String[]  @default([]) // up to 5 stored image paths (imageStorage.js), same convention as QuickReply.images
+  status             String    @default("pending") // pending | needs_revision | approved | rejected
+  requestedById      String
+  requestedBy        Agent     @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewNote         String?   // admin's feedback — why it needs revision / was rejected
+  reviewedById       String?
+  reviewedBy         Agent?    @relation("QuickReplyReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt         DateTime?
+  targetQuickReplyId String?   // set only for type "delete" — the live item this request wants removed
+  targetQuickReply   QuickReply? @relation("QuickReplyDeleteTarget", fields: [targetQuickReplyId], references: [id], onDelete: SetNull)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([status])
   @@index([requestedById])
+  @@index([targetQuickReplyId])
 }
 
 model QuickReply {
-  id         String             @id @default(cuid())
-  categoryId String
-  category   QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind       String             @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
-  name       String             // internal shortcut name/title agents see in the picker
-  content    String             // message text
-  imageData  String?            // legacy single-image column, superseded by `images` — kept read-only for old rows
-  images     String[]           @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
-  order      Int                @default(0) // display position within its category, agent-controlled
-  active     Boolean            @default(true) // "เปิด/ปิด" — hides it from the agent picker
-                                                // and blocks sending it, reversibly (same idea
-                                                // as LineChannel.active)
-  createdAt  DateTime           @default(now())
+  id             String             @id @default(cuid())
+  categoryId     String
+  category       QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind           String             @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
+  name           String             // internal shortcut name/title agents see in the picker
+  content        String             // message text
+  imageData      String?            // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images         String[]           @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
+  order          Int                @default(0) // display position within its category, agent-controlled
+  active         Boolean            @default(true) // "เปิด/ปิด" — hides it from the agent picker
+                                                    // and blocks sending it, reversibly (same idea
+                                                    // as LineChannel.active)
+  createdAt      DateTime           @default(now())
+  deleteRequests QuickReplyRequest[] @relation("QuickReplyDeleteTarget")
 
   @@index([categoryId])
 }

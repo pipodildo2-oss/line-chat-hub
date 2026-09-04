@@ -349,13 +349,16 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
-// ---------- Quick Reply Requests ("คำขอเพิ่มข้อความลัด") ----------
-// A non-admin agent can't create a QuickReply directly (POST / above is
-// requireAdmin) — they submit a request here instead, which sits pending
-// until an admin reviews it (อนุมัติ/แก้ไข/ไม่อนุมัติ). Only approval
-// actually creates a live QuickReply; "แก้ไข" sends it back to the
-// ORIGINAL REQUESTER to fix and resubmit, it doesn't mean the admin edits
-// it themselves — see PATCH /requests/:id below.
+// ---------- Quick Reply Requests ("คำขอเพิ่ม/ลบข้อความลัด") ----------
+// A non-admin agent can't create OR delete a QuickReply directly (POST / and
+// DELETE /:id above are both requireAdmin) — they submit a request here
+// instead, which sits pending until an admin reviews it
+// (อนุมัติ/แก้ไข/ไม่อนุมัติ). Only approval actually changes anything live
+// (creates a QuickReply for a "create" request, deletes one for a "delete"
+// request); "แก้ไข" sends it back to the ORIGINAL REQUESTER to fix and
+// resubmit, it doesn't mean the admin edits it themselves — see PATCH
+// /requests/:id below. "แก้ไข" doesn't apply to delete requests (see POST
+// /:id/delete-request and the review route below).
 
 const REQUEST_INCLUDE = {
   category: { select: { id: true, name: true } },
@@ -466,9 +469,57 @@ router.patch('/requests/:id', auth, async (req, res) => {
   }
 });
 
+// POST /api/quick-replies/:id/delete-request — any authenticated agent,
+// requests deletion of an existing, LIVE QuickReply (agents have no other way
+// to remove one — DELETE /:id above is requireAdmin). Snapshots the item's
+// current fields onto the request row (so the review card can render it
+// without a join) but does NOT copy its image files — images/imageData just
+// reference the same stored paths the live item still owns, since approval
+// deletes that live item directly rather than creating a new one from the copy.
+router.post('/:id/delete-request', auth, async (req, res) => {
+  try {
+    const quickReply = await prisma.quickReply.findUnique({
+      where: { id: req.params.id },
+      include: { category: { select: { name: true } } },
+    });
+    if (!quickReply) return res.status(404).json({ error: 'ไม่พบข้อความลัดนี้' });
+
+    const duplicate = await prisma.quickReplyRequest.findFirst({
+      where: { targetQuickReplyId: quickReply.id, type: 'delete', status: { in: ['pending', 'needs_revision'] } },
+    });
+    if (duplicate) return res.status(409).json({ error: 'มีคำขอลบข้อความลัดนี้อยู่แล้ว รอแอดมินตรวจสอบ' });
+
+    const request = await prisma.quickReplyRequest.create({
+      data: {
+        type: 'delete',
+        targetQuickReplyId: quickReply.id,
+        categoryId: quickReply.categoryId,
+        kind: quickReply.kind,
+        name: quickReply.name,
+        content: quickReply.content,
+        imageData: quickReply.imageData,
+        images: quickReply.images,
+        requestedById: req.agent.id,
+      },
+      include: REQUEST_INCLUDE,
+    });
+    await logAudit('request_submitted', req.agent, {
+      itemName: request.name, categoryName: quickReply.category?.name, detail: 'คำขอลบข้อความลัด',
+    });
+    emitToAll('quick_reply_request_created', { id: request.id, requestedById: req.agent.id, requestedByName: req.agent.name });
+    res.status(201).json(safeRequest(request));
+  } catch (err) {
+    console.error('Create quick reply delete request failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
 // PATCH /api/quick-replies/requests/:id/review — admin only: อนุมัติ / แก้ไข / ไม่อนุมัติ.
-// Approving is the only path that actually creates a live QuickReply —
-// everything else just updates the request's own status.
+// Approving is the only path that actually changes something live —
+// creating a QuickReply for a "create" request, deleting one for a "delete"
+// request — everything else just updates the request's own status. "แก้ไข"
+// doesn't make sense for a delete request (there's nothing to revise), so
+// it's rejected below.
 router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
   try {
     const { status, reviewNote } = req.body;
@@ -478,23 +529,39 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
     const existing = await prisma.quickReplyRequest.findUnique({ where: { id: req.params.id }, include: REQUEST_INCLUDE });
     if (!existing) return res.status(404).json({ error: 'ไม่พบคำขอนี้' });
     if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว' });
+    if (existing.type === 'delete' && status === 'needs_revision') {
+      return res.status(400).json({ error: 'คำขอลบไม่สามารถส่งกลับให้แก้ไขได้ กรุณาอนุมัติหรือไม่อนุมัติ' });
+    }
 
     let request;
+    let deletedTarget = null; // set only when a "delete" request is approved — cleaned up after the transaction below
     if (status === 'approved') {
-      request = await prisma.$transaction(async (tx) => {
-        const count = await tx.quickReply.count({ where: { categoryId: existing.categoryId } });
-        await tx.quickReply.create({
-          data: {
-            categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
-            content: existing.content, imageData: existing.imageData, images: existing.images, order: count,
-          },
+      if (existing.type === 'delete') {
+        deletedTarget = await prisma.quickReply.findUnique({ where: { id: existing.targetQuickReplyId } });
+        request = await prisma.$transaction(async (tx) => {
+          if (deletedTarget) await tx.quickReply.delete({ where: { id: deletedTarget.id } });
+          return tx.quickReplyRequest.update({
+            where: { id: req.params.id },
+            data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
+            include: REQUEST_INCLUDE,
+          });
         });
-        return tx.quickReplyRequest.update({
-          where: { id: req.params.id },
-          data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
-          include: REQUEST_INCLUDE,
+      } else {
+        request = await prisma.$transaction(async (tx) => {
+          const count = await tx.quickReply.count({ where: { categoryId: existing.categoryId } });
+          await tx.quickReply.create({
+            data: {
+              categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
+              content: existing.content, imageData: existing.imageData, images: existing.images, order: count,
+            },
+          });
+          return tx.quickReplyRequest.update({
+            where: { id: req.params.id },
+            data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
+            include: REQUEST_INCLUDE,
+          });
         });
-      });
+      }
     } else {
       request = await prisma.quickReplyRequest.update({
         where: { id: req.params.id },
@@ -504,17 +571,26 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
       // ไม่อนุมัติ is terminal for this image — it will never become a live
       // QuickReply, so the stored file can be cleaned up now instead of
       // sitting orphaned forever. "แก้ไข" (needs_revision) keeps it — the
-      // requester's resubmit form still needs it as the current value.
-      if (status === 'rejected') {
+      // requester's resubmit form still needs it as the current value. Never
+      // for a "delete" request, though — its images/imageData are the same
+      // stored files the live QuickReply still owns, not a private copy.
+      if (status === 'rejected' && existing.type !== 'delete') {
         if (existing.imageData) deleteStoredImage(existing.imageData);
         existing.images.forEach(deleteStoredImage);
       }
     }
 
+    // The real cleanup for an approved delete request — the live QuickReply's
+    // own image files — happens here, once the delete itself has committed.
+    if (deletedTarget) {
+      if (deletedTarget.imageData) deleteStoredImage(deletedTarget.imageData);
+      deletedTarget.images.forEach(deleteStoredImage);
+    }
+
     await logAudit(REVIEW_AUDIT_ACTION[status], req.agent, {
       itemName: existing.name,
       categoryName: existing.category.name,
-      detail: `คำขอของ ${existing.requestedBy.name}${reviewNote?.trim() ? ` — เหตุผล: ${reviewNote.trim()}` : ''}`,
+      detail: `${existing.type === 'delete' ? 'คำขอลบข้อความลัด — ' : ''}คำขอของ ${existing.requestedBy.name}${reviewNote?.trim() ? ` — เหตุผล: ${reviewNote.trim()}` : ''}`,
     });
     emitToAll('quick_reply_request_reviewed', { id: request.id, status, requestedById: existing.requestedById });
     res.json(safeRequest(request));
@@ -535,8 +611,13 @@ router.delete('/requests/:id', auth, async (req, res) => {
   }
   if (existing.status === 'approved') return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว ไม่สามารถยกเลิกได้' });
   await prisma.quickReplyRequest.delete({ where: { id: req.params.id } });
-  if (existing.imageData) deleteStoredImage(existing.imageData);
-  existing.images.forEach(deleteStoredImage);
+  // Same reasoning as the rejected-cleanup branch in the review route above —
+  // a "delete" request's images are the live QuickReply's own files, not a
+  // private copy, so withdrawing it must leave them alone.
+  if (existing.type !== 'delete') {
+    if (existing.imageData) deleteStoredImage(existing.imageData);
+    existing.images.forEach(deleteStoredImage);
+  }
   await logAudit('request_withdrawn', req.agent, {
     itemName: existing.name,
     categoryName: existing.category.name,
