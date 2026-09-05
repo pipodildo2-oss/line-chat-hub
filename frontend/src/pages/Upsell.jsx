@@ -323,16 +323,19 @@ const STATUS_TABS = [
 
 // agentSummary (optional) is that agent's row from the ตรวจสอบ list
 // (total/pending/approved/rejected already loaded there) — passed down just
-// so each tab can show its count without a second round-trip.
-function UpsellAgentModal({ agentId, agentSummary, onClose, navigate, onChanged }) {
+// so each tab can show its count without a second round-trip. from/to (both
+// optional) carry over the ตรวจสอบ list's own date filter, so drilling into
+// an agent shows the same window the summary row was computed from instead
+// of that agent's all-time history.
+function UpsellAgentModal({ agentId, agentSummary, from, to, onClose, navigate, onChanged }) {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState('');
   const [lightboxSrc, setLightboxSrc] = useState(null);
 
   function load() {
-    axios.get(`/api/upsells/agents/${agentId}`, { params: { status: status || undefined } }).then(r => setData(r.data));
+    axios.get(`/api/upsells/agents/${agentId}`, { params: { status: status || undefined, from: from || undefined, to: to || undefined } }).then(r => setData(r.data));
   }
-  useEffect(() => { load(); }, [agentId, status]);
+  useEffect(() => { load(); }, [agentId, status, from, to]);
 
   async function handleReview(submissionId, status, amount) {
     await axios.patch(`/api/upsells/${submissionId}`, { status, amount: amount === '' ? null : amount });
@@ -417,8 +420,17 @@ function UpsellReviewPage() {
   // point of this page.
   const [sortKey, setSortKey] = useState('pending'); // 'name'|'total'|'pending'|'approved'|'rejected'|'approvedAmount'
   const [sortDir, setSortDir] = useState('desc');
+  // Same DateRangeFilter used by คะแนน/รายงาน — defaults to "ทั้งหมด" (no
+  // date filter at all) rather than "เดือนนี้" like those pages, since this
+  // page's whole job is a worklist of everything still รอตรวจ, which could
+  // predate this month.
+  const [preset, setPreset] = useState('all');
+  const [[from, to], setDateRange] = useState(DATE_PRESETS[3].range());
   const { socket } = useSocket();
   const navigate = useNavigate();
+
+  function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
+  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
 
   function openAgent(id) {
     setSearchParams(prev => {
@@ -448,9 +460,9 @@ function UpsellReviewPage() {
   }
 
   function load() {
-    axios.get('/api/upsells/agents').then(r => setAgents(r.data.agents));
+    axios.get('/api/upsells/agents', { params: { from: from || undefined, to: to || undefined } }).then(r => setAgents(r.data.agents));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [from, to]);
 
   useEffect(() => {
     if (!socket) return;
@@ -460,7 +472,7 @@ function UpsellReviewPage() {
       socket.off('upsell_reviewed', load);
       socket.off('upsell_claimed', load);
     };
-  }, [socket]);
+  }, [socket, from, to]);
 
   const teams = useMemo(() => {
     if (!agents) return [];
@@ -492,6 +504,8 @@ function UpsellReviewPage() {
         <Wallet size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
         ตรวจสอบอัพเซลล์
       </h1>
+
+      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
 
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
@@ -573,6 +587,8 @@ function UpsellReviewPage() {
         <UpsellAgentModal
           agentId={selectedAgentId}
           agentSummary={agents?.find(a => a.id === selectedAgentId)}
+          from={from}
+          to={to}
           onClose={closeAgent}
           navigate={navigate}
           onChanged={load}

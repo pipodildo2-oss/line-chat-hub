@@ -262,16 +262,27 @@ router.get('/', auth, requireAdmin, async (req, res) => {
 // GET /api/upsells/agents/:agentId?status= — admin drill-down for one
 // agent's submissions. status (optional) narrows to just that column of
 // ตรวจสอบ's ทั้งหมด/รอตรวจ/ผ่าน/ไม่ผ่าน filter tabs; omitted means every status.
+// from/to (optional) narrow to the same date range ตรวจสอบ's own list is
+// filtered to (see GET /agents above) — so drilling into an agent from an
+// already-date-filtered list shows the same window, not that agent's
+// all-time history.
 router.get('/agents/:agentId', auth, requireAdmin, async (req, res) => {
-  const { status } = req.query;
+  const { status, from, to } = req.query;
   if (status && !['pending', 'approved', 'rejected'].includes(status)) {
     return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
   }
   const agent = await prisma.agent.findUnique({ where: { id: req.params.agentId }, select: { id: true, name: true, email: true } });
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
+  const dateWhere = {};
+  if (from || to) {
+    dateWhere.createdAt = {};
+    if (from) dateWhere.createdAt.gte = dayStart(from);
+    if (to) dateWhere.createdAt.lte = dayEnd(to);
+  }
+
   const submissions = await prisma.upsellSubmission.findMany({
-    where: { agentId: req.params.agentId, ...(status ? { status } : {}) },
+    where: { agentId: req.params.agentId, ...(status ? { status } : {}), ...dateWhere },
     include: {
       items: { select: SUBMISSION_ITEM_SELECT },
       reviewedBy: { select: { id: true, name: true } },
