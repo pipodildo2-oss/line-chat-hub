@@ -662,7 +662,7 @@ function UpsellScorePage() {
   // Which column each team's table is currently ordered by — click a header
   // to change it (see handleSort below). Shared across every team box so
   // "highest/lowest" reads consistently no matter which team you're looking at.
-  const [sortKey, setSortKey] = useState('amount'); // 'name' | 'approved' | 'amount'
+  const [sortKey, setSortKey] = useState('amount'); // 'rank' | 'name' | 'approved' | 'amount'
   const [sortDir, setSortDir] = useState('desc');
   const { socket } = useSocket();
 
@@ -671,7 +671,9 @@ function UpsellScorePage() {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'name' ? 'asc' : 'desc');
+      // rank (like name) defaults ascending — #1 on top is the natural
+      // reading, unlike รายการ/ยอดเงิน where "highest first" is the default.
+      setSortDir(key === 'name' || key === 'rank' ? 'asc' : 'desc');
     }
   }
 
@@ -720,6 +722,7 @@ function UpsellScorePage() {
       const teamRankById = Object.fromEntries(rankedWithinTeam.map((a, i) => [a.id, i]));
       g.agents = [...g.agents]
         .sort((a, b) => {
+          if (sortKey === 'rank') return dirMul * (teamRankById[a.id] - teamRankById[b.id]);
           if (sortKey === 'name') return dirMul * a.name.localeCompare(b.name);
           if (sortKey === 'approved') return dirMul * (a.approved - b.approved);
           return dirMul * (a.approvedAmount - b.approvedAmount);
@@ -788,7 +791,7 @@ function UpsellScorePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
-                      <th className="px-4 py-2.5 font-medium w-10 text-center">อันดับ</th>
+                      <SortableTh label="อันดับ" active={sortKey === 'rank'} dir={sortDir} onClick={() => handleSort('rank')} align="center" />
                       <SortableTh label="ชื่อ" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
                       <SortableTh label="รายการ" active={sortKey === 'approved'} dir={sortDir} onClick={() => handleSort('approved')} />
                       <SortableTh label="ยอดเงิน" active={sortKey === 'amount'} dir={sortDir} onClick={() => handleSort('amount')} align="right" />
