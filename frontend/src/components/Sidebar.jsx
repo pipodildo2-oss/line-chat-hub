@@ -8,8 +8,11 @@ import { useSocket } from '../contexts/SocketContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
 import ProfileModal from './ProfileModal';
 
-const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500' };
-const STATUS_LABEL_TH = { online: 'ออนไลน์', break: 'พัก', offline: 'ออฟไลน์' };
+// 'away' is deliberately not one of the picker's options below (['online',
+// 'break', 'offline']) — it's only ever set by AfkTracker.jsx right before
+// it logs an idle agent out, never something an agent picks for themselves.
+const STATUS_DOT = { online: 'bg-aurora-green', break: 'bg-amber-400', offline: 'bg-slate-500', away: 'bg-orange-400' };
+const STATUS_LABEL_TH = { online: 'ออนไลน์', break: 'พัก', offline: 'ออฟไลน์', away: 'ไม่อยู่หน้าจอ' };
 
 export default function Sidebar() {
   const { agent, logout, updateAgent } = useAuth();

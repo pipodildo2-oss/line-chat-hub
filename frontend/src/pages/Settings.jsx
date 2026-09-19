@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Search, Link2, ChevronUp, ChevronDown, Cog } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Search, Link2, ChevronUp, ChevronDown, Cog, Send } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
@@ -335,8 +335,21 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
         </div>
       )}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ring-2 ring-gray-200 dark:ring-slate-950/60">
-          {a.name[0].toUpperCase()}
+        <div className="relative flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-aurora-teal to-aurora-purple flex items-center justify-center text-white text-sm font-semibold ring-2 ring-gray-200 dark:ring-slate-950/60">
+            {a.name[0].toUpperCase()}
+          </div>
+          {/* 'away' — auto-set by AfkTracker.jsx when this agent's own
+              browser sat idle past Settings > "ระบบ"'s afkMinutes and it
+              logged them out; not something anyone picks manually (see
+              Sidebar.jsx's status dropdown, which never offers it) — this
+              dot is the only place a teammate sees it happened. */}
+          {a.status === 'away' && (
+            <span
+              title="ไม่อยู่หน้าจอ (ออกจากระบบอัตโนมัติเนื่องจากไม่มีการใช้งาน)"
+              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-orange-400 ring-2 ring-white dark:ring-slate-900"
+            />
+          )}
         </div>
         <div className="min-w-0 flex-1 pr-9">
           <p className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">{a.name}</p>
@@ -349,6 +362,9 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
         </span>
         {isMe && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 font-medium">คุณ</span>
+        )}
+        {a.status === 'away' && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium">ไม่อยู่หน้าจอ</span>
         )}
       </div>
     </div>
@@ -496,6 +512,190 @@ function useCategories() {
   };
 }
 
+// Settings > "ระบบ" > Telegram — admin config for the monthly
+// "คะแนนอัพเซลล์" notification (see backend/src/lib/telegramReport.js for
+// what actually gets sent: one header message + one message per team, sent
+// on the configured day/time each month). Self-contained (own fetch/save)
+// rather than threading more state through the parent Settings component,
+// same reasoning as QuickReplyPicker/EmojiPicker elsewhere in this file.
+function TelegramReportSettings({ agent, inputCls, cardCls }) {
+  const [settings, setSettings] = useState(null);
+  const [botTokenInput, setBotTokenInput] = useState(''); // write-only — never pre-filled from the server, see systemSettings.js
+  const [chatIdInput, setChatIdInput] = useState('');
+  const [enabledInput, setEnabledInput] = useState(false);
+  const [dayInput, setDayInput] = useState('1');
+  const [hourInput, setHourInput] = useState('9');
+  const [minuteInput, setMinuteInput] = useState('0');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null); // { ok: true } | { ok: false, error }
+  const [sendingNow, setSendingNow] = useState(false);
+  const [sendNowResult, setSendNowResult] = useState(null);
+
+  function load() {
+    axios.get('/api/settings/telegram').then(r => {
+      setSettings(r.data);
+      setChatIdInput(r.data.chatId || '');
+      setEnabledInput(r.data.enabled);
+      setDayInput(String(r.data.day));
+      setHourInput(String(r.data.hour));
+      setMinuteInput(String(r.data.minute));
+    }).catch(() => {});
+  }
+  useEffect(() => { if (agent?.role === 'admin') load(); }, [agent?.role]);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    const day = Number(dayInput), hour = Number(hourInput), minute = Number(minuteInput);
+    if (!Number.isInteger(day) || day < 1 || day > 28) return setError('วันที่ต้องเป็นจำนวนเต็ม ระหว่าง 1-28');
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return setError('ชั่วโมงต้องเป็นจำนวนเต็ม ระหว่าง 0-23');
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) return setError('นาทีต้องเป็นจำนวนเต็ม ระหว่าง 0-59');
+    if (!chatIdInput.trim()) return setError('กรุณาใส่ Chat ID');
+
+    setSaving(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/telegram', {
+        ...(botTokenInput.trim() ? { botToken: botTokenInput.trim() } : {}),
+        chatId: chatIdInput.trim(),
+        enabled: enabledInput,
+        day, hour, minute,
+      });
+      setSettings(data);
+      setBotTokenInput('');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true); setTestResult(null);
+    try {
+      await axios.post('/api/settings/telegram/test');
+      setTestResult({ ok: true });
+    } catch (err) {
+      setTestResult({ ok: false, error: err.response?.data?.error || 'ทดสอบส่งไม่สำเร็จ' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleSendNow() {
+    if (!confirm('ส่งรายงานคะแนนอัพเซลล์ของเดือนที่แล้วเข้ากลุ่ม Telegram ตอนนี้เลยหรือไม่?')) return;
+    setSendingNow(true); setSendNowResult(null);
+    try {
+      const { data } = await axios.post('/api/settings/telegram/send-now');
+      setSendNowResult({ ok: true, ...data });
+      load(); // picks up the updated lastSentPeriod
+    } catch (err) {
+      setSendNowResult({ ok: false, error: err.response?.data?.error || 'ส่งไม่สำเร็จ' });
+    } finally {
+      setSendingNow(false);
+    }
+  }
+
+  if (agent?.role !== 'admin') {
+    return (
+      <div className={cardCls}>
+        <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">แจ้งเตือนคะแนนอัพเซลล์ทาง Telegram</h3>
+        <p className="text-sm text-gray-900 dark:text-slate-100">เฉพาะแอดมินเท่านั้นที่ตั้งค่าได้</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cardCls}>
+      <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">แจ้งเตือนคะแนนอัพเซลล์ทาง Telegram</h3>
+      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+        ส่งสรุปคะแนนอัพเซลล์ของเดือนที่แล้วเข้ากลุ่ม Telegram อัตโนมัติตามวัน/เวลาที่ตั้งไว้ — แบ่งส่งเป็นข้อความละทีม เรียงอันดับเหมือนหน้าคะแนนอัพเซลล์
+      </p>
+
+      {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
+
+      <form onSubmit={handleSave} className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">Bot Token</label>
+            <input
+              type="password"
+              className={inputCls}
+              placeholder={settings?.hasToken ? 'ตั้งค่าไว้แล้ว (เว้นว่างไว้เพื่อไม่เปลี่ยน)' : 'วางค่าจาก @BotFather'}
+              value={botTokenInput}
+              onChange={e => setBotTokenInput(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">Chat ID (กลุ่มที่จะส่งเข้าไป)</label>
+            <input
+              className={inputCls}
+              placeholder="เช่น -1001234567890"
+              value={chatIdInput}
+              onChange={e => setChatIdInput(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-end gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 select-none">
+            <input type="checkbox" checked={enabledInput} onChange={e => setEnabledInput(e.target.checked)} className="rounded" />
+            เปิดใช้งานการส่งอัตโนมัติ
+          </label>
+          <div>
+            <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">วันที่ของเดือน</label>
+            <input type="number" min="1" max="28" step="1" className={`${inputCls} w-20`} value={dayInput} onChange={e => setDayInput(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">ชั่วโมง (0-23)</label>
+            <input type="number" min="0" max="23" step="1" className={`${inputCls} w-20`} value={hourInput} onChange={e => setHourInput(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">นาที (0-59)</label>
+            <input type="number" min="0" max="59" step="1" className={`${inputCls} w-20`} value={minuteInput} onChange={e => setMinuteInput(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap pt-1">
+          <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">
+            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+          </button>
+          {saved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
+
+          <button type="button" onClick={handleTest} disabled={testing || !settings?.hasToken} title={!settings?.hasToken ? 'บันทึก Bot Token ก่อน' : undefined} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50">
+            <Send size={13} /> {testing ? 'กำลังทดสอบ...' : 'ทดสอบส่งข้อความ'}
+          </button>
+
+          <button type="button" onClick={handleSendNow} disabled={sendingNow || !settings?.hasToken} title={!settings?.hasToken ? 'บันทึก Bot Token ก่อน' : undefined} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50">
+            <Send size={13} /> {sendingNow ? 'กำลังส่ง...' : 'ส่งรายงานเดือนที่แล้วตอนนี้'}
+          </button>
+        </div>
+
+        {testResult && (
+          <p className={`text-sm ${testResult.ok ? 'text-aurora-teal' : 'text-rose-400'}`}>
+            {testResult.ok ? '✅ ส่งข้อความทดสอบสำเร็จ ตรวจสอบในกลุ่ม Telegram ได้เลย' : `❌ ${testResult.error}`}
+          </p>
+        )}
+        {sendNowResult && (
+          <p className={`text-sm ${sendNowResult.ok ? 'text-aurora-teal' : 'text-rose-400'}`}>
+            {sendNowResult.ok
+              ? `✅ ส่งรายงาน ${sendNowResult.periodLabel} แล้ว (${sendNowResult.teamCount} ทีม · ${sendNowResult.totalApproved} รายการ · ${sendNowResult.totalAmount.toLocaleString()} บาท)`
+              : `❌ ${sendNowResult.error}`}
+          </p>
+        )}
+
+        {settings?.lastSentPeriod && (
+          <p className="text-xs text-gray-400 dark:text-slate-500">ส่งล่าสุดสำหรับช่วง: {settings.lastSentPeriod}</p>
+        )}
+      </form>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { tab } = useParams();
   const { agent } = useAuth();
@@ -538,6 +738,11 @@ export default function Settings() {
   const [thresholdInput, setThresholdInput] = useState('');
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [thresholdSaved, setThresholdSaved] = useState(false);
+  // AFK auto-logout timeout (minutes) — same independent-field-save pattern
+  // as grace/threshold above. 0 = feature off.
+  const [afkInput, setAfkInput] = useState('');
+  const [savingAfk, setSavingAfk] = useState(false);
+  const [afkSaved, setAfkSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -578,6 +783,7 @@ export default function Settings() {
       setSystemSettings(r.data);
       setGraceInput(String(r.data.agentConductGraceSeconds));
       setThresholdInput(String(r.data.responseRateThresholdPercent));
+      setAfkInput(String(r.data.afkMinutes));
     }).catch(() => {});
   }, []);
 
@@ -921,6 +1127,27 @@ export default function Settings() {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingThreshold(false);
+    }
+  }
+
+  async function saveAfkMinutes(e) {
+    e.preventDefault();
+    const minutes = Number(afkInput);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) {
+      setError('เวลา AFK ต้องเป็นจำนวนเต็มนาที ระหว่าง 0-1440 (0 = ปิดใช้งาน)');
+      return;
+    }
+    setSavingAfk(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { afkMinutes: minutes });
+      setSystemSettings(data);
+      setAfkInput(String(data.afkMinutes));
+      setAfkSaved(true);
+      setTimeout(() => setAfkSaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingAfk(false);
     }
   }
 
@@ -1519,6 +1746,44 @@ export default function Settings() {
               </p>
             )}
           </div>
+
+          <div className={cardCls}>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">ออกจากระบบอัตโนมัติเมื่อไม่มีการใช้งาน (AFK)</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+              ถ้าพนักงานคนใดไม่มีการเคลื่อนไหว (เมาส์/คีย์บอร์ด/สัมผัสหน้าจอ) ในระบบนานเกินเวลาที่ตั้งไว้นี้ ระบบจะขึ้นป้าย "ไม่อยู่หน้าจอ" ให้เพื่อนร่วมทีมเห็น (ในหน้า ทีมงาน) และออกจากระบบให้อัตโนมัติ — ใส่ 0 เพื่อปิดใช้งาน
+            </p>
+            {agent?.role === 'admin' ? (
+              <form onSubmit={saveAfkMinutes} className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">เวลา AFK (นาที)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1440"
+                    step="1"
+                    className={`${inputCls} w-32`}
+                    value={afkInput}
+                    onChange={e => setAfkInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingAfk || afkInput === '' || (systemSettings && String(systemSettings.afkMinutes) === afkInput)}
+                  className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50"
+                >
+                  {savingAfk ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                {afkSaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
+              </form>
+            ) : (
+              <p className="text-sm text-gray-900 dark:text-slate-100">
+                ค่าปัจจุบัน: {systemSettings ? (systemSettings.afkMinutes > 0 ? `${systemSettings.afkMinutes} นาที` : 'ปิดใช้งาน') : '...'}
+                <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+              </p>
+            )}
+          </div>
+
+          <TelegramReportSettings agent={agent} inputCls={inputCls} cardCls={cardCls} />
         </div>
       )}
 

@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Lock, Mail, ArrowRight, Clock } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  // AfkTracker.jsx sends an idle agent here with ?reason=afk right after
+  // logging them out — a plain "session expired"-style redirect wouldn't
+  // explain to someone who never touched the logout button why they're
+  // suddenly looking at the login screen again.
+  const [searchParams] = useSearchParams();
+  const afkLogout = searchParams.get('reason') === 'afk';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -51,6 +57,13 @@ export default function Login() {
               <p className="text-white/40 text-xs">By BBB888</p>
             </div>
           </div>
+
+          {afkLogout && (
+            <div className="flex items-start gap-2 bg-orange-400/10 border border-orange-400/20 text-orange-300 text-xs rounded-lg px-3 py-2.5 mb-4">
+              <Clock size={14} className="flex-shrink-0 mt-0.5" />
+              <span>ระบบออกจากระบบให้อัตโนมัติ เนื่องจากไม่มีการใช้งานเป็นเวลานาน กรุณาเข้าสู่ระบบอีกครั้ง</span>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>

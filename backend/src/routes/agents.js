@@ -67,7 +67,12 @@ router.patch('/me', auth, async (req, res) => {
     if (name !== undefined && name.trim()) data.name = name.trim();
     if (language !== undefined) data.language = language;
     if (status !== undefined) {
-      if (!['online', 'offline', 'break'].includes(status)) {
+      // 'away' isn't a manually-pickable option in the Sidebar's status
+      // dropdown (see STATUS_DOT/STATUS_LABEL_TH there) — it's only ever set
+      // by AfkTracker.jsx right before it logs the agent out for inactivity,
+      // but it's still a status value THIS same endpoint sets, so it has to
+      // be accepted here too.
+      if (!['online', 'offline', 'break', 'away'].includes(status)) {
         return res.status(400).json({ error: 'Invalid status' });
       }
       data.status = status;

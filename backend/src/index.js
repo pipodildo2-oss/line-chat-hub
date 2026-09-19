@@ -23,10 +23,12 @@ const broadcastRoutes = require('./routes/broadcasts');
 const upsellRoutes = require('./routes/upsells');
 const approvedLinkRoutes = require('./routes/approvedLinks');
 const settingsRoutes = require('./routes/settings');
+const telegramReportRoutes = require('./routes/telegramReport');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { setIo } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
+const { startTelegramReportScheduler } = require('./lib/telegramScheduler');
 const { verifyAgentToken } = require('./middleware/auth');
 const { canAccessChannel } = require('./lib/conversationQuery');
 
@@ -140,6 +142,12 @@ const worker = startWorker(async (channelId, event) => {
   await processLineEvent(channel, event);
 });
 
+// Monthly "คะแนนอัพเซลล์" Telegram notification — see
+// lib/telegramScheduler.js for why this is a plain setInterval rather than
+// a BullMQ repeatable job. No-op every check until an admin actually
+// enables it in Settings > "ระบบ".
+startTelegramReportScheduler();
+
 app.use(cors({ origin: corsOriginCheck }));
 // Raw body for LINE signature verification (must come before express.json)
 app.use('/api/webhooks/line', express.raw({ type: 'application/json' }));
@@ -166,6 +174,7 @@ app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/upsells', upsellRoutes);
 app.use('/api/approved-links', approvedLinkRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/settings/telegram', telegramReportRoutes);
 
 // Serves agent-attached chat images and quick-reply images saved by
 // imageStorage.saveBase64Image (see backend/src/lib/imageStorage.js). Must be

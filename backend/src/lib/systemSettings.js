@@ -5,6 +5,10 @@ const prisma = new PrismaClient();
 const SINGLETON_ID = 'singleton';
 const DEFAULT_AGENT_CONDUCT_GRACE_SECONDS = 60;
 const DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT = 50;
+const DEFAULT_AFK_MINUTES = 0; // 0 = feature off
+const DEFAULT_TELEGRAM_REPORT_DAY = 1;
+const DEFAULT_TELEGRAM_REPORT_HOUR = 9;
+const DEFAULT_TELEGRAM_REPORT_MINUTE = 0;
 
 // Always the same one row (id is fixed, see schema.prisma) — falls back to
 // the hardcoded defaults if that row doesn't exist yet (e.g. a fresh DB that
@@ -15,6 +19,7 @@ async function getSystemSettings() {
   return {
     agentConductGraceSeconds: row?.agentConductGraceSeconds ?? DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
     responseRateThresholdPercent: row?.responseRateThresholdPercent ?? DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
+    afkMinutes: row?.afkMinutes ?? DEFAULT_AFK_MINUTES,
   };
 }
 
@@ -44,12 +49,84 @@ async function setResponseRateThresholdPercent(percent) {
   });
 }
 
+async function getAfkMinutes() {
+  const { afkMinutes } = await getSystemSettings();
+  return afkMinutes;
+}
+
+async function setAfkMinutes(minutes) {
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: { afkMinutes: minutes },
+    create: { id: SINGLETON_ID, afkMinutes: minutes },
+  });
+}
+
+// Safe-to-return-to-the-frontend view of the Telegram config — everything
+// except the bot token itself (exposed only as a boolean so the Settings UI
+// can show "ตั้งค่าไว้แล้ว" without ever re-sending the real token back to
+// the browser, same write-only pattern as LineChannel.accessToken).
+async function getTelegramSettings() {
+  const row = await prisma.systemSetting.findUnique({ where: { id: SINGLETON_ID } });
+  return {
+    enabled: row?.telegramReportEnabled ?? false,
+    chatId: row?.telegramChatId ?? null,
+    hasToken: !!row?.telegramBotToken,
+    day: row?.telegramReportDay ?? DEFAULT_TELEGRAM_REPORT_DAY,
+    hour: row?.telegramReportHour ?? DEFAULT_TELEGRAM_REPORT_HOUR,
+    minute: row?.telegramReportMinute ?? DEFAULT_TELEGRAM_REPORT_MINUTE,
+    lastSentPeriod: row?.telegramLastSentPeriod ?? null,
+  };
+}
+
+// Internal only (the scheduler + test-send route) — the one place the raw
+// bot token is ever read back out of the DB. Never expose this to a route
+// response.
+async function getTelegramCredentials() {
+  const row = await prisma.systemSetting.findUnique({ where: { id: SINGLETON_ID } });
+  return { botToken: row?.telegramBotToken ?? null, chatId: row?.telegramChatId ?? null };
+}
+
+// Partial update — only the fields actually present in `patch` are touched,
+// same "each field saves independently" convention as
+// setAgentConductGraceSeconds/setResponseRateThresholdPercent above (so the
+// Settings form can save the token separately from the schedule, etc.).
+async function setTelegramSettings(patch) {
+  const data = {};
+  if (patch.botToken !== undefined) data.telegramBotToken = patch.botToken;
+  if (patch.chatId !== undefined) data.telegramChatId = patch.chatId;
+  if (patch.enabled !== undefined) data.telegramReportEnabled = patch.enabled;
+  if (patch.day !== undefined) data.telegramReportDay = patch.day;
+  if (patch.hour !== undefined) data.telegramReportHour = patch.hour;
+  if (patch.minute !== undefined) data.telegramReportMinute = patch.minute;
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: data,
+    create: { id: SINGLETON_ID, ...data },
+  });
+}
+
+async function setTelegramLastSentPeriod(period) {
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: { telegramLastSentPeriod: period },
+    create: { id: SINGLETON_ID, telegramLastSentPeriod: period },
+  });
+}
+
 module.exports = {
   getSystemSettings,
   getAgentConductGraceSeconds,
   setAgentConductGraceSeconds,
   getResponseRateThresholdPercent,
   setResponseRateThresholdPercent,
+  getAfkMinutes,
+  setAfkMinutes,
+  getTelegramSettings,
+  getTelegramCredentials,
+  setTelegramSettings,
+  setTelegramLastSentPeriod,
   DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
   DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
+  DEFAULT_AFK_MINUTES,
 };

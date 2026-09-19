@@ -528,5 +528,31 @@ model SystemSetting {
   // highlighted red — a visual cue only, doesn't affect any other logic.
   // Settings > "ระบบ" is the only place this gets changed.
   responseRateThresholdPercent Int  @default(50)
+  // Minutes of no browser activity (mouse/keyboard/touch — see AfkTracker.jsx)
+  // before an agent is auto-marked away and logged out client-side. 0 =
+  // feature off (default, so it doesn't start logging anyone out until an
+  // admin explicitly opts in). Settings > "ระบบ" is the only place this gets
+  // changed.
+  afkMinutes               Int      @default(0)
+  // Telegram bot credentials for the monthly upsell-score notification below
+  // — write-only from the frontend's perspective, same pattern as
+  // LineChannel.accessToken (see channels.js): never read back once saved,
+  // settings.js exposes only a `telegramBotTokenSet` boolean instead of the
+  // real value.
+  telegramBotToken         String?
+  telegramChatId           String?
+  // Whether the monthly job (telegramReportScheduler.js) is actually allowed
+  // to fire — kept independent of whether credentials are filled in, so an
+  // admin can save a token/chat id ahead of time without it going live yet.
+  telegramReportEnabled    Boolean  @default(false)
+  telegramReportDay        Int      @default(1)  // day of month, 1-28 (29-31 would skip short months)
+  telegramReportHour       Int      @default(9)   // 0-23, Asia/Bangkok wall-clock time
+  telegramReportMinute     Int      @default(0)   // 0-59
+  // "YYYY-MM" of the last upsell-score period actually sent to Telegram —
+  // both the scheduler and the manual "ส่งตอนนี้" button write this after a
+  // successful send, purely so the scheduler never re-sends the same
+  // month's numbers twice (e.g. if it's also triggered manually earlier that
+  // day, or the interval check fires more than once in the same minute).
+  telegramLastSentPeriod   String?
   updatedAt                DateTime @updatedAt
 }

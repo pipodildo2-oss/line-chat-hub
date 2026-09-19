@@ -39,7 +39,16 @@ router.post('/login', loginLimiter, async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.json({ token, agent: { id: agent.id, name: agent.name, email: agent.email, role: agent.role, language: agent.language, status: agent.status, avatarUrl: agent.avatarUrl } });
+    // A fresh login always means "I'm active now" — most relevantly, clears
+    // a stale 'away' status left over from AfkTracker.jsx auto-logging this
+    // agent out for inactivity last time (see agents.js PATCH /me), so they
+    // don't show as away to teammates the moment they're back.
+    const status = agent.status === 'away' ? 'online' : agent.status;
+    if (status !== agent.status) {
+      await prisma.agent.update({ where: { id: agent.id }, data: { status } });
+    }
+
+    res.json({ token, agent: { id: agent.id, name: agent.name, email: agent.email, role: agent.role, language: agent.language, status, avatarUrl: agent.avatarUrl } });
   } catch (err) {
     // Login is unauthenticated by nature — a raw error here (e.g. a DB
     // connection failure) would reach a caller who hasn't proven they're a

@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
+const { getAgentUpsellSummary } = require('../lib/upsellScore');
 
 const prisma = new PrismaClient();
 
@@ -126,76 +127,10 @@ router.post('/', auth, async (req, res) => {
 // the row a supervisor most needs to see, not one that should be hidden.
 router.get('/agents', auth, requireAdmin, async (req, res) => {
   const { from, to, includeAll } = req.query;
-  const dateWhere = {};
-  if (from || to) {
-    dateWhere.createdAt = {};
-    if (from) dateWhere.createdAt.gte = dayStart(from);
-    if (to) dateWhere.createdAt.lte = dayEnd(to);
-  }
-
-  // Messages sent + distinct conversations replied to in the same range —
-  // one raw query (senderId isn't otherwise groupable together with a
-  // distinct-conversation count via plain Prisma groupBy). Conditionally
-  // date-bounded the same way dateWhere is above, so omitting from/to still
-  // means "all time" for callers that rely on that (ตรวจสอบ's worklist).
-  // "createdAt" AT TIME ZONE 'UTC' (rather than comparing the naive column
-  // to the bind param directly) — see analytics.js's recentActivity query
-  // for why: a plain comparison implicitly casts using the Postgres
-  // SESSION's timezone, which isn't guaranteed to be UTC, and would then
-  // silently shift this boundary by that session's offset.
-  const msgParams = [];
-  let msgDateSql = '';
-  if (from) { msgParams.push(dayStart(from)); msgDateSql += ` AND ("createdAt" AT TIME ZONE 'UTC') >= $${msgParams.length}`; }
-  if (to) { msgParams.push(dayEnd(to)); msgDateSql += ` AND ("createdAt" AT TIME ZONE 'UTC') <= $${msgParams.length}`; }
-
-  const [agents, statusGroups, amountGroups, activityRows] = await Promise.all([
-    prisma.agent.findMany({
-      where: { role: 'agent' },
-      select: { id: true, name: true, email: true, categoryId: true, category: { select: { id: true, name: true } } },
-    }),
-    prisma.upsellSubmission.groupBy({ by: ['agentId', 'status'], where: dateWhere, _count: { _all: true } }),
-    prisma.upsellSubmission.groupBy({ by: ['agentId'], where: { ...dateWhere, status: 'approved' }, _sum: { amount: true } }),
-    prisma.$queryRawUnsafe(
-      `SELECT "senderId" as "agentId", COUNT(DISTINCT "conversationId")::int as "conversationsHandled", COUNT(*)::int as "messagesSent"
-       FROM "Message" WHERE sender = 'agent' AND "senderId" IS NOT NULL ${msgDateSql}
-       GROUP BY "senderId"`,
-      ...msgParams,
-    ),
-  ]);
-
-  const byAgent = {}; // agentId -> { total, pending, approved, rejected }
-  for (const g of statusGroups) {
-    const bucket = (byAgent[g.agentId] ||= { total: 0, pending: 0, approved: 0, rejected: 0 });
-    bucket.total += g._count._all;
-    if (g.status === 'pending') bucket.pending += g._count._all;
-    if (g.status === 'approved') bucket.approved += g._count._all;
-    if (g.status === 'rejected') bucket.rejected += g._count._all;
-  }
-  const amountByAgent = {};
-  for (const g of amountGroups) amountByAgent[g.agentId] = g._sum.amount || 0;
-  const activityByAgent = {};
-  for (const r of activityRows) activityByAgent[r.agentId] = r;
-
-  const summary = agents
-    .filter(a => includeAll || byAgent[a.id])
-    .map(a => ({
-      id: a.id,
-      name: a.name,
-      email: a.email,
-      categoryId: a.categoryId,
-      categoryName: a.category?.name || null,
-      total: byAgent[a.id]?.total || 0,
-      pending: byAgent[a.id]?.pending || 0,
-      approved: byAgent[a.id]?.approved || 0,
-      rejected: byAgent[a.id]?.rejected || 0,
-      approvedAmount: amountByAgent[a.id] || 0,
-      messagesSent: activityByAgent[a.id]?.messagesSent || 0,
-      conversationsHandled: activityByAgent[a.id]?.conversationsHandled || 0,
-    }))
-    // Worklist-first: agents with unreviewed submissions float to the top.
-    // (includeAll callers re-sort client-side, so this default doesn't matter to them.)
-    .sort((x, y) => (y.pending - x.pending) || (y.total - x.total));
-
+  // Computation lives in lib/upsellScore.js — shared with the monthly
+  // Telegram report (telegramReport.js), which needs the exact same
+  // per-agent summary for an arbitrary date range, not just this route.
+  const summary = await getAgentUpsellSummary({ from, to, includeAll });
   res.json({ agents: summary });
 });
 
