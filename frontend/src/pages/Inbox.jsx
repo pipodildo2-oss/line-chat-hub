@@ -227,7 +227,6 @@ function VideoMessage({ messageId }) {
     );
   }
   return (
-    // eslint-disable-next-line jsx-a11y/media-has-caption
     <video src={src} controls preload="metadata" className="max-w-[280px] max-h-[280px] rounded-lg bg-black" />
   );
 }
@@ -1353,7 +1352,7 @@ export default function Inbox() {
   useEffect(() => {
     setEditingName(false);
     setShowQrPicker(false);
-    setPendingImage(null);
+    setPendingImages([]);
   }, [selected?.id]);
 
   const activeFilterCount = useMemo(() => {
@@ -1885,9 +1884,9 @@ export default function Inbox() {
     }
   }
 
-  // Sends one piece (an image, or a text message) and reports success/failure —
+  // Sends one piece (image(s), and/or a text message) and reports success/failure —
   // the actual network call. Split out from handleSend so that function can
-  // enqueue this without awaiting it. imageTempId/textTempId identify the
+  // enqueue this without awaiting it. imageTempIds/textTempId identify the
   // optimistic bubble(s) handleSend already added to `messages` (see there),
   // so this can replace each one in place once its real message comes back
   // (matched by id first — the 'new_message' socket echo for this same send
