@@ -31,6 +31,11 @@ const MESSAGE_PAGE_LIMIT = 50;
 // broadcast targeting thousands of conversations, or a heavy report query).
 const SEND_REQUEST_TIMEOUT_MS = 30000;
 
+// Composer attachment cap — each attached image becomes its own separate
+// message/LINE push (see sendOne), so this is really "how many individual
+// sends am I about to queue up," not a LINE API limit.
+const MAX_PENDING_IMAGES = 10;
+
 // Shape of Inbox's conversation-list filter — shared between the initial
 // state and the localStorage fallback (see the `filter` useState below), so
 // there's one place to update if a new filter field is ever added.
@@ -1234,7 +1239,7 @@ export default function Inbox() {
   const [showDetail, setShowDetail] = useState(() => localStorage.getItem('inbox_showDetail') === '1');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const [pendingImage, setPendingImage] = useState(null); // { previewUrl, base64 } — attached but not sent yet
+  const [pendingImages, setPendingImages] = useState([]); // [{ previewUrl, base64 }] — attached but not sent yet
   // Per-conversation tail of a promise chain, so consecutive sends in the
   // SAME conversation still reach LINE in the order they were typed (each
   // send is a separate POST that calls LINE's pushMessage — firing them
@@ -1859,13 +1864,25 @@ export default function Inbox() {
     return () => socket.off('agent_typing', handleAgentTyping);
   }, [socket]);
 
-  // Reads a dropped/picked file into a pending attachment shown in the composer —
-  // it isn't sent to the customer until the agent hits Send.
-  function attachImageFile(file) {
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => setPendingImage({ previewUrl: reader.result, base64: reader.result });
-    reader.readAsDataURL(file);
+  // Reads dropped/picked/pasted file(s) into pending attachments shown in the
+  // composer — none of them are sent to the customer until the agent hits
+  // Send, and each one becomes its own separate image message (see sendOne),
+  // same as attaching them one at a time used to. Accepts a FileList or a
+  // plain array (paste's clipboard items aren't a FileList). Capped so a
+  // large accidental multi-select doesn't queue up dozens of individual
+  // LINE pushes — checked per-file against the CURRENT count at the moment
+  // each async FileReader actually finishes (not up front), since several
+  // reads run concurrently and finish in whatever order the browser gets to
+  // them.
+  function attachImageFiles(fileList) {
+    const files = Array.from(fileList || []).filter(f => f && f.type.startsWith('image/'));
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setPendingImages(prev => (prev.length >= MAX_PENDING_IMAGES ? prev : [...prev, { previewUrl: reader.result, base64: reader.result }]));
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   // Sends one piece (an image, or a text message) and reports success/failure —
@@ -1876,11 +1893,18 @@ export default function Inbox() {
   // (matched by id first — the 'new_message' socket echo for this same send
   // may well arrive and do the replacing first, see that handler below — or
   // drop it if the send failed.
-  async function sendOne(convId, { image, content, imageTempId, textTempId }) {
+  async function sendOne(convId, { images, content, imageTempIds, textTempId }) {
+    // Each attached image is its own independent POST/LINE push (matches
+    // how a single attached image already worked) — sent in order, one at a
+    // time, same as image-then-text always was, rather than in parallel, so
+    // this send still slots into sendQueueRef's per-conversation ordering
+    // the way the rest of the composer already relies on.
+    const sentImageTempIds = [];
     try {
-      if (image) {
-        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: image.base64, clientId: imageTempId }, { timeout: SEND_REQUEST_TIMEOUT_MS });
-        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : prev.map(m => (m.id === imageTempId ? data : m))));
+      for (let i = 0; i < images.length; i++) {
+        const { data } = await axios.post(`/api/messages/${convId}`, { imageData: images[i].base64, clientId: imageTempIds[i] }, { timeout: SEND_REQUEST_TIMEOUT_MS });
+        setMessages(prev => (prev.some(m => m.id === data.id) ? prev : prev.map(m => (m.id === imageTempIds[i] ? data : m))));
+        sentImageTempIds.push(imageTempIds[i]);
       }
       if (content) {
         const { data } = await axios.post(`/api/messages/${convId}`, { content, clientId: textTempId }, { timeout: SEND_REQUEST_TIMEOUT_MS });
@@ -1889,12 +1913,12 @@ export default function Inbox() {
     } catch (err) {
       // Whichever optimistic bubble(s) didn't make it never actually went
       // anywhere — drop them rather than leave a permanently "unsent" bubble
-      // in the chat. Safe to do unconditionally for both ids even when only
-      // one of image/content was actually attempted (e.g. the image failed
-      // before the text POST ever ran): a tempId already replaced by the
-      // success path above simply isn't in `messages` anymore, so filtering
-      // it out again is a no-op.
-      setMessages(prev => prev.filter(m => m.id !== imageTempId && m.id !== textTempId));
+      // in the chat. Any image(s) that already succeeded BEFORE this
+      // failure are left alone (they really did send — each is its own
+      // independent call, so a later image failing doesn't undo an earlier
+      // one that already went through).
+      const unsentIds = new Set([...imageTempIds.filter(id => !sentImageTempIds.includes(id)), textTempId].filter(Boolean));
+      setMessages(prev => prev.filter(m => !unsentIds.has(m.id)));
       // Restore whatever failed back into the composer — appended, not
       // replacing, so it doesn't clobber anything the agent has already
       // started typing since. Sends for the same conversation resolve in
@@ -1926,8 +1950,8 @@ export default function Inbox() {
 
   function handleSend(text) {
     const content = (text ?? input).trim();
-    const image = pendingImage;
-    if ((!content && !image) || !selected) return;
+    const images = pendingImages;
+    if ((!content && images.length === 0) || !selected) return;
     const convId = selected.id;
     // Clear the composer right away, before the network round-trip even
     // starts, so the agent can start typing (and sending) the next message
@@ -1935,7 +1959,7 @@ export default function Inbox() {
     // send takes to reach LINE and come back (previously blocked via
     // sendingConvIds until the request resolved — normal LINE push latency
     // made back-to-back messages feel like they had a built-in ~1s delay).
-    if (image) setPendingImage(null);
+    if (images.length) setPendingImages([]);
     if (content) setInput('');
 
     // Optimistic bubble(s) — shown in the chat immediately, before the
@@ -1944,14 +1968,17 @@ export default function Inbox() {
     // Each gets its own client-generated id so sendOne (or the
     // 'new_message' socket echo, whichever lands first) can find and
     // replace exactly this bubble once the real message comes back — see
-    // there for why this can't just be "the last message in the array".
+    // there for why this can't just be "the last message in the array". One
+    // id per attached image (not just one for the whole batch) so each
+    // becomes its own bubble/message, same as attaching and sending images
+    // one at a time used to look.
     const nowIso = new Date().toISOString();
     const optimistic = [];
-    const imageTempId = image ? crypto.randomUUID() : null;
+    const imageTempIds = images.map(() => crypto.randomUUID());
     const textTempId = content ? crypto.randomUUID() : null;
-    if (image) {
+    images.forEach((image, i) => {
       optimistic.push({
-        id: imageTempId,
+        id: imageTempIds[i],
         conversationId: convId,
         sender: 'agent',
         senderName: agent?.name || '',
@@ -1963,7 +1990,7 @@ export default function Inbox() {
         createdAt: nowIso,
         _pending: true,
       });
-    }
+    });
     if (content) {
       optimistic.push({
         id: textTempId,
@@ -1981,7 +2008,7 @@ export default function Inbox() {
     setMessages(prev => [...prev, ...optimistic]);
 
     const prevTail = sendQueueRef.current.get(convId) || Promise.resolve();
-    const thisSend = prevTail.catch(() => {}).then(() => sendOne(convId, { image, content, imageTempId, textTempId }));
+    const thisSend = prevTail.catch(() => {}).then(() => sendOne(convId, { images, content, imageTempIds, textTempId }));
     sendQueueRef.current.set(convId, thisSend);
   }
 
@@ -2288,7 +2315,7 @@ export default function Inbox() {
               onDrop={e => {
                 e.preventDefault();
                 setDragOver(false);
-                attachImageFile(e.dataTransfer.files?.[0]);
+                attachImageFiles(e.dataTransfer.files);
               }}
             >
               {dragOver && (
@@ -2391,20 +2418,24 @@ export default function Inbox() {
                 </div>
               )}
 
-              {pendingImage && (
-                <div className="px-4 pt-3 flex items-center gap-2">
-                  <div className="relative">
-                    <button type="button" onClick={() => setLightboxSrc(pendingImage.previewUrl)} className="block cursor-zoom-in">
-                      <img src={pendingImage.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
-                    </button>
-                    <button
-                      onClick={() => setPendingImage(null)}
-                      className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-slate-400">แนบรูปแล้ว (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง</span>
+              {pendingImages.length > 0 && (
+                <div className="px-4 pt-3 flex items-start gap-2 flex-wrap">
+                  {pendingImages.map((img, i) => (
+                    <div key={i} className="relative flex-shrink-0">
+                      <button type="button" onClick={() => setLightboxSrc(img.previewUrl)} className="block cursor-zoom-in">
+                        <img src={img.previewUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-slate-700" />
+                      </button>
+                      <button
+                        onClick={() => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  <span className="text-xs text-gray-500 dark:text-slate-400 self-center">
+                    แนบรูปแล้ว {pendingImages.length} รูป (กดรูปเพื่อดูขนาดเต็ม) — พิมพ์ข้อความ (ถ้ามี) แล้วกดส่ง
+                  </span>
                 </div>
               )}
 
@@ -2442,30 +2473,32 @@ export default function Inbox() {
                       }
                     }}
                     onPaste={e => {
-                      // A pasted screenshot/image arrives as a clipboard item, not text —
-                      // pull the image file out (if any) and attach it the same way a
-                      // drag-drop or file-picker attachment works. Text pastes (Ctrl+V of
-                      // plain text) fall through untouched.
-                      const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'));
-                      if (item) {
+                      // Pasted screenshot(s)/image(s) arrive as clipboard items, not
+                      // text — pull every image item out (a paste can carry more than
+                      // one) and attach them the same way a drag-drop or file-picker
+                      // attachment works. Text pastes (Ctrl+V of plain text) fall
+                      // through untouched.
+                      const imageItems = Array.from(e.clipboardData?.items || []).filter(i => i.type.startsWith('image/'));
+                      if (imageItems.length) {
                         e.preventDefault();
-                        attachImageFile(item.getAsFile());
+                        attachImageFiles(imageItems.map(i => i.getAsFile()));
                       }
                     }}
                   />
                   <div className="flex items-center justify-between px-3 pb-2 pt-0.5">
                     <div className="flex items-center gap-1.5">
                       <label
-                        title="แนบรูปภาพ"
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 cursor-pointer text-sky-500 dark:text-sky-400 ${pendingImage ? 'bg-sky-500/15' : 'hover:bg-sky-500/10'}`}
+                        title="แนบรูปภาพ (เลือกได้หลายรูป)"
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors flex-shrink-0 cursor-pointer text-sky-500 dark:text-sky-400 ${pendingImages.length > 0 ? 'bg-sky-500/15' : 'hover:bg-sky-500/10'}`}
                       >
                         <ImagePlus size={19} />
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           className="hidden"
                           onChange={e => {
-                            attachImageFile(e.target.files?.[0]);
+                            attachImageFiles(e.target.files);
                             e.target.value = '';
                           }}
                         />
@@ -2493,7 +2526,7 @@ export default function Inbox() {
                     </div>
                     <button
                       onClick={() => handleSend()}
-                      disabled={!input.trim() && !pendingImage}
+                      disabled={!input.trim() && pendingImages.length === 0}
                       className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-full w-8 h-8 flex items-center justify-center hover:brightness-110 disabled:opacity-40 transition-all flex-shrink-0"
                     >
                       <Send size={15} />
