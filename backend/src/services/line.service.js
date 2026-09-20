@@ -3,6 +3,7 @@ const line = require('@line/bot-sdk');
 const { PrismaClient } = require('@prisma/client');
 const { emitToConversation, emitToAll } = require('./socket.service');
 const { linkifyBareDomains } = require('../lib/linkGuard');
+const { saveBase64Image } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -211,6 +212,28 @@ async function processLineEvent(channel, event) {
     } else if (type === 'image') {
       content = '[Image]';
       metadata = { messageId: event.message.id };
+      // LINE only guarantees a message's content stays fetchable via
+      // getMessageContent for a limited window, not indefinitely — a
+      // customer's photo (e.g. a payment slip claimed for upsell review) can
+      // 404 by the time anyone actually looks at it weeks later, showing up
+      // as a blank "[รูป]" placeholder throughout the app instead of the
+      // real image. Download and keep our own permanent copy right away
+      // (same on-disk compression pipeline saveBase64Image already uses for
+      // agent-sent images) instead of only ever fetching live on demand.
+      // Best-effort: a failure here (network blip, LINE error) doesn't stop
+      // the message from being recorded — it's just left without
+      // storedPath, and /api/messages/content/:messageId (messages.js)
+      // falls back to a live LINE fetch for it, exactly like before this
+      // existed.
+      try {
+        const { stream, contentType } = await getMessageContent(channel, event.message.id);
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const storedPath = await saveBase64Image(`data:${contentType};base64,${Buffer.concat(chunks).toString('base64')}`);
+        if (storedPath) metadata.storedPath = storedPath;
+      } catch (err) {
+        console.warn('Could not download+store customer image, will rely on live LINE fetch:', err.message);
+      }
     } else if (type === 'sticker') {
       content = '[Sticker]';
       metadata = { packageId: event.message.packageId, stickerId: event.message.stickerId };

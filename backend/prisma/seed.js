@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { reconcileFlaggedLinks, recoverLinkFlagsMissedByTldAllowlistBug } = require('../src/lib/linkGuard');
+const { backfillMissingImageStorage } = require('../src/lib/imageBackfill');
 
 const prisma = new PrismaClient();
 
@@ -84,6 +85,14 @@ async function main() {
     `UPDATE "Conversation" SET "lineDisplayName" = "displayName" WHERE "displayNameCustomized" = false AND "lineDisplayName" IS NULL AND "displayName" IS NOT NULL`
   );
   if (lineNameBackfill > 0) console.log(`Backfilled lineDisplayName for ${lineNameBackfill} conversation(s).`);
+
+  // Recovery pass for the "customer image shows as a blank placeholder"
+  // issue (see imageBackfill.js and line.service.js) — downloads a
+  // permanent local copy for any recent image message that doesn't have one
+  // yet, while LINE's own content API still has it.
+  const { recovered, stillMissing } = await backfillMissingImageStorage();
+  if (recovered > 0) console.log(`Recovered ${recovered} customer image(s) into permanent storage.`);
+  if (stillMissing > 0) console.log(`${stillMissing} recent customer image(s) could not be recovered (likely already expired on LINE's side).`);
 
   console.log('Seed complete. Login: admin@example.com / admin1234');
 }

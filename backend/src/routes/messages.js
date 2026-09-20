@@ -6,7 +6,9 @@ const { sendMessage, sendImageMessage, getMessageContent } = require('../service
 const { suggestReply } = require('../services/claude.service');
 const { checkMessage } = require('../services/moderation.service');
 const { findUnauthorizedLink } = require('../lib/linkGuard');
-const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
+const fs = require('fs');
+const path = require('path');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl, UPLOAD_DIR } = require('../lib/imageStorage');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
@@ -57,6 +59,28 @@ router.get('/content/:messageId', auth, async (req, res) => {
     if (!(await canAccessChannel(req.agent, message.conversation.channelId))) {
       return res.status(404).end();
     }
+
+    // Prefer our own permanent copy (see line.service.js — downloaded once
+    // right when the customer's message first arrived) over re-fetching from
+    // LINE every time: LINE only guarantees getMessageContent works for a
+    // limited window, not indefinitely, so an old image can 404 there while
+    // still being perfectly servable from disk. Served with sendFile (not a
+    // redirect to the public /uploads/ static route) so this stays behind
+    // the same auth + canAccessChannel check as the live-fetch fallback below
+    // — a customer's photo shouldn't become fetchable by anyone with the
+    // right guessed filename. Falls through to the live fetch if the file's
+    // gone missing on disk (e.g. a volume wipe) rather than erroring outright.
+    let storedPath = null;
+    try { storedPath = message.metadata ? JSON.parse(message.metadata).storedPath : null; } catch { /* ignore */ }
+    if (isStoredPath(storedPath)) {
+      const filePath = path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''));
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath, (err) => {
+          if (err && !res.headersSent) console.error('sendFile failed for stored message content:', err.message);
+        });
+      }
+    }
+
     const { stream, contentType } = await getMessageContent(message.conversation.channel, req.params.messageId);
     res.set('Content-Type', contentType);
     res.set('Cache-Control', 'private, max-age=86400');
