@@ -49,8 +49,17 @@ router.post('/line/:channelId', webhookLimiter, async (req, res) => {
     // Push each event into the queue instead of processing it here — this keeps
     // the webhook handler fast and lets a burst of messages get smoothed out
     // by the queue worker rather than hitting the database all at once.
+    // Each event is enqueued independently (own try/catch) — a single event
+    // that fails (e.g. the no-Redis fallback's in-process retry finally
+    // giving up) must not stop the rest of this same delivery's events from
+    // being attempted; LINE routinely batches several events into one
+    // webhook call.
     for (const event of parsed.events || []) {
-      await enqueueLineEvent(channel.id, event);
+      try {
+        await enqueueLineEvent(channel.id, event);
+      } catch (err) {
+        console.error(`Failed to enqueue LINE event for channel ${channel.id}:`, err.message);
+      }
     }
   } catch (err) {
     console.error('Webhook error:', err.message);

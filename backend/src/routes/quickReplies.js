@@ -536,31 +536,46 @@ router.patch('/requests/:id/review', auth, requireAdmin, async (req, res) => {
     let request;
     let deletedTarget = null; // set only when a "delete" request is approved — cleaned up after the transaction below
     if (status === 'approved') {
-      if (existing.type === 'delete') {
-        deletedTarget = await prisma.quickReply.findUnique({ where: { id: existing.targetQuickReplyId } });
+      try {
         request = await prisma.$transaction(async (tx) => {
-          if (deletedTarget) await tx.quickReply.delete({ where: { id: deletedTarget.id } });
-          return tx.quickReplyRequest.update({
-            where: { id: req.params.id },
+          // Atomically claim this request — `status: { not: 'approved' }` in
+          // the WHERE clause means this UPDATE only matches (and locks the
+          // row) if nobody else has already approved it. Without this, two
+          // concurrent approvals (two admins, or a double-click/double-submit)
+          // could both pass the plain `existing.status === 'approved'` check
+          // above before either write landed, then both proceed — creating a
+          // duplicate live QuickReply for a "create" request, or trying to
+          // delete an already-deleted one for a "delete" request.
+          const claim = await tx.quickReplyRequest.updateMany({
+            where: { id: req.params.id, status: { not: 'approved' } },
             data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
-            include: REQUEST_INCLUDE,
           });
+          if (claim.count === 0) {
+            const alreadyApprovedErr = new Error('already approved');
+            alreadyApprovedErr.alreadyApproved = true;
+            throw alreadyApprovedErr;
+          }
+          if (existing.type === 'delete') {
+            // Re-checked here (not just the `deletedTarget` fetched before
+            // this transaction) in case it was deleted directly (DELETE
+            // /:id) in between — deleting an already-gone row would abort
+            // the whole transaction, including the claim above.
+            deletedTarget = await tx.quickReply.findUnique({ where: { id: existing.targetQuickReplyId } });
+            if (deletedTarget) await tx.quickReply.delete({ where: { id: deletedTarget.id } });
+          } else {
+            const count = await tx.quickReply.count({ where: { categoryId: existing.categoryId } });
+            await tx.quickReply.create({
+              data: {
+                categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
+                content: existing.content, imageData: existing.imageData, images: existing.images, order: count,
+              },
+            });
+          }
+          return tx.quickReplyRequest.findUnique({ where: { id: req.params.id }, include: REQUEST_INCLUDE });
         });
-      } else {
-        request = await prisma.$transaction(async (tx) => {
-          const count = await tx.quickReply.count({ where: { categoryId: existing.categoryId } });
-          await tx.quickReply.create({
-            data: {
-              categoryId: existing.categoryId, kind: existing.kind, name: existing.name,
-              content: existing.content, imageData: existing.imageData, images: existing.images, order: count,
-            },
-          });
-          return tx.quickReplyRequest.update({
-            where: { id: req.params.id },
-            data: { status, reviewNote: reviewNote?.trim() || null, reviewedById: req.agent.id, reviewedAt: new Date() },
-            include: REQUEST_INCLUDE,
-          });
-        });
+      } catch (err) {
+        if (err.alreadyApproved) return res.status(409).json({ error: 'คำขอนี้อนุมัติไปแล้ว' });
+        throw err;
       }
     } else {
       request = await prisma.quickReplyRequest.update({
@@ -748,7 +763,16 @@ router.post('/:id/send', auth, async (req, res) => {
     // Only attempt the text half if every image (when there are any) actually
     // went out — if one failed, stop here rather than sending the text alone,
     // which would leave a caption with missing images and confuse the customer.
-    if (!sendErr) {
+    // Also requires actual non-blank content — every current create/edit path
+    // (POST /, POST /requests, PATCH /:id, PATCH /requests/:id) already
+    // rejects a blank content field, but this guard is the same defense-in-
+    // depth broadcasts.js's `if (text)` already has for its own text half:
+    // without it, an image-only quick reply whose content somehow ended up
+    // blank (e.g. a legacy row predating that validation) would still push an
+    // empty LINE text message and leave a near-invisible, timestamp-only
+    // bubble in the chat — content-less but otherwise indistinguishable from
+    // a real message.
+    if (!sendErr && quickReply.content?.trim()) {
       try {
         await sendMessage(conversation.channel, conversation.lineUserId, quickReply.content);
         created.push(await prisma.message.create({
