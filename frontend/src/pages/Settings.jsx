@@ -321,6 +321,55 @@ function DeleteChannelModal({ channel, onCancel, onConfirm }) {
   );
 }
 
+// Shown right after "เพิ่ม LINE OA" successfully creates a channel — the
+// admin's very next step is always pasting this exact URL into LINE
+// Developers Console's Messaging API > Webhook settings, and previously the
+// only way to find it again was to open Manage on the channel they just
+// created. Same webhookUrl format/copy affordance as ChannelConfigure's own
+// "Webhook URL" field (see there) so this isn't a second, drifting source
+// of truth for how that URL is built.
+function NewChannelWebhookModal({ channelName, webhookUrl, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="w-7 h-7 rounded-full bg-aurora-teal/15 flex items-center justify-center flex-shrink-0">
+            <Check size={14} className="text-aurora-teal" />
+          </div>
+          <h3 className="font-semibold text-gray-900 dark:text-slate-100">เพิ่ม "{channelName}" สำเร็จ</h3>
+        </div>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+          เอา Webhook URL ด้านล่างไปวางในหน้า Messaging API ของ LINE Developers Console แล้วเปิด <span className="font-medium">"Use webhook"</span> กับ{' '}
+          <span className="font-medium">"Use webhook redelivery"</span> ด้วย
+        </p>
+
+        <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">Webhook URL</label>
+        <div className="flex items-center gap-2 border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50 rounded-lg px-3 py-2 mb-4">
+          <code className="text-sm text-gray-500 dark:text-slate-400 flex-1 truncate">{webhookUrl}</code>
+          <CopyButton text={webhookUrl} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <a
+            href="https://developers.line.biz/console/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-aurora-teal hover:brightness-110"
+          >
+            เปิด LINE Developers Console <ExternalLink size={13} />
+          </a>
+          <button
+            onClick={onClose}
+            className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110 transition-all"
+          >
+            เสร็จสิ้น
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
   return (
     <div className="group relative rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 hover:border-gray-200 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors">
@@ -707,6 +756,9 @@ export default function Settings() {
   const [manageChannelId, setManageChannelId] = useState(null);
   const [editAgentTarget, setEditAgentTarget] = useState(null);
   const [showAddChannel, setShowAddChannel] = useState(false);
+  // Set right after a channel is successfully created — see addChannel and
+  // NewChannelWebhookModal. null hides the popup.
+  const [newChannelWebhook, setNewChannelWebhook] = useState(null); // { channelName, webhookUrl }
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [showAgentPassword, setShowAgentPassword] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
@@ -950,6 +1002,10 @@ export default function Settings() {
       setChannelForm({ name: '', lineId: '', channelId: '', channelSecret: '', accessToken: '', categoryId: '' });
       setNewChannelCategoryName('');
       setShowAddChannel(false);
+      // Same URL shape as ChannelConfigure's own "Webhook URL" field — see
+      // NewChannelWebhookModal's own comment on why this is shown right away
+      // instead of only inside Manage.
+      setNewChannelWebhook({ channelName: data.name, webhookUrl: `${window.location.origin}/api/webhooks/line/${data.id}` });
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
     } finally { setSaving(false); }
@@ -1788,6 +1844,13 @@ export default function Settings() {
       )}
 
       <DeleteChannelModal channel={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteChannel} />
+      {newChannelWebhook && (
+        <NewChannelWebhookModal
+          channelName={newChannelWebhook.channelName}
+          webhookUrl={newChannelWebhook.webhookUrl}
+          onClose={() => setNewChannelWebhook(null)}
+        />
+      )}
       {editAgentTarget && (
         <AgentEditModal
           agentItem={editAgentTarget}
