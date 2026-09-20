@@ -264,7 +264,22 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  // Fire-and-forget, only AFTER the server is already listening — this used
+  // to run inline in prisma/seed.js (which blocks this very listen() call
+  // from ever happening) and once took the whole app down when a LINE API
+  // call it made hung with no timeout: seed.js never finished, so
+  // `node src/index.js` never even started. Kept here now specifically so a
+  // bug in this background task can never again stop the app from serving
+  // real traffic. See imageBackfill.js's own comment for the full story.
+  require('../src/lib/imageBackfill').backfillMissingImageStorage()
+    .then(({ recovered, stillMissing }) => {
+      if (recovered > 0) console.log(`Recovered ${recovered} customer image(s) into permanent storage.`);
+      if (stillMissing > 0) console.log(`${stillMissing} recent customer image(s) could not be recovered (likely already expired on LINE's side).`);
+    })
+    .catch(err => console.error('Image backfill failed:', err.message));
+});
 
 // Graceful shutdown: when Railway redeploys, it sends SIGTERM before killing the
 // process. Without this, in-flight HTTP requests and the queue worker get cut

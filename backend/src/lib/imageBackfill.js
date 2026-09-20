@@ -1,12 +1,27 @@
-// One-time-per-startup recovery, run alongside the other backfills in
-// prisma/seed.js: downloads and stores a permanent local copy for any
-// recent customer-sent image message that doesn't have one yet — see
-// line.service.js's own comment on why this exists in the first place
-// (LINE's Content API only guarantees a message's content stays fetchable
-// for a limited window, not indefinitely; an old customer image can 404
-// there and show up as a blank "[รูป]" placeholder everywhere in the app —
-// the Upsell ตรวจสอบ review page especially, since a submission is often
-// reviewed well after the customer originally sent the proof image).
+// Background recovery task, kicked off from index.js AFTER the server is
+// already listening (NOT part of the blocking prisma/seed.js startup chain
+// — see the incident this comment is describing below): downloads and
+// stores a permanent local copy for any recent customer-sent image message
+// that doesn't have one yet — see line.service.js's own comment on why this
+// exists in the first place (LINE's Content API only guarantees a message's
+// content stays fetchable for a limited window, not indefinitely; an old
+// customer image can 404 there and show up as a blank "[รูป]" placeholder
+// everywhere in the app — the Upsell ตรวจสอบ review page especially, since a
+// submission is often reviewed well after the customer originally sent the
+// proof image).
+//
+// INCIDENT: this originally ran inline in prisma/seed.js like the app's
+// other backfills, gated behind a plain try/catch with NO per-call timeout
+// on getMessageContent (a live network call to LINE's API). seed.js runs
+// BEFORE `node src/index.js` in package.json's start script — one slow or
+// hanging LINE request stalled seed.js forever, which meant the actual
+// server never started listening at all, taking the whole app down
+// ("Application failed to respond" on every request, deploy logs silent
+// after "prisma generate"). Fixed two ways: a hard per-call timeout below
+// (REQUEST_TIMEOUT_MS) so a single stuck request can never hang longer than
+// that, AND moved out of the startup-blocking chain entirely — this is only
+// ever invoked fire-and-forget after the server is already up, so even a
+// bug here again can't block the app from responding to real traffic.
 //
 // Scoped to a recent lookback window rather than all of history: a message
 // older than LINE's own retention window has already had its content
@@ -22,6 +37,17 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const LOOKBACK_DAYS = 14;
 const CONCURRENCY = 3; // deliberately low — this can run against many channels' LINE tokens at once on startup, no reason to hammer LINE's API
+const REQUEST_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
 
 async function backfillMissingImageStorage() {
   // Deferred require — line.service.js requires imageBackfill's sibling
@@ -47,7 +73,7 @@ async function backfillMissingImageStorage() {
     while (cursor < missing.length) {
       const m = missing[cursor++];
       try {
-        const { stream, contentType } = await getMessageContent(m.conversation.channel, m.lineMessageId);
+        const { stream, contentType } = await withTimeout(getMessageContent(m.conversation.channel, m.lineMessageId), REQUEST_TIMEOUT_MS);
         const chunks = [];
         for await (const chunk of stream) chunks.push(chunk);
         const storedPath = await saveBase64Image(`data:${contentType};base64,${Buffer.concat(chunks).toString('base64')}`);
@@ -59,10 +85,10 @@ async function backfillMissingImageStorage() {
           stillMissing++;
         }
       } catch {
-        // LINE's content for this message is already gone (404), or some
-        // other transient error — either way, nothing more to do for this
-        // one right now; it'll simply be retried on the next startup within
-        // the lookback window.
+        // LINE's content for this message is already gone (404), the
+        // request timed out, or some other transient error — either way,
+        // nothing more to do for this one right now; it'll simply be
+        // retried on the next startup within the lookback window.
         stillMissing++;
       }
     }
