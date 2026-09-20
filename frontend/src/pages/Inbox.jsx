@@ -426,6 +426,59 @@ function DeliveryTick({ repliedTo, onBubble, pending }) {
   );
 }
 
+// Same domain-shape detection backend/src/lib/linkGuard.js uses (kept in
+// sync by hand — small, stable, pure-regex logic not worth sharing a module
+// across the frontend/backend boundary for) — mirrored here so a genuine
+// link in a message bubble is clickable in the agent's OWN Inbox view too,
+// not just on the customer's side (see linkifyBareDomains there for the
+// LINE-side half of this fix). Never linkifies a "MIS.PHALLY"/"MR.TOEK"-
+// shaped name into a broken link, for the same reason linkGuard.js excludes
+// those from being treated as a domain at all.
+const DISPLAY_LINK_REGEX = /\b(?:https?:\/\/)?(?:www\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s]*)?\b/gi;
+const DISPLAY_TITLE_PREFIXES = new Set(['mr', 'mrs', 'ms', 'mis', 'miss', 'mstr', 'dr', 'prof']);
+
+function extractDisplayHost(raw) {
+  return raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split(/[/?#]/)[0].toLowerCase();
+}
+function looksLikeDisplayTitlePrefix(host) {
+  const labels = host.split('.');
+  return labels.length === 2 && DISPLAY_TITLE_PREFIXES.has(labels[0]);
+}
+function looksLikeDisplayShoutedName(raw) {
+  if (/^(https?:\/\/|www\.)/i.test(raw)) return false;
+  if (/[/?#]/.test(raw)) return false;
+  const labels = raw.split('.');
+  return labels.length >= 2 && labels.every(l => /^[A-Z]+$/.test(l));
+}
+
+// Splits `text` into an array of plain strings and clickable <a> elements —
+// safe to render directly as JSX children (strings don't need keys; the
+// elements interspersed among them carry their own via match.index).
+function linkifyText(text) {
+  if (!text) return text;
+  const parts = [];
+  let lastIndex = 0;
+  const regex = new RegExp(DISPLAY_LINK_REGEX.source, 'gi');
+  let match;
+  while ((match = regex.exec(text))) {
+    const raw = match[0];
+    const host = extractDisplayHost(raw);
+    const isLink = host && !looksLikeDisplayTitlePrefix(host) && !looksLikeDisplayShoutedName(raw);
+    if (isLink) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+      parts.push(
+        <a key={match.index} href={href} target="_blank" rel="noopener noreferrer" className="underline break-all hover:opacity-80">
+          {raw}
+        </a>
+      );
+      lastIndex = match.index + raw.length;
+    }
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
 function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   const isUser = msg.sender === 'user';
   const timeCls = isUser ? 'text-gray-400 dark:text-slate-500' : 'text-white/70';
@@ -526,7 +579,7 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
         <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isUser ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-slate-100 rounded-tl-sm' : 'bg-[#4C3EDE] text-white rounded-tr-sm'}`}>
-          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+          <p className="whitespace-pre-wrap break-words">{linkifyText(msg.content)}</p>
           {timeLabel}
         </div>
         <ViewerTags msg={msg} isAdmin={isAdmin} />

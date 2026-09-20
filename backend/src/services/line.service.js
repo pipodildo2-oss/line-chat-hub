@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const line = require('@line/bot-sdk');
 const { PrismaClient } = require('@prisma/client');
 const { emitToConversation, emitToAll } = require('./socket.service');
+const { linkifyBareDomains } = require('../lib/linkGuard');
 
 const prisma = new PrismaClient();
 
@@ -264,7 +265,11 @@ async function sendMessage(channel, lineUserId, text) {
     // manually clicking send again (that's a genuinely new request/key by
     // design, and is instead addressed by not treating an uncertain outcome
     // as "safe to retry" — see SendTimeoutError above).
-    await withSendTimeout(client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text }] }, crypto.randomUUID()));
+    // linkifyBareDomains: only affects what LINE actually receives/renders —
+    // the DB row (created by the caller from the original `text`) and
+    // everything downstream of it (the agent's own Inbox view, the
+    // unauthorized-link check) stay exactly as typed.
+    await withSendTimeout(client.pushMessage({ to: lineUserId, messages: [{ type: 'text', text: linkifyBareDomains(text) }] }, crypto.randomUUID()));
   } catch (err) {
     throw toSendError(err);
   }

@@ -7,9 +7,13 @@
 // Only matches Latin-script domain-like tokens (letters/digits/hyphens,
 // dot-separated, ending in a 2+ letter TLD) — Thai script never matches this
 // pattern at all, so ordinary Thai chat text has effectively zero false-
-// positive risk. Deliberately does NOT require an http(s):// or www. prefix,
-// since a bare "mysite123.com" is exactly the casual, unprefixed form an
-// agent would actually paste — and LINE auto-linkifies it client-side too.
+// positive risk. Deliberately does NOT require an http(s):// or www. prefix
+// for DETECTION purposes, since a bare "mysite123.com" is exactly the
+// casual, unprefixed form an agent would actually paste — but LINE's own
+// client does NOT auto-linkify a bare domain with no scheme (turns out that
+// old assumption here was wrong — see linkifyBareDomains below, added once
+// agents reported customers couldn't tap a link they'd sent and had to
+// copy-paste it into a browser instead).
 const LINK_REGEX = /\b(?:https?:\/\/)?(?:www\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s]*)?\b/gi;
 
 function extractHost(rawMatch) {
@@ -199,4 +203,26 @@ async function recoverLinkFlagsMissedByTldAllowlistBug(prisma, lookbackDays = 7)
   return toFlag.map(x => x.id);
 }
 
-module.exports = { findUnauthorizedLink, reconcileFlaggedLinks, recoverLinkFlagsMissedByTldAllowlistBug };
+// Adds "https://" to every domain-shaped token in `text` that doesn't
+// already have a scheme, so LINE's client actually renders it as a tappable
+// link instead of plain text the customer has to select and copy manually.
+// Reuses the exact same detection findUnauthorizedLink uses (LINK_REGEX +
+// the title-prefix/shouted-name exclusions) so a person's name like
+// "MIS.PHALLY" never gets mistakenly turned into "https://MIS.PHALLY".
+// Called once, right before a text message actually goes out to LINE (see
+// sendMessage in line.service.js) — the stored/displayed message content
+// elsewhere in this app (DB row, agent's own Inbox view, the ตรวจสอบ link
+// check) is untouched, only what LINE itself receives changes.
+function linkifyBareDomains(text) {
+  if (!text) return text;
+  return text.replace(LINK_REGEX, (raw) => {
+    if (/^https?:\/\//i.test(raw)) return raw; // already has a scheme
+    const host = extractHost(raw);
+    if (!host) return raw;
+    if (looksLikeTitlePrefix(host)) return raw;
+    if (looksLikeShoutedName(raw)) return raw;
+    return `https://${raw}`;
+  });
+}
+
+module.exports = { findUnauthorizedLink, reconcileFlaggedLinks, recoverLinkFlagsMissedByTldAllowlistBug, linkifyBareDomains };
