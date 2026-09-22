@@ -5,6 +5,7 @@ import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileTe
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
+import MissingMedia from '../components/MissingMedia';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -96,7 +97,9 @@ const STATUS_LABEL = { pending: 'รอตรวจ', approved: 'ผ่าน', 
 // lineMessageId and are a plain, unauthenticated /uploads/... link instead.
 function CustomerImagePreview({ messageId, onImageClick }) {
   const [src, setSrc] = useState(null);
-  const [failed, setFailed] = useState(false);
+  // null = fine so far, 'expired' = gone for good (410 from the backend),
+  // 'error' = failed for some other reason and may well work on a retry.
+  const [failure, setFailure] = useState(null);
 
   useEffect(() => {
     let objectUrl;
@@ -107,37 +110,46 @@ function CustomerImagePreview({ messageId, onImageClick }) {
         objectUrl = URL.createObjectURL(res.data);
         setSrc(objectUrl);
       })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [messageId]);
 
-  if (failed) return <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>;
+  if (failure) return <MissingMedia size="sm" expired={failure === 'expired'} />;
   if (!src) return <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
   return (
     <img
       src={src}
       alt=""
       onClick={() => onImageClick?.(src)}
+      // See ImageMessage in Inbox.jsx: a 200 carrying something that isn't
+      // decodable image data never reaches the .catch above, and would
+      // otherwise render as the browser's own broken-image glyph.
+      onError={() => setFailure('error')}
       className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
     />
   );
 }
 
 function AgentImagePreview({ msg, onImageClick }) {
+  const [broken, setBroken] = useState(false);
   let url = null;
   try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
-  return url ? (
+  // An agent-sent image is served from our own volume and doesn't expire the
+  // way a customer's LINE-hosted one does, so a missing url (the row's
+  // metadata never got patched in — see messages.js's send flow) or a dead
+  // link is an ordinary load failure, never "expired".
+  if (!url || broken) return <MissingMedia size="sm" />;
+  return (
     <img
       src={url}
       alt=""
       onClick={() => onImageClick?.(url)}
+      onError={() => setBroken(true)}
       className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
     />
-  ) : (
-    <div className="w-20 h-20 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-500">[รูป]</div>
   );
 }
 

@@ -9,6 +9,7 @@ const { findUnauthorizedLink } = require('../lib/linkGuard');
 const fs = require('fs');
 const path = require('path');
 const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl, UPLOAD_DIR } = require('../lib/imageStorage');
+const { markContentUnrecoverable } = require('../lib/imageBackfill');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
@@ -43,6 +44,15 @@ function flattenUpsellItem(message) {
   return rest;
 }
 
+// Shown to the agent in place of a customer's photo/video that no longer
+// exists anywhere: LINE's Content API keeps a message's content for about two
+// weeks and this app only started keeping its own permanent copy at ingestion
+// time in Sep 2026 (see line.service.js), so anything a customer sent before
+// that and more than ~2 weeks ago is genuinely unrecoverable — not a loading
+// failure that retrying or reloading could fix. Worth saying plainly, since
+// the old blank "[Image]" placeholder read like a bug.
+const EXPIRED_MESSAGE = 'รูปนี้หมดอายุแล้ว (LINE เก็บไฟล์ไว้ประมาณ 2 สัปดาห์) จึงไม่สามารถแสดงได้อีก';
+
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
 // Placed before the /:conversationId route below since "content" would otherwise be
 // swallowed as a conversationId value.
@@ -70,10 +80,10 @@ router.get('/content/:messageId', auth, async (req, res) => {
     // — a customer's photo shouldn't become fetchable by anyone with the
     // right guessed filename. Falls through to the live fetch if the file's
     // gone missing on disk (e.g. a volume wipe) rather than erroring outright.
-    let storedPath = null;
-    try { storedPath = message.metadata ? JSON.parse(message.metadata).storedPath : null; } catch { /* ignore */ }
-    if (isStoredPath(storedPath)) {
-      const filePath = path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''));
+    let meta = {};
+    try { meta = message.metadata ? JSON.parse(message.metadata) : {}; } catch { /* ignore */ }
+    if (isStoredPath(meta.storedPath)) {
+      const filePath = path.join(UPLOAD_DIR, meta.storedPath.replace('/uploads/', ''));
       if (fs.existsSync(filePath)) {
         return res.sendFile(filePath, (err) => {
           if (err && !res.headersSent) console.error('sendFile failed for stored message content:', err.message);
@@ -81,15 +91,36 @@ router.get('/content/:messageId', auth, async (req, res) => {
       }
     }
 
+    // No local copy, and LINE has already told us (on some earlier request or
+    // during the imageBackfill sweep) that it no longer has this message's
+    // content either — see the 404 branch below. There is nothing left to
+    // fetch anywhere, so answer immediately instead of making the same doomed
+    // round-trip to LINE again on every single page view. 410 (not 404/500)
+    // is what lets the UI say "this expired" rather than "something broke".
+    if (meta.storageUnrecoverable) return res.status(410).json({ error: EXPIRED_MESSAGE });
+
     const { stream, contentType } = await getMessageContent(message.conversation.channel, req.params.messageId);
     res.set('Content-Type', contentType);
     res.set('Cache-Control', 'private, max-age=86400');
     stream.pipe(res);
   } catch (err) {
+    // A 404 from LINE is not a failure on our side and not a transient error:
+    // it's LINE confirming this message's content is permanently gone (its
+    // Content API only keeps content for a couple of weeks — see
+    // imageBackfill.js). Record that on the row so neither this route nor the
+    // backfill ever asks for it again, and report it as 410 Gone. Anything
+    // else (timeout, auth, network) might well succeed on a retry, so those
+    // stay a plain 500 and stay eligible to be tried again.
+    //
     // Unlike sendMessage/sendImageMessage, getMessageContent doesn't wrap
     // LINE SDK errors through describeLineError (line.service.js) — a raw
     // HTTPFetchError here could include response detail that has no reason
     // to reach the client, so this stays generic rather than forwarding it.
+    if (/^404\b/.test(err?.message || '')) {
+      await markContentUnrecoverable(prisma, { lineMessageId: req.params.messageId })
+        .catch(e => console.error('Could not mark expired message content:', e.message));
+      return res.status(410).json({ error: EXPIRED_MESSAGE });
+    }
     console.error('Fetch message content failed:', err.message);
     res.status(500).json({ error: 'ไม่สามารถโหลดไฟล์นี้ได้' });
   }

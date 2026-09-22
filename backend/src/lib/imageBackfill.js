@@ -49,6 +49,8 @@ const prisma = new PrismaClient();
 const LOOKBACK_DAYS = 60;
 const CONCURRENCY = 3; // deliberately low — this can run against many channels' LINE tokens at once on startup, no reason to hammer LINE's API
 const REQUEST_TIMEOUT_MS = 15000;
+const PAGE_SIZE = 500;
+const LOG_EVERY = 5000; // rows scanned between progress lines
 
 function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
@@ -60,6 +62,24 @@ function withTimeout(promise, ms) {
   });
 }
 
+// Records LINE's "this content is gone for good" verdict on a message row so
+// nothing ever asks for it again (see the file-level comment above on why that
+// matters). Shared with GET /api/messages/content/:messageId
+// (routes/messages.js), which hits the same 404 live the first time an agent
+// opens an old chat — whichever gets there first, the row ends up marked and
+// the other stops trying. Takes the caller's prisma client so it works from
+// either side without a second connection pool.
+async function markContentUnrecoverable(client, where) {
+  const row = await client.message.findFirst({ where, select: { id: true, metadata: true } });
+  if (!row) return;
+  let meta = {};
+  try { meta = JSON.parse(row.metadata || '{}'); } catch { /* unparseable metadata gets replaced */ }
+  await client.message.update({
+    where: { id: row.id },
+    data: { metadata: JSON.stringify({ ...meta, storageUnrecoverable: true }) },
+  });
+}
+
 async function backfillMissingImageStorage() {
   // Deferred require — line.service.js requires imageBackfill's sibling
   // (imageStorage.js), not this file, so there's no real cycle, but keeping
@@ -68,55 +88,86 @@ async function backfillMissingImageStorage() {
   const { saveBase64Image } = require('./imageStorage');
 
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-  const candidates = await prisma.message.findMany({
-    where: { type: 'image', sender: 'user', lineMessageId: { not: null }, createdAt: { gte: since } },
-    select: { id: true, lineMessageId: true, metadata: true, conversation: { select: { channel: true } } },
-  });
-  const missing = candidates.filter((m) => {
-    try {
-      const meta = JSON.parse(m.metadata || '{}');
-      return !meta.storedPath && !meta.storageUnrecoverable;
-    } catch { return true; }
-  });
-  if (missing.length === 0) return { recovered: 0, stillMissing: 0 };
+  const stats = { scanned: 0, recovered: 0, expired: 0, retryable: 0 };
+  // Walked one page at a time instead of loading every candidate up front.
+  // The all-at-once version held a row per image message in the whole window
+  // — each one carrying its conversation's full LineChannel object — which
+  // pushed this service past 6GB of memory on the 60-day sweep. Paging keeps
+  // the footprint flat no matter how far back LOOKBACK_DAYS reaches.
+  // Newest-first (cuid ids sort by creation time) so the images agents are
+  // most likely to actually open — and the ones LINE might still have — get
+  // done first rather than last.
+  let pageCursor = null;
+  let lastLoggedAt = 0;
+  for (;;) {
+    const page = await prisma.message.findMany({
+      where: { type: 'image', sender: 'user', lineMessageId: { not: null }, createdAt: { gte: since } },
+      select: { id: true, lineMessageId: true, metadata: true, conversation: { select: { channel: true } } },
+      orderBy: { id: 'desc' },
+      take: PAGE_SIZE,
+      ...(pageCursor ? { cursor: { id: pageCursor }, skip: 1 } : {}),
+    });
+    if (page.length === 0) break;
+    pageCursor = page[page.length - 1].id;
+    stats.scanned += page.length;
 
-  let recovered = 0;
-  let stillMissing = 0;
-  let cursor = 0;
-  async function worker() {
-    while (cursor < missing.length) {
-      const m = missing[cursor++];
+    const missing = page.filter((m) => {
       try {
-        const { stream, contentType } = await withTimeout(getMessageContent(m.conversation.channel, m.lineMessageId), REQUEST_TIMEOUT_MS);
-        const chunks = [];
-        for await (const chunk of stream) chunks.push(chunk);
-        const storedPath = await saveBase64Image(`data:${contentType};base64,${Buffer.concat(chunks).toString('base64')}`);
-        if (storedPath) {
-          const meta = { ...JSON.parse(m.metadata || '{}'), storedPath };
-          await prisma.message.update({ where: { id: m.id }, data: { metadata: JSON.stringify(meta) } });
-          recovered++;
-        } else {
-          stillMissing++;
-        }
-      } catch (err) {
-        // A genuine 404 means LINE has confirmed this message's content is
-        // truly gone — permanently mark it so future runs stop re-attempting
-        // a fetch that can never succeed (see the file-level comment on why
-        // that matters). A timeout or any other error might just be an
-        // unlucky one-off, not necessarily permanent, so those stay eligible
-        // for a retry on the next run instead.
-        if (/^404\b/.test(err?.message || '')) {
-          try {
-            const meta = { ...JSON.parse(m.metadata || '{}'), storageUnrecoverable: true };
+        const meta = JSON.parse(m.metadata || '{}');
+        return !meta.storedPath && !meta.storageUnrecoverable;
+      } catch { return true; }
+    });
+    let next = 0;
+    const worker = async () => {
+      while (next < missing.length) {
+        const m = missing[next++];
+        try {
+          const { stream, contentType } = await withTimeout(getMessageContent(m.conversation.channel, m.lineMessageId), REQUEST_TIMEOUT_MS);
+          const chunks = [];
+          for await (const chunk of stream) chunks.push(chunk);
+          const storedPath = await saveBase64Image(`data:${contentType};base64,${Buffer.concat(chunks).toString('base64')}`);
+          if (storedPath) {
+            const meta = { ...JSON.parse(m.metadata || '{}'), storedPath };
             await prisma.message.update({ where: { id: m.id }, data: { metadata: JSON.stringify(meta) } });
-          } catch { /* best effort — worst case this one just gets retried next time too */ }
+            stats.recovered++;
+          } else {
+            stats.retryable++;
+          }
+        } catch (err) {
+          // A genuine 404 means LINE has confirmed this message's content is
+          // truly gone — permanently mark it so future runs stop re-attempting
+          // a fetch that can never succeed (see the file-level comment on why
+          // that matters). A timeout or any other error might just be an
+          // unlucky one-off, not necessarily permanent, so those stay eligible
+          // for a retry on the next run instead.
+          if (/^404\b/.test(err?.message || '')) {
+            try {
+              await markContentUnrecoverable(prisma, { id: m.id });
+            } catch { /* best effort — worst case this one just gets retried next time too */ }
+            stats.expired++;
+          } else {
+            stats.retryable++;
+          }
         }
-        stillMissing++;
       }
+    };
+    if (missing.length > 0) {
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, missing.length) }, worker));
+    }
+    // Progress as it goes, not just a summary at the very end: this sweep runs
+    // for hours on a large history, and without it there is no way to tell a
+    // run that is working through a backlog apart from one that silently did
+    // nothing at all — which is exactly the question that came up while
+    // chasing the blank-placeholder reports. Logged on a scanned-count
+    // interval rather than per page so that stays true even while paging
+    // through a long stretch of rows that are all already done (nothing to
+    // report, but still worth showing it's alive and where it's got to).
+    if (stats.scanned - lastLoggedAt >= LOG_EVERY) {
+      lastLoggedAt = stats.scanned;
+      console.log(`Image recovery in progress: scanned ${stats.scanned}, recovered ${stats.recovered}, expired on LINE ${stats.expired}, will retry ${stats.retryable}`);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, missing.length) }, worker));
-  return { recovered, stillMissing };
+  return stats;
 }
 
-module.exports = { backfillMissingImageStorage };
+module.exports = { backfillMissingImageStorage, markContentUnrecoverable };

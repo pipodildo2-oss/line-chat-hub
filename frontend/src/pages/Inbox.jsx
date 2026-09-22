@@ -8,6 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
+import MissingMedia from '../components/MissingMedia';
 import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
@@ -164,31 +165,37 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
 // our authenticated backend proxy and turn it into a blob URL.
 function ImageMessage({ messageId, onImageClick }) {
   const [src, setSrc] = useState(null);
-  const [failed, setFailed] = useState(false);
+  // null = fine so far, 'expired' = gone for good (410 from the backend),
+  // 'error' = failed for some other reason and may well work on a retry.
+  const [failure, setFailure] = useState(null);
 
   useEffect(() => {
     let objectUrl;
     let cancelled = false;
     setSrc(null);
-    setFailed(false);
+    setFailure(null);
     axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
       .then(res => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(res.data);
         setSrc(objectUrl);
       })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [messageId]);
 
-  if (failed) return <p className="text-sm text-gray-400">[Image]</p>;
+  if (failure) return <MissingMedia expired={failure === 'expired'} />;
   if (!src) return <div className="w-48 h-48 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
   return (
     <button type="button" onClick={() => onImageClick?.(src)} className="block cursor-zoom-in">
-      <img src={src} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+      {/* onError covers the case the fetch itself can't catch: a 200 that turns
+          out not to be decodable image data. Without it the browser draws its
+          own broken-image glyph, which is the same confusing dead end the
+          placeholder above exists to replace. */}
+      <img src={src} alt="" onError={() => setFailure('error')} className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
     </button>
   );
 }
@@ -198,27 +205,30 @@ function ImageMessage({ messageId, onImageClick }) {
 // through the backend and played from a blob URL rather than linked directly.
 function VideoMessage({ messageId }) {
   const [src, setSrc] = useState(null);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState(null);
 
   useEffect(() => {
     let objectUrl;
     let cancelled = false;
     setSrc(null);
-    setFailed(false);
+    setFailure(null);
     axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
       .then(res => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(res.data);
         setSrc(objectUrl);
       })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [messageId]);
 
-  if (failed) return <p className="text-sm text-gray-400">[Video] โหลดวิดีโอไม่สำเร็จ</p>;
+  // Video expires from LINE's side exactly like an image does, and unlike
+  // images this app has never kept its own copy of one — so an old video is
+  // always permanently gone rather than merely failing to load.
+  if (failure) return <MissingMedia expired={failure === 'expired'} label="วิดีโอ" />;
   if (!src) {
     return (
       <div className="w-56 h-40 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse flex items-center justify-center text-xs text-gray-400 dark:text-slate-500">

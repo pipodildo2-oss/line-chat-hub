@@ -274,9 +274,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   // bug in this background task can never again stop the app from serving
   // real traffic. See imageBackfill.js's own comment for the full story.
   require('../src/lib/imageBackfill').backfillMissingImageStorage()
-    .then(({ recovered, stillMissing }) => {
-      if (recovered > 0) console.log(`Recovered ${recovered} customer image(s) into permanent storage.`);
-      if (stillMissing > 0) console.log(`${stillMissing} recent customer image(s) could not be recovered (likely already expired on LINE's side).`);
+    // Always logged, including the all-zero case: "the sweep found nothing to
+    // do" and "the sweep never ran" used to look identical in the deploy logs
+    // (both printed nothing at all), which made it impossible to tell whether
+    // a blank-image report meant the recovery was still catching up or had
+    // quietly no-opped.
+    .then(({ scanned, recovered, expired, retryable }) => {
+      console.log(`Image recovery finished: scanned ${scanned}, recovered ${recovered} into permanent storage, ${expired} already expired on LINE's side (marked, won't be retried), ${retryable} to retry next start.`);
     })
     .catch(err => console.error('Image backfill failed:', err.message));
 });
