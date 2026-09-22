@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
-const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage: deleteStoredImageNow, isValidImageDataUrl } = require('../lib/imageStorage');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
@@ -67,6 +67,36 @@ function respondWithImage(res, storedValueOrDataUrl, preview) {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Cache-Control', 'public, max-age=86400');
   res.send(Buffer.from(base64, 'base64'));
+}
+
+// Every image cleanup in this file goes through here instead of calling
+// imageStorage's deleteStoredImage directly (imported above as
+// deleteStoredImageNow), so that not one of the ~14 cleanup paths can take a
+// file that sent history still depends on.
+//
+// A quick reply's images are a TEMPLATE. The messages sent from it are
+// EVIDENCE — an upsell submission's proof, reviewed days or weeks later. Those
+// messages used to hold no copy of their own, only a link through the live
+// QuickReply row, so editing a promo image or deleting a retired quick reply
+// silently broke every past message ever sent with it, retroactively and with
+// no error anywhere. (The send handler below now records the file path on the
+// message itself, which is what makes the reference check here possible.)
+//
+// Deliberately biased towards keeping files: anything still referenced stays,
+// and if the check itself can't run, the file stays too. Orphaned bytes on a
+// 50GB volume are recoverable at any time; a deleted proof image is not.
+//
+// Intentionally safe to call without awaiting — several call sites are
+// `forEach(deleteStoredImage)` — so it never throws.
+async function deleteStoredImage(storedPath) {
+  try {
+    if (!isStoredPath(storedPath)) return;
+    const stillReferenced = await prisma.message.count({ where: { imageData: storedPath } });
+    if (stillReferenced > 0) return;
+    deleteStoredImageNow(storedPath);
+  } catch (err) {
+    console.error('Could not verify image references, keeping file:', err.message);
+  }
 }
 
 // Resolves the image at `index` for a row that may have a populated `images[]`
@@ -743,7 +773,19 @@ router.post('/:id/send', auth, async (req, res) => {
       const previewUrl = `${imageUrl}?preview=1`;
       try {
         await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
-        created.push(await prisma.message.create({
+        // The sent message records the image file PATH itself (imageData) and
+        // points its own metadata.url at /api/messages/image/:id, rather than
+        // storing the /api/quick-replies/... url it just pushed to LINE.
+        //
+        // Both urls resolve to the same file today, but only one of them keeps
+        // resolving: the quick-reply route reads through the LIVE QuickReply
+        // row, so the moment someone edits that quick reply's images or deletes
+        // it, every past message pointing at it breaks retroactively — an
+        // upsell submission from weeks ago suddenly loses its proof image
+        // because an admin swapped a promo picture today. Sent history is
+        // evidence and must not be editable as a side effect of maintaining a
+        // template, so each message gets its own independent reference.
+        const sent = await prisma.message.create({
           data: {
             conversationId: conversation.id,
             sender: 'agent',
@@ -751,9 +793,13 @@ router.post('/:id/send', auth, async (req, res) => {
             senderId: req.agent.id,
             type: 'image',
             content: '[Image]',
-            metadata: JSON.stringify({ url: imageUrl }),
+            imageData: imageAt(quickReply, i),
             read: true,
           },
+        });
+        created.push(await prisma.message.update({
+          where: { id: sent.id },
+          data: { metadata: JSON.stringify({ url: `${req.protocol}://${req.get('host')}/api/messages/image/${sent.id}` }) },
         }));
       } catch (err) {
         sendErr = err; // this image push failed — earlier ones (if any) already sent and are recorded above

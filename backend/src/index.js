@@ -284,12 +284,20 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     })
     .catch(err => console.error('Image backfill failed:', err.message));
 
-  // Read-only; see storageAudit.js for why this exists. Same fire-and-forget
-  // placement as the recovery sweep above, for the same reason — nothing that
-  // touches the filesystem or the database on a schedule belongs anywhere it
-  // could delay the server starting.
-  require('../src/lib/storageAudit').auditImageStorage()
-    .catch(err => console.error('Storage audit failed:', err.message));
+  // Detach already-sent quick-reply images from the template they came from,
+  // so editing or deleting a quick reply can't keep erasing sent history —
+  // see quickReplyImageOwnership.js. Runs before the audit below so the audit
+  // reports the state after the repair, not before it.
+  require('../src/lib/quickReplyImageOwnership').giveQuickReplyImagesToTheirMessages()
+    .then(({ scanned, adopted, quickReplyGone, imageGone, fileMissing }) => {
+      console.log(`Quick-reply image ownership: scanned ${scanned}, gave ${adopted} message(s) their own copy reference, ${quickReplyGone} whose quick reply is already deleted, ${imageGone} whose image slot is gone, ${fileMissing} whose file is already off disk.`);
+      // Read-only; see storageAudit.js for why this exists. Same fire-and-forget
+      // placement as the recovery sweep above, for the same reason — nothing
+      // that touches the filesystem or the database on a schedule belongs
+      // anywhere it could delay the server starting.
+      return require('../src/lib/storageAudit').auditImageStorage();
+    })
+    .catch(err => console.error('Quick-reply image ownership repair failed:', err.message));
 });
 
 // Graceful shutdown: when Railway redeploys, it sends SIGTERM before killing the
