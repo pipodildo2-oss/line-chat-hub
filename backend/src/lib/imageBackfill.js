@@ -51,6 +51,7 @@ const CONCURRENCY = 3; // deliberately low — this can run against many channel
 const REQUEST_TIMEOUT_MS = 15000;
 const PAGE_SIZE = 500;
 const LOG_EVERY = 5000; // rows scanned between progress lines
+const LOG_EVERY_MS = 60000; // ...or this long since the last one, whichever comes first
 
 function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
@@ -98,11 +99,12 @@ async function backfillMissingImageStorage() {
   // most likely to actually open — and the ones LINE might still have — get
   // done first rather than last.
   let pageCursor = null;
-  let lastLoggedAt = 0;
+  let lastLoggedScanned = 0;
+  let lastLoggedTime = Date.now();
   for (;;) {
     const page = await prisma.message.findMany({
       where: { type: 'image', sender: 'user', lineMessageId: { not: null }, createdAt: { gte: since } },
-      select: { id: true, lineMessageId: true, metadata: true, conversation: { select: { channel: true } } },
+      select: { id: true, lineMessageId: true, metadata: true, createdAt: true, conversation: { select: { channel: true } } },
       orderBy: { id: 'desc' },
       take: PAGE_SIZE,
       ...(pageCursor ? { cursor: { id: pageCursor }, skip: 1 } : {}),
@@ -158,13 +160,23 @@ async function backfillMissingImageStorage() {
     // for hours on a large history, and without it there is no way to tell a
     // run that is working through a backlog apart from one that silently did
     // nothing at all — which is exactly the question that came up while
-    // chasing the blank-placeholder reports. Logged on a scanned-count
-    // interval rather than per page so that stays true even while paging
-    // through a long stretch of rows that are all already done (nothing to
-    // report, but still worth showing it's alive and where it's got to).
-    if (stats.scanned - lastLoggedAt >= LOG_EVERY) {
-      lastLoggedAt = stats.scanned;
-      console.log(`Image recovery in progress: scanned ${stats.scanned}, recovered ${stats.recovered}, expired on LINE ${stats.expired}, will retry ${stats.retryable}`);
+    // chasing the blank-placeholder reports.
+    //
+    // Two triggers, because either one alone leaves a blind spot. A row count
+    // alone goes quiet for a very long time once it reaches the part of the
+    // history that needs real work: pages of already-done rows fly past at
+    // ~40k/second, but a page needing 500 live LINE round-trips can take many
+    // minutes, so the next count-based line may be an hour away — which looks
+    // identical to a stall. An elapsed-time heartbeat alone would spam a line
+    // per page during the fast stretch. Whichever comes first.
+    //
+    // The date is the useful part of the line: it says how far back the sweep
+    // has actually reached, which is what tells you whether it's nearly done.
+    if (stats.scanned - lastLoggedScanned >= LOG_EVERY || Date.now() - lastLoggedTime >= LOG_EVERY_MS) {
+      lastLoggedScanned = stats.scanned;
+      lastLoggedTime = Date.now();
+      const reachedDate = page[page.length - 1].createdAt.toISOString().slice(0, 10);
+      console.log(`Image recovery in progress: scanned ${stats.scanned} (back to ${reachedDate}), recovered ${stats.recovered}, expired on LINE ${stats.expired}, will retry ${stats.retryable}`);
     }
   }
   return stats;
