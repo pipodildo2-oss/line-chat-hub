@@ -135,6 +135,29 @@ router.get('/content/:messageId', auth, async (req, res) => {
 // the full image). Rows created before this change still have the full base64
 // blob in imageData (no thumbnail exists), so those are decoded and streamed
 // inline as before regardless of ?preview.
+// POST /api/messages/image-failure — the browser tells us when it could not
+// render an image, and why.
+//
+// Added because a whole class of these is invisible from the server: the
+// request can come back 200 with a perfectly good file and the image still
+// won't display (a revoked object URL, a cached error response, data the
+// decoder rejects), so the deploy logs stay completely clean while agents keep
+// seeing broken thumbnails. Chasing that from the outside meant guessing at
+// causes and shipping fixes for the wrong one, twice. This makes the failing
+// case name itself: which message, which url, what the client actually got.
+//
+// Purely diagnostic — records nothing, changes nothing, and deliberately
+// answers 204 no matter what so a reporting problem can never turn into a
+// second visible failure on top of the one being reported.
+router.post('/image-failure', auth, async (req, res) => {
+  try {
+    const { messageId, kind, url, status, detail } = req.body || {};
+    const short = (v, n = 200) => (typeof v === 'string' ? v.slice(0, n) : v);
+    console.warn(`Image failed in browser: kind=${short(kind, 40)} message=${short(messageId, 40)} status=${short(String(status), 20)} url=${short(url)} detail=${short(detail, 120)} agent=${short(req.agent?.name, 40)}`);
+  } catch { /* diagnostics must never surface an error of their own */ }
+  res.status(204).end();
+});
+
 router.get('/image/:id', async (req, res) => {
   const message = await prisma.message.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
   if (!message?.imageData) return res.status(404).end();

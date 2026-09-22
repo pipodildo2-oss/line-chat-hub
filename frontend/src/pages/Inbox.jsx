@@ -8,7 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
-import MissingMedia from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure } from '../components/MissingMedia';
 import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
@@ -180,7 +180,12 @@ function ImageMessage({ messageId, onImageClick }) {
         objectUrl = URL.createObjectURL(res.data);
         setSrc(objectUrl);
       })
-      .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });
+      .catch(err => {
+        if (cancelled) return;
+        const status = err.response?.status;
+        setFailure(status === 410 ? 'expired' : 'error');
+        if (status !== 410) reportImageFailure({ kind: 'inbox-customer-fetch', messageId, status: status ?? 'network', detail: err.message });
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -195,7 +200,15 @@ function ImageMessage({ messageId, onImageClick }) {
           out not to be decodable image data. Without it the browser draws its
           own broken-image glyph, which is the same confusing dead end the
           placeholder above exists to replace. */}
-      <img src={src} alt="" onError={() => setFailure('error')} className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+      <img
+        src={src}
+        alt=""
+        onError={() => {
+          setFailure('error');
+          reportImageFailure({ kind: 'inbox-customer-decode', messageId, status: 'img-onerror', detail: 'fetch returned 200 but the browser could not render it' });
+        }}
+        className="max-w-[240px] max-h-[240px] rounded-lg object-cover"
+      />
     </button>
   );
 }
@@ -219,10 +232,22 @@ function AgentImage({ msg, onImageClick }) {
   // would 404 here, but it always carries its own local preview url, so it
   // never needs the fallback.
   const url = meta.url || (msg.id ? `/api/messages/image/${msg.id}` : null);
-  if (!url || broken) return <MissingMedia />;
+  if (!url) {
+    reportImageFailure({ kind: 'inbox-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has neither metadata.url nor an id to fall back on' });
+    return <MissingMedia />;
+  }
+  if (broken) return <MissingMedia />;
   return (
     <button type="button" onClick={() => onImageClick?.(url)} className="block cursor-zoom-in">
-      <img src={url} alt="" onError={() => setBroken(true)} className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+      <img
+        src={url}
+        alt=""
+        onError={() => {
+          setBroken(true);
+          reportImageFailure({ kind: 'inbox-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: 'agent image url did not load' });
+        }}
+        className="max-w-[240px] max-h-[240px] rounded-lg object-cover"
+      />
     </button>
   );
 }

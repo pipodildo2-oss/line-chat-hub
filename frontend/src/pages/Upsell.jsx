@@ -5,7 +5,7 @@ import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileTe
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
-import MissingMedia from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure } from '../components/MissingMedia';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -110,7 +110,12 @@ function CustomerImagePreview({ messageId, onImageClick }) {
         objectUrl = URL.createObjectURL(res.data);
         setSrc(objectUrl);
       })
-      .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });
+      .catch(err => {
+        if (cancelled) return;
+        const status = err.response?.status;
+        setFailure(status === 410 ? 'expired' : 'error');
+        if (status !== 410) reportImageFailure({ kind: 'upsell-customer-fetch', messageId, status: status ?? 'network', detail: err.message });
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -127,7 +132,10 @@ function CustomerImagePreview({ messageId, onImageClick }) {
       // See ImageMessage in Inbox.jsx: a 200 carrying something that isn't
       // decodable image data never reaches the .catch above, and would
       // otherwise render as the browser's own broken-image glyph.
-      onError={() => setFailure('error')}
+      onError={() => {
+        setFailure('error');
+        reportImageFailure({ kind: 'upsell-customer-decode', messageId, status: 'img-onerror', detail: 'fetch returned 200 but the browser could not render it' });
+      }}
       className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
     />
   );
@@ -152,13 +160,20 @@ function AgentImagePreview({ msg, onImageClick }) {
   // An agent-sent image lives on our own volume and doesn't expire the way a
   // customer's LINE-hosted one does, so a failure here is an ordinary load
   // error, never "expired".
-  if (!url || broken) return <MissingMedia size="sm" />;
+  if (!url) {
+    reportImageFailure({ kind: 'upsell-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has neither metadata.url nor an id to fall back on' });
+    return <MissingMedia size="sm" />;
+  }
+  if (broken) return <MissingMedia size="sm" />;
   return (
     <img
       src={url}
       alt=""
       onClick={() => onImageClick?.(url)}
-      onError={() => setBroken(true)}
+      onError={() => {
+        setBroken(true);
+        reportImageFailure({ kind: 'upsell-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: 'agent image url did not load' });
+      }}
       className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
     />
   );

@@ -1,4 +1,23 @@
+import axios from 'axios';
 import { ImageOff, AlertCircle } from 'lucide-react';
+
+// Tells the backend that an image wouldn't render here, and why — see
+// POST /api/messages/image-failure for the reasoning. A whole class of these
+// never reaches the server on its own: the fetch can come back 200 with a
+// valid file and the picture still won't display, so the only place the truth
+// exists is in the browser. Fire-and-forget and never awaited; a failed report
+// is silently dropped rather than becoming a second error on the page.
+//
+// Deduplicated per page load because these render inside lists that re-render
+// on every socket event — without it one stuck thumbnail would report itself
+// continuously.
+const reported = new Set();
+export function reportImageFailure(info) {
+  const key = `${info.kind}:${info.messageId}:${info.status}`;
+  if (reported.has(key)) return;
+  reported.add(key);
+  axios.post('/api/messages/image-failure', info).catch(() => { /* diagnostics are best effort */ });
+}
 
 // Placeholder for a customer-sent photo/video that can't be displayed.
 //
