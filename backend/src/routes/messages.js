@@ -284,8 +284,8 @@ router.post('/:conversationId', auth, async (req, res) => {
       // imageStorage.js. Falls back to the raw data URL only if it couldn't be
       // decoded, so a send never silently fails.
       const storedPath = (await saveBase64Image(imageData)) || imageData;
-      // Create the row first so we have an id to build the public image URL from,
-      // push it to LINE, then patch metadata.url in — mirrors the quick-reply image flow.
+      // Create the row first so we have an id to build the public image URL
+      // from, record that url on the row, and only then push it to LINE.
       message = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -303,6 +303,18 @@ router.post('/:conversationId', auth, async (req, res) => {
       // (see the route above), so this still resolves to the right file — it
       // just goes through one extra redirect hop instead of a direct static URL.
       const previewUrl = `${req.protocol}://${req.get('host')}/api/messages/image/${message.id}?preview=1`;
+      // Recorded BEFORE the push, not after it. This update used to sit below
+      // the try/catch, which meant the one failure mode that deliberately
+      // KEEPS the row — an ambiguous send timeout (see the catch below) —
+      // rethrew before ever reaching it. That left a row whose image file was
+      // safe on disk but which every screen rendered as an empty "[Image]"
+      // placeholder, because the UI only knew how to find it via metadata.url.
+      // Nothing here depends on the push having succeeded: imageUrl is built
+      // from message.id, which already exists.
+      message = await prisma.message.update({
+        where: { id: message.id },
+        data: { metadata: JSON.stringify({ url: imageUrl }) },
+      });
       try {
         await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
       } catch (err) {
@@ -328,9 +340,8 @@ router.post('/:conversationId', auth, async (req, res) => {
         }
         throw err;
       }
-      message = flattenUpsellItem(await prisma.message.update({
+      message = flattenUpsellItem(await prisma.message.findUnique({
         where: { id: message.id },
-        data: { metadata: JSON.stringify({ url: imageUrl }) },
         select: MESSAGE_SELECT,
       }));
     } else {

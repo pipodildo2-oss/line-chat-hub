@@ -200,6 +200,33 @@ function ImageMessage({ messageId, onImageClick }) {
   );
 }
 
+// An image an AGENT sent (composer attachment or quick reply), served from our
+// own volume — no auth proxy or blob fetch needed, unlike ImageMessage above.
+//
+// metadata.url is the normal source, but a row can legitimately be missing it:
+// the composer's send flow used to write metadata only AFTER the LINE push came
+// back, so a push that timed out (ambiguous — the row and its file are
+// deliberately KEPT rather than rolled back, see messages.js) left a row whose
+// image is sitting on our own disk with nothing in the UI able to point at it.
+// Those rendered as a bare "[Image]" forever even though the file was never
+// lost. /api/messages/image/:id resolves straight from the row's own imageData
+// column and needs no metadata at all, so it finds them.
+function AgentImage({ msg, onImageClick }) {
+  const [broken, setBroken] = useState(false);
+  let meta = {};
+  try { meta = msg.metadata ? JSON.parse(msg.metadata) : {}; } catch { /* ignore */ }
+  // A not-yet-confirmed optimistic bubble has a temporary client-side id that
+  // would 404 here, but it always carries its own local preview url, so it
+  // never needs the fallback.
+  const url = meta.url || (msg.id ? `/api/messages/image/${msg.id}` : null);
+  if (!url || broken) return <MissingMedia />;
+  return (
+    <button type="button" onClick={() => onImageClick?.(url)} className="block cursor-zoom-in">
+      <img src={url} alt="" onError={() => setBroken(true)} className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
+    </button>
+  );
+}
+
 // Same authenticated-proxy pattern as ImageMessage above — LINE's video
 // content also requires our Channel Access Token to fetch, so it's pulled
 // through the backend and played from a blob URL rather than linked directly.
@@ -520,16 +547,10 @@ function MessageBubble({ msg, onImageClick, isAdmin, repliedTo }) {
   // Image attached to a quick-reply we sent — served from our own public
   // /api/quick-replies/:id/image route, so it can be linked directly (no auth proxy needed).
   if (msg.type === 'image' && !msg.lineMessageId) {
-    let meta = {};
-    try { meta = msg.metadata ? JSON.parse(msg.metadata) : {}; } catch { /* ignore */ }
     return (
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
         <div className="max-w-xs lg:max-w-md">
-          {meta.url ? (
-            <button type="button" onClick={() => onImageClick?.(meta.url)} className="block cursor-zoom-in">
-              <img src={meta.url} alt="" className="max-w-[240px] max-h-[240px] rounded-lg object-cover" />
-            </button>
-          ) : <p className="text-sm text-gray-400">[Image]</p>}
+          <AgentImage msg={msg} onImageClick={onImageClick} />
           <p className={`text-xs mt-1 ${isUser ? 'text-gray-400 dark:text-slate-500' : 'text-gray-400 dark:text-slate-500 text-right'}`}>
             {new Date(msg.createdAt).toLocaleTimeString('th', { hour: '2-digit', minute: '2-digit' })}
             {msg.sender === 'agent' && msg.senderName ? ` · ${msg.senderName}` : ''}

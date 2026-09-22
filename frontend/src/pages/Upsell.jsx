@@ -137,10 +137,21 @@ function AgentImagePreview({ msg, onImageClick }) {
   const [broken, setBroken] = useState(false);
   let url = null;
   try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
-  // An agent-sent image is served from our own volume and doesn't expire the
-  // way a customer's LINE-hosted one does, so a missing url (the row's
-  // metadata never got patched in — see messages.js's send flow) or a dead
-  // link is an ordinary load failure, never "expired".
+  // metadata.url is the normal source, but a row can legitimately be missing
+  // it: the composer's send flow used to write metadata only AFTER the LINE
+  // push came back, so a push that timed out (ambiguous — the row and its
+  // file are deliberately KEPT rather than rolled back, see messages.js) left
+  // a row whose image is sitting on our own disk with nothing in the UI able
+  // to point at it. Those rendered as an empty placeholder forever even though
+  // the file was never lost. /api/messages/image/:id resolves straight from
+  // the row's own imageData column and needs no metadata at all, so it finds
+  // them — worth falling back to before giving up. (Quick-reply sends store a
+  // /api/quick-replies/... url and no imageData, but those always get metadata
+  // written at creation time, so they never reach this fallback.)
+  if (!url && msg.id) url = `/api/messages/image/${msg.id}`;
+  // An agent-sent image lives on our own volume and doesn't expire the way a
+  // customer's LINE-hosted one does, so a failure here is an ordinary load
+  // error, never "expired".
   if (!url || broken) return <MissingMedia size="sm" />;
   return (
     <img
