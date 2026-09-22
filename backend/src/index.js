@@ -283,6 +283,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`Image recovery finished: scanned ${scanned}, recovered ${recovered} into permanent storage, ${expired} already expired on LINE's side (marked, won't be retried), ${retryable} to retry next start.`);
     })
     .catch(err => console.error('Image backfill failed:', err.message));
+
+  // Read-only; see storageAudit.js for why this exists. Same fire-and-forget
+  // placement as the recovery sweep above, for the same reason — nothing that
+  // touches the filesystem or the database on a schedule belongs anywhere it
+  // could delay the server starting.
+  require('../src/lib/storageAudit').auditImageStorage()
+    .catch(err => console.error('Storage audit failed:', err.message));
 });
 
 // Graceful shutdown: when Railway redeploys, it sends SIGTERM before killing the
