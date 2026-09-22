@@ -8,7 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
-import MissingMedia, { reportImageFailure } from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure, agentImageSrc } from '../components/MissingMedia';
 import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
@@ -225,15 +225,13 @@ function ImageMessage({ messageId, onImageClick }) {
 // lost. /api/messages/image/:id resolves straight from the row's own imageData
 // column and needs no metadata at all, so it finds them.
 function AgentImage({ msg, onImageClick }) {
+  const [fellBack, setFellBack] = useState(false);
   const [broken, setBroken] = useState(false);
   let meta = {};
   try { meta = msg.metadata ? JSON.parse(msg.metadata) : {}; } catch { /* ignore */ }
-  // A not-yet-confirmed optimistic bubble has a temporary client-side id that
-  // would 404 here, but it always carries its own local preview url, so it
-  // never needs the fallback.
-  const url = meta.url || (msg.id ? `/api/messages/image/${msg.id}` : null);
+  const url = agentImageSrc(msg, meta.url, fellBack);
   if (!url) {
-    reportImageFailure({ kind: 'inbox-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has neither metadata.url nor an id to fall back on' });
+    reportImageFailure({ kind: 'inbox-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has no id and no usable metadata.url' });
     return <MissingMedia />;
   }
   if (broken) return <MissingMedia />;
@@ -243,8 +241,8 @@ function AgentImage({ msg, onImageClick }) {
         src={url}
         alt=""
         onError={() => {
-          setBroken(true);
-          reportImageFailure({ kind: 'inbox-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: 'agent image url did not load' });
+          reportImageFailure({ kind: 'inbox-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: fellBack ? 'stored url failed too' : 'own route failed, falling back to stored url' });
+          if (!fellBack && meta.url && meta.url !== url) setFellBack(true); else setBroken(true);
         }}
         className="max-w-[240px] max-h-[240px] rounded-lg object-cover"
       />

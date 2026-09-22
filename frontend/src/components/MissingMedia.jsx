@@ -35,6 +35,33 @@ export function reportImageFailure(info) {
 // a 5xx it might recover from) is what separates "this is permanently gone,
 // stop worrying about it" from "this failed to load, try again" — worth
 // keeping distinct, since only one of the two is ever worth reporting.
+// Picks the src for an agent-sent image.
+//
+// Prefers this app's OWN relative route over the url stored on the row, which
+// is the opposite of what it used to do. metadata.url is absolute and was
+// frozen at send time from `${req.protocol}://${req.get('host')}` — whatever
+// origin that particular agent happened to be using. Any row whose url got
+// baked with a host that no longer resolves from the browser (an http:// one
+// that mixed-content blocks, a hostname only reachable from elsewhere, an
+// origin the app has since moved off) renders as a broken image with no
+// request ever reaching the server — which is exactly why these failures were
+// invisible in the deploy logs while agents kept seeing them.
+//
+// A relative path can't have that problem: it always resolves against the
+// origin the page is already being served from. /api/messages/image/:id then
+// resolves the file from the row's own imageData column.
+//
+// Two exceptions fall back to the stored url: an optimistic bubble that hasn't
+// been sent yet (its url is a local blob/data one and there's no server row
+// to ask for), and a quick-reply message from before sends recorded their own
+// imageData — for those the own-route 404s and the caller retries with
+// `useStored`.
+export function agentImageSrc(msg, storedUrl, useStored) {
+  if (storedUrl && /^(blob:|data:)/i.test(storedUrl)) return storedUrl;
+  if (!useStored && msg?.id) return `/api/messages/image/${msg.id}`;
+  return storedUrl || (msg?.id ? `/api/messages/image/${msg.id}` : null);
+}
+
 export default function MissingMedia({ expired, size = 'md', label = 'รูป' }) {
   const Icon = expired ? ImageOff : AlertCircle;
   const small = size === 'sm';

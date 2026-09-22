@@ -5,7 +5,7 @@ import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileTe
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
-import MissingMedia, { reportImageFailure } from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure, agentImageSrc } from '../components/MissingMedia';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -142,26 +142,16 @@ function CustomerImagePreview({ messageId, onImageClick }) {
 }
 
 function AgentImagePreview({ msg, onImageClick }) {
+  const [fellBack, setFellBack] = useState(false);
   const [broken, setBroken] = useState(false);
-  let url = null;
-  try { url = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
-  // metadata.url is the normal source, but a row can legitimately be missing
-  // it: the composer's send flow used to write metadata only AFTER the LINE
-  // push came back, so a push that timed out (ambiguous — the row and its
-  // file are deliberately KEPT rather than rolled back, see messages.js) left
-  // a row whose image is sitting on our own disk with nothing in the UI able
-  // to point at it. Those rendered as an empty placeholder forever even though
-  // the file was never lost. /api/messages/image/:id resolves straight from
-  // the row's own imageData column and needs no metadata at all, so it finds
-  // them — worth falling back to before giving up. (Quick-reply sends store a
-  // /api/quick-replies/... url and no imageData, but those always get metadata
-  // written at creation time, so they never reach this fallback.)
-  if (!url && msg.id) url = `/api/messages/image/${msg.id}`;
+  let stored = null;
+  try { stored = msg.metadata ? JSON.parse(msg.metadata).url : null; } catch { /* ignore */ }
+  const url = agentImageSrc(msg, stored, fellBack);
   // An agent-sent image lives on our own volume and doesn't expire the way a
   // customer's LINE-hosted one does, so a failure here is an ordinary load
   // error, never "expired".
   if (!url) {
-    reportImageFailure({ kind: 'upsell-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has neither metadata.url nor an id to fall back on' });
+    reportImageFailure({ kind: 'upsell-agent-nourl', messageId: msg.id, status: 'no-url', detail: 'row has no id and no usable metadata.url' });
     return <MissingMedia size="sm" />;
   }
   if (broken) return <MissingMedia size="sm" />;
@@ -171,8 +161,8 @@ function AgentImagePreview({ msg, onImageClick }) {
       alt=""
       onClick={() => onImageClick?.(url)}
       onError={() => {
-        setBroken(true);
-        reportImageFailure({ kind: 'upsell-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: 'agent image url did not load' });
+        reportImageFailure({ kind: 'upsell-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: fellBack ? 'stored url failed too' : 'own route failed, falling back to stored url' });
+        if (!fellBack && stored && stored !== url) setFellBack(true); else setBroken(true);
       }}
       className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
     />
