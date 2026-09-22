@@ -297,6 +297,11 @@ httpServer.listen(PORT, '0.0.0.0', () => {
       // anywhere it could delay the server starting.
       return require('../src/lib/storageAudit').auditImageStorage();
     })
+    // Same picture as the ตรวจสอบ page, per submitting agent — which is what
+    // gets asked for when a broken thumbnail is reported, and answering it by
+    // opening each agent in the UI one at a time both misses submissions and
+    // can't tell the two causes apart. See upsellImageReport.js.
+    .then(() => require('../src/lib/upsellImageReport').reportUpsellImageHealth())
     .catch(err => console.error('Quick-reply image ownership repair failed:', err.message));
 });
 
