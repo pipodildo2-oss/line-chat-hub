@@ -29,13 +29,24 @@
 // nothing left to download for those, reaching further back would just
 // spend API calls confirming 404s that can never be recovered. The exact
 // retention window isn't documented anywhere reliable enough to hard-code
-// precisely, so this errs generous (14 days) rather than risk cutting off
-// still-recoverable images. Safe to run on every startup: a message this
-// already recovered has storedPath set and is excluded from the next pass.
+// precisely — the first real run of this (14-day window) still turned up
+// live "Fetch message content failed: 404" errors for images being viewed
+// in the Inbox/ตรวจสอบ, meaning some still-being-looked-at images were
+// already outside that window — widened to 60 days so more of that recent
+// history actually gets covered.
+//
+// A message doesn't get retried forever, though: on a genuine 404 (LINE
+// confirming the content is truly gone, not a timeout/network blip — see the
+// err.message check in the catch block below) this permanently marks it
+// storageUnrecoverable so future runs skip it instead of re-attempting a
+// doomed fetch. Without that,
+// every single deploy would re-scan and re-attempt every already-expired
+// image in the whole 60-day window from scratch, forever — the first run
+// alone already had ~33,500 candidates to get through.
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
-const LOOKBACK_DAYS = 14;
+const LOOKBACK_DAYS = 60;
 const CONCURRENCY = 3; // deliberately low — this can run against many channels' LINE tokens at once on startup, no reason to hammer LINE's API
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -62,7 +73,10 @@ async function backfillMissingImageStorage() {
     select: { id: true, lineMessageId: true, metadata: true, conversation: { select: { channel: true } } },
   });
   const missing = candidates.filter((m) => {
-    try { return !JSON.parse(m.metadata || '{}').storedPath; } catch { return true; }
+    try {
+      const meta = JSON.parse(m.metadata || '{}');
+      return !meta.storedPath && !meta.storageUnrecoverable;
+    } catch { return true; }
   });
   if (missing.length === 0) return { recovered: 0, stillMissing: 0 };
 
@@ -84,11 +98,19 @@ async function backfillMissingImageStorage() {
         } else {
           stillMissing++;
         }
-      } catch {
-        // LINE's content for this message is already gone (404), the
-        // request timed out, or some other transient error — either way,
-        // nothing more to do for this one right now; it'll simply be
-        // retried on the next startup within the lookback window.
+      } catch (err) {
+        // A genuine 404 means LINE has confirmed this message's content is
+        // truly gone — permanently mark it so future runs stop re-attempting
+        // a fetch that can never succeed (see the file-level comment on why
+        // that matters). A timeout or any other error might just be an
+        // unlucky one-off, not necessarily permanent, so those stay eligible
+        // for a retry on the next run instead.
+        if (/^404\b/.test(err?.message || '')) {
+          try {
+            const meta = { ...JSON.parse(m.metadata || '{}'), storageUnrecoverable: true };
+            await prisma.message.update({ where: { id: m.id }, data: { metadata: JSON.stringify(meta) } });
+          } catch { /* best effort — worst case this one just gets retried next time too */ }
+        }
         stillMissing++;
       }
     }
