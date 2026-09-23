@@ -35,6 +35,37 @@ export function reportImageFailure(info) {
 // a 5xx it might recover from) is what separates "this is permanently gone,
 // stop worrying about it" from "this failed to load, try again" — worth
 // keeping distinct, since only one of the two is ever worth reporting.
+// Fetches a customer's media through the authenticated proxy, retrying the
+// failures that are worth retrying.
+//
+// Every deploy restarts the server, and requests caught in that window come
+// back 502. The components have no retry, so a thumbnail that happened to load
+// during a redeploy showed "โหลดรูปไม่ได้" and stayed that way until someone
+// reloaded the page — the production log has real examples of agents hitting
+// this. The file was never in any danger; the request just arrived at the wrong
+// second.
+//
+// Only transient failures are retried. A 410 means the content is genuinely
+// gone from LINE and a 404 means there is nothing to fetch or no access to it —
+// repeating either would just be a slower way to show the same placeholder.
+const TRANSIENT_RETRIES = 2;
+const RETRY_BASE_MS = 1200;
+
+export async function fetchMediaBlob(url) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (await axios.get(url, { responseType: 'blob' })).data;
+    } catch (err) {
+      const status = err.response?.status;
+      // No status at all means the request never got an answer (the server was
+      // mid-restart, or the network dropped) — the most retryable case there is.
+      const transient = !status || status >= 500;
+      if (!transient || attempt >= TRANSIENT_RETRIES) throw err;
+      await new Promise(resolve => setTimeout(resolve, RETRY_BASE_MS * (attempt + 1)));
+    }
+  }
+}
+
 // Picks the src for an agent-sent image.
 //
 // Prefers this app's OWN relative route over the url stored on the row, which

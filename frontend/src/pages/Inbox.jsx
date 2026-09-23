@@ -8,7 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useInboxChannelFilter } from '../contexts/InboxChannelFilterContext';
-import MissingMedia, { reportImageFailure, agentImageSrc } from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure, agentImageSrc, fetchMediaBlob } from '../components/MissingMedia';
 import { STATUS_COLORS } from '../lib/constants';
 
 // Tailwind's JIT compiler only picks up class names it can see literally in the
@@ -174,10 +174,10 @@ function ImageMessage({ messageId, onImageClick }) {
     let cancelled = false;
     setSrc(null);
     setFailure(null);
-    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
-      .then(res => {
+    fetchMediaBlob(`/api/messages/content/${messageId}`)
+      .then(blob => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(res.data);
+        objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       })
       .catch(err => {
@@ -262,10 +262,10 @@ function VideoMessage({ messageId }) {
     let cancelled = false;
     setSrc(null);
     setFailure(null);
-    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
-      .then(res => {
+    fetchMediaBlob(`/api/messages/content/${messageId}`)
+      .then(blob => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(res.data);
+        objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       })
       .catch(err => { if (!cancelled) setFailure(err.response?.status === 410 ? 'expired' : 'error'); });

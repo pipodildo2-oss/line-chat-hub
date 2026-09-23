@@ -5,7 +5,7 @@ import { Wallet, X, ExternalLink, Check, Ban, Pencil, TrendingUp, Trophy, FileTe
 import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
-import MissingMedia, { reportImageFailure, agentImageSrc } from '../components/MissingMedia';
+import MissingMedia, { reportImageFailure, agentImageSrc, fetchMediaBlob } from '../components/MissingMedia';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -104,10 +104,10 @@ function CustomerImagePreview({ messageId, onImageClick }) {
   useEffect(() => {
     let objectUrl;
     let cancelled = false;
-    axios.get(`/api/messages/content/${messageId}`, { responseType: 'blob' })
-      .then(res => {
+    fetchMediaBlob(`/api/messages/content/${messageId}`)
+      .then(blob => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(res.data);
+        objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       })
       .catch(err => {
