@@ -435,6 +435,9 @@ model MessageView {
 //                    when, and "จำนวนปิดแชท" per agent can't be counted at
 //                    all. Re-closing a conversation that was reopened logs a
 //                    second row, which is correct: that is two closes.
+//                    Also carries responseSeconds (below), measured from the
+//                    conversation's earliest qualifying 'view' row — "ความเร็ว
+//                    ปิดเคส" on the conversation report.
 // อัตราตอบเอง (%) = count(kind='self_reply') / count(kind='view') * 100,
 // computed in reports.js — a rate over totals, not a per-view outcome (one
 // open can't be individually traced to one specific reply when the same
@@ -446,20 +449,28 @@ model AgentActivityLog {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   kind           String   // 'view' | 'self_reply' | 'close'
-  // Seconds from the agent FIRST opening this still-unanswered conversation
-  // to the reply that resolved it — "ความเร็วในการตอบนับตั้งแต่กดเข้าไปอ่านแชท"
-  // on the conversation report. Only ever set on 'self_reply' rows.
+  // Elapsed seconds from a customer's chat first being opened while still
+  // unread/unanswered ("แชทใหม่") to the action that ended that wait — the
+  // conversation report's "ความเร็วตอบ" and "ความเร็วปิดเคส" columns. Set on
+  // two different kinds, measured two different ways:
   //
-  // It has to be written here, at the moment of the reply, because the
-  // MessageView row it is measured from is deleted in the same operation
-  // (see messageViewClear.js) — the elapsed time exists for exactly that
-  // instant and is unrecoverable afterwards, which is why the report has no
-  // history for this column before the day it shipped.
+  // 'self_reply' — from THIS agent's own EARLIEST outstanding view (see
+  // messages.js's 'view' log) to THEIR OWN reply that cleared it. Written at
+  // reply time because the MessageView row it's measured from is deleted in
+  // the same operation (messageViewClear.js) — the elapsed time exists for
+  // exactly that instant and is unrecoverable afterwards. If an agent opened
+  // the same unanswered chat three times before replying, this is measured
+  // from the first time THAT agent saw it, not from whenever they finally
+  // settled down to type.
   //
-  // Measured from the EARLIEST outstanding view, not the most recent one: if
-  // an agent opened the same unanswered chat three times before replying,
-  // the honest number is how long the customer waited from the first time
-  // that agent saw it, not from whenever they finally settled down to type.
+  // 'close' — from the EARLIEST 'view' log row for this conversation by ANY
+  // agent (i.e. since it was last a genuinely new/unread chat), to this
+  // close. Bounded by the conversation's own previous 'close' row if it has
+  // one (a reopened-then-reclosed conversation measures only the new cycle,
+  // not the whole conversation's lifetime including the period it was
+  // already closed) — see conversations.js PATCH /:id. Null when no
+  // qualifying 'view' row exists (e.g. closed without ever being opened
+  // while unanswered), same "no measurement" convention as 'self_reply'.
   responseSeconds Int?
   createdAt      DateTime @default(now())
 

@@ -346,9 +346,10 @@ router.get('/response-rate', auth, requireAdmin, async (req, res) => {
 });
 
 // GET /api/reports/conversations — the "การสนทนา" report: per agent, how much
-// they sent, how many chats they closed, and how quickly they answered.
+// they sent, how many chats they closed, and how quickly they answered and
+// closed cases.
 //
-// Two of these columns have no history before the day this shipped, and the
+// Three of these columns have no history before the day this shipped, and the
 // report says so rather than showing a misleading zero:
 //   - closes come from AgentActivityLog 'close' rows, because
 //     Conversation.status only ever holds the CURRENT state — nothing ever
@@ -356,6 +357,8 @@ router.get('/response-rate', auth, requireAdmin, async (req, res) => {
 //   - response time comes from 'self_reply' rows' responseSeconds, captured at
 //     reply time because the MessageView it is measured from is deleted in the
 //     same operation (see messageViewClear.js).
+//   - close time comes from 'close' rows' responseSeconds (see
+//     conversations.js PATCH /:id and schema.prisma's AgentActivityLog).
 // Messages sent is counted from the messages themselves, so that column is
 // complete for the whole range.
 router.get('/conversations', auth, requireAdmin, async (req, res) => {
@@ -373,7 +376,7 @@ router.get('/conversations', auth, requireAdmin, async (req, res) => {
     orderBy: { name: 'asc' },
   });
 
-  const [sent, closes, replies] = await Promise.all([
+  const [sent, closes, replies, closeDurations] = await Promise.all([
     prisma.message.groupBy({
       by: ['senderId'],
       where: { sender: 'agent', senderId: { not: null }, ...(inRange ? { createdAt: inRange } : {}) },
@@ -394,14 +397,27 @@ router.get('/conversations', auth, requireAdmin, async (req, res) => {
       _count: { _all: true },
       _avg: { responseSeconds: true },
     }),
+    // Separate from `closes` above: that one counts every close (for
+    // "จำนวนปิดแชท", which must stay complete), this one only closes that got
+    // a measured duration (a close with no qualifying prior 'view' row is
+    // null — see conversations.js PATCH /:id) — same "don't average in the
+    // ones we know least about" reasoning as `replies`.
+    prisma.agentActivityLog.groupBy({
+      by: ['agentId'],
+      where: { kind: 'close', responseSeconds: { not: null }, ...(inRange ? { createdAt: inRange } : {}) },
+      _count: { _all: true },
+      _avg: { responseSeconds: true },
+    }),
   ]);
 
   const sentBy = new Map(sent.map(r => [r.senderId, r._count._all]));
   const closedBy = new Map(closes.map(r => [r.agentId, r._count._all]));
   const repliedBy = new Map(replies.map(r => [r.agentId, r]));
+  const closeDurationBy = new Map(closeDurations.map(r => [r.agentId, r]));
 
   const rows = agents.map(a => {
     const r = repliedBy.get(a.id);
+    const cd = closeDurationBy.get(a.id);
     return {
       agentId: a.id,
       name: a.name,
@@ -412,14 +428,18 @@ router.get('/conversations', auth, requireAdmin, async (req, res) => {
       // look the same in the table or in the sort order.
       avgResponseSeconds: r?._avg?.responseSeconds != null ? Math.round(r._avg.responseSeconds) : null,
       responseSamples: r?._count?._all || 0,
+      avgCloseSeconds: cd?._avg?.responseSeconds != null ? Math.round(cd._avg.responseSeconds) : null,
+      closeSamples: cd?._count?._all || 0,
     };
   });
 
-  // The overall figure is a weighted mean over every measured reply, not the
+  // The overall figures are weighted means over every measured event, not the
   // mean of each agent's average — otherwise someone with two replies would
   // pull the team number as hard as someone with two hundred.
   const totalSamples = rows.reduce((n, r) => n + r.responseSamples, 0);
   const weightedSeconds = rows.reduce((n, r) => n + (r.avgResponseSeconds || 0) * r.responseSamples, 0);
+  const totalCloseSamples = rows.reduce((n, r) => n + r.closeSamples, 0);
+  const weightedCloseSeconds = rows.reduce((n, r) => n + (r.avgCloseSeconds || 0) * r.closeSamples, 0);
 
   res.json({
     rows,
@@ -428,6 +448,8 @@ router.get('/conversations', auth, requireAdmin, async (req, res) => {
       chatsClosed: rows.reduce((n, r) => n + r.chatsClosed, 0),
       avgResponseSeconds: totalSamples > 0 ? Math.round(weightedSeconds / totalSamples) : null,
       responseSamples: totalSamples,
+      avgCloseSeconds: totalCloseSamples > 0 ? Math.round(weightedCloseSeconds / totalCloseSamples) : null,
+      closeSamples: totalCloseSamples,
     },
   });
 });

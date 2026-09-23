@@ -283,9 +283,39 @@ router.patch('/:id', auth, async (req, res) => {
     // Fire-and-forget: this is reporting, and failing to write it must never
     // turn a successful status change into an error for the agent.
     if (status === 'closed' && existing.status !== 'closed') {
-      prisma.agentActivityLog
-        .create({ data: { agentId: req.agent.id, conversationId: req.params.id, kind: 'close' } })
-        .catch(err => console.error('Could not log chat close:', err.message));
+      const closedAt = new Date();
+      (async () => {
+        // Bounds the "ความเร็วปิดเคส" measurement to THIS cycle only. Without
+        // this, a conversation that was closed, reopened by a new customer
+        // message, and closed again would measure from the very first time it
+        // was ever opened — including the whole stretch it already spent
+        // sitting closed — instead of from when it became new/unread again.
+        const previousClose = await prisma.agentActivityLog.findFirst({
+          where: { conversationId: req.params.id, kind: 'close' },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+        // "แชทใหม่ที่ยังไม่มีใครเข้าไปอ่าน" — the earliest time ANY agent opened
+        // this conversation while it was still unanswered, since the last
+        // close (or ever, if it's never been closed before). Not scoped to
+        // the agent doing the closing, since who closes a chat and who first
+        // picked it up are often different people.
+        const firstView = await prisma.agentActivityLog.findFirst({
+          where: {
+            conversationId: req.params.id,
+            kind: 'view',
+            createdAt: { lte: closedAt, ...(previousClose ? { gt: previousClose.createdAt } : {}) },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        });
+        const closeSeconds = firstView
+          ? Math.max(0, Math.round((closedAt - firstView.createdAt) / 1000))
+          : null;
+        await prisma.agentActivityLog.create({
+          data: { agentId: req.agent.id, conversationId: req.params.id, kind: 'close', responseSeconds: closeSeconds, createdAt: closedAt },
+        });
+      })().catch(err => console.error('Could not log chat close:', err.message));
     }
     emitToAll('conversation_updated', conversation);
     res.json(conversation);

@@ -1288,15 +1288,17 @@ export function formatDuration(seconds) {
 export function compareConversationRows(a, b, sortKey, sortDir) {
   const mul = sortDir === 'asc' ? 1 : -1;
   if (sortKey === 'name') return mul * a.name.localeCompare(b.name, 'th');
-  if (sortKey === 'avgResponseSeconds') {
-    // An agent with no measured reply yet sorts to the BOTTOM in both
+  if (sortKey === 'avgResponseSeconds' || sortKey === 'avgCloseSeconds') {
+    // An agent with no measurement yet sorts to the BOTTOM in both
     // directions, instead of being treated as zero seconds — which would
     // otherwise put everyone who has never been measured at the top of
     // "fastest first" and read as though they were the quickest on the team.
-    if (a.avgResponseSeconds == null && b.avgResponseSeconds == null) return 0;
-    if (a.avgResponseSeconds == null) return 1;
-    if (b.avgResponseSeconds == null) return -1;
-    return mul * (a.avgResponseSeconds - b.avgResponseSeconds);
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return mul * (av - bv);
   }
   return mul * (a[sortKey] - b[sortKey]);
 }
@@ -1374,13 +1376,18 @@ function ConversationReportPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <SummaryCard label="ส่งข้อความทั้งหมด" value={loading ? '—' : (data?.overall.messagesSent ?? 0).toLocaleString()} />
         <SummaryCard label="ปิดแชททั้งหมด" value={loading ? '—' : (data?.overall.chatsClosed ?? 0).toLocaleString()} />
         <SummaryCard
-          label="ความเร็วเฉลี่ยทั้งหมด"
+          label="ความเร็วตอบเฉลี่ย"
           value={loading ? '—' : formatDuration(data?.overall.avgResponseSeconds)}
           sub={loading ? null : `จาก ${(data?.overall.responseSamples ?? 0).toLocaleString()} ครั้งที่วัดได้`}
+        />
+        <SummaryCard
+          label="ความเร็วปิดเคสเฉลี่ย"
+          value={loading ? '—' : formatDuration(data?.overall.avgCloseSeconds)}
+          sub={loading ? null : `จาก ${(data?.overall.closeSamples ?? 0).toLocaleString()} ครั้งที่วัดได้`}
         />
       </div>
 
@@ -1398,20 +1405,28 @@ function ConversationReportPage() {
                 <ConvSortableTh label="ปิดแชท" align="center" active={sortKey === 'chatsClosed'} dir={sortDir} onClick={() => handleSort('chatsClosed')} />
                 <ConvSortableTh
                   label="ความเร็วตอบ"
-                  hint="นับจากเวลาที่กดเข้าไปอ่านแชทนั้น จนถึงเวลาที่ตอบ"
+                  hint="นับจากเวลาที่กดเข้าไปอ่านแชทลูกค้าที่ยังไม่มีใครเข้าไปอ่าน (แชทใหม่) จนถึงเวลาที่ตอบ"
                   align="right"
                   active={sortKey === 'avgResponseSeconds'}
                   dir={sortDir}
                   onClick={() => handleSort('avgResponseSeconds')}
                 />
+                <ConvSortableTh
+                  label="ความเร็วปิดเคส"
+                  hint="นับจากเวลาที่กดเข้าไปอ่านแชทลูกค้าที่ยังไม่มีใครเข้าไปอ่าน (แชทใหม่) จนถึงเวลาที่ปิดเคส"
+                  align="right"
+                  active={sortKey === 'avgCloseSeconds'}
+                  dir={sortDir}
+                  onClick={() => handleSort('avgCloseSeconds')}
+                />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">กำลังโหลด...</td></tr>
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">กำลังโหลด...</td></tr>
               )}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>
               )}
               {!loading && rows.map(r => (
                 <tr key={r.agentId} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0">
@@ -1427,6 +1442,12 @@ function ConversationReportPage() {
                       <span className="text-xs text-gray-400 dark:text-slate-500 ml-1.5">({r.responseSamples})</span>
                     )}
                   </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className="text-gray-700 dark:text-slate-300">{formatDuration(r.avgCloseSeconds)}</span>
+                    {r.closeSamples > 0 && (
+                      <span className="text-xs text-gray-400 dark:text-slate-500 ml-1.5">({r.closeSamples})</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1438,7 +1459,7 @@ function ConversationReportPage() {
           nor response times were recorded anywhere before this report existed,
           so an empty early range is missing data, not a quiet month. */}
       <p className="text-xs text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
-        <strong>ปิดแชท</strong> และ <strong>ความเร็วตอบ</strong> เริ่มเก็บข้อมูลตั้งแต่วันที่เปิดใช้รายงานนี้เป็นต้นไป
+        <strong>ปิดแชท</strong>, <strong>ความเร็วตอบ</strong> และ <strong>ความเร็วปิดเคส</strong> เริ่มเก็บข้อมูลตั้งแต่วันที่เปิดใช้รายงานนี้เป็นต้นไป
         ช่วงเวลาก่อนหน้านั้นระบบไม่เคยบันทึกไว้ จึงแสดงเป็น 0 และ — ส่วน <strong>ส่งข้อความ</strong> ย้อนหลังได้ทั้งหมด
       </p>
     </div>
