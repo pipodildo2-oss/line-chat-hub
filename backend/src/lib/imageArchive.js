@@ -36,6 +36,7 @@ const PAGE_SIZE = 200;
 // Deliberately modest: this runs alongside live traffic on the same volume and
 // there is no deadline. A backlog simply takes a few more passes.
 const BATCH_PER_RUN = Number(process.env.ARCHIVE_BATCH || 500);
+const PROGRESS_EVERY = 25; // rows between progress lines
 
 const localPathFor = (storedPath) => path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''));
 
@@ -113,6 +114,8 @@ async function archiveOldImages() {
 
   const before = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const stats = { considered: 0, archived: 0, archivedAndFreed: 0, already: 0, nolocal: 0, failed: 0, skipped: 0 };
+  const startedAt = Date.now();
+  let announcedFirst = false;
   let cursor = null;
 
   while (stats.considered < BATCH_PER_RUN) {
@@ -145,10 +148,29 @@ async function archiveOldImages() {
     for (const m of page) {
       stats.considered++;
       try {
-        stats[await archiveOne(m)]++;
+        const outcome = await archiveOne(m);
+        stats[outcome]++;
+        // The very first successful upload gets its own line, immediately.
+        // "Can this service reach the bucket at all" is the one question worth
+        // answering in seconds rather than at the end of a run — every earlier
+        // attempt to verify this setup stalled on exactly that, watching a
+        // silent log for minutes with no way to tell a slow upload from a
+        // broken one.
+        if (!announcedFirst && (outcome === 'archived' || outcome === 'archivedAndFreed')) {
+          announcedFirst = true;
+          console.log(`Image archive: first upload verified against R2 (bucket ${r2.BUCKET}) after ${Math.round((Date.now() - startedAt) / 1000)}s — connection works.`);
+        }
       } catch (err) {
         stats.failed++;
         console.error(`Archive failed for message ${m.id}: ${err.message}`);
+      }
+      // Progress as it goes. Each image costs four R2 round-trips (upload and
+      // read-back, for the full image and its thumbnail), so a 500-row batch
+      // takes minutes — long enough that a run with no output is
+      // indistinguishable from one that died, which is the same blind spot
+      // that has now cost hours three separate times in this codebase.
+      if (stats.considered % PROGRESS_EVERY === 0) {
+        console.log(`Image archive: ${stats.considered}/${BATCH_PER_RUN} considered after ${Math.round((Date.now() - startedAt) / 1000)}s — uploaded ${stats.archived + stats.archivedAndFreed}, failed ${stats.failed}`);
       }
     }
   }
@@ -158,7 +180,7 @@ async function archiveOldImages() {
   // are completely different situations that a silent no-op renders
   // identical — a distinction that has already cost hours twice in this
   // codebase, once for the recovery sweep and once for its progress output.
-  console.log(`Image archive: cutoff ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
+  console.log(`Image archive finished in ${Math.round((Date.now() - startedAt) / 1000)}s: cutoff ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
     + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
     + `, already archived ${stats.already}, no local file ${stats.nolocal}, nothing to archive ${stats.skipped}, failed ${stats.failed}`);
   return stats;
