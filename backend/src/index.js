@@ -304,6 +304,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     .then(({ scanned, recovered, expired, retryable }) => {
       console.log(`Image recovery finished: scanned ${scanned}, recovered ${recovered} into permanent storage, ${expired} already expired on LINE's side (marked, won't be retried), ${retryable} to retry next start.`);
     })
+    .then(() => require('../src/lib/storageHealth').checkStorageHealth())
     .catch(err => console.error('Image backfill failed:', err.message));
 
   // Detach already-sent quick-reply images from the template they came from,
@@ -330,6 +331,34 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     // alone, which are the only ones anyone looks at twice.
     .then(() => require('../src/lib/imageLossAnalysis').analyseImageLoss())
     .catch(err => console.error('Quick-reply image ownership repair failed:', err.message));
+
+  // Storing a customer's image at ingestion is deliberately best-effort — a
+  // failure there must never stop the message itself being recorded (see
+  // line.service.js) — so a disk hiccup, a slow LINE response or a restart
+  // mid-download leaves a message with no local copy. Until now the only thing
+  // that ever retried those was a deploy. Nothing guarantees a deploy happens
+  // inside LINE's ~2 week retention window, and once that passes the image is
+  // gone for good: exactly how the first ~47,000 were lost.
+  //
+  // So the recovery sweep also runs on a timer. Repeat runs are cheap because
+  // anything already stored, or confirmed gone, is skipped outright — a full
+  // 91,000-message pass takes about five seconds and makes zero LINE calls
+  // when there is nothing new to fetch. The storage check rides along so
+  // filling the volume can't creep up unnoticed between deploys either.
+  const MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  setInterval(() => {
+    require('../src/lib/imageBackfill').backfillMissingImageStorage()
+      .then(({ scanned, recovered, expired, retryable }) => {
+        // Only worth a line when it actually did something; a quiet no-op every
+        // six hours would just bury the runs that matter.
+        if (recovered > 0 || expired > 0 || retryable > 0) {
+          console.log(`Image recovery (scheduled): scanned ${scanned}, recovered ${recovered}, expired on LINE ${expired}, will retry ${retryable}.`);
+        }
+      })
+      .catch(err => console.error('Scheduled image recovery failed:', err.message))
+      .then(() => require('../src/lib/storageHealth').checkStorageHealth())
+      .catch(err => console.error('Scheduled storage health check failed:', err.message));
+  }, MAINTENANCE_INTERVAL_MS).unref();
 });
 
 // Graceful shutdown: when Railway redeploys, it sends SIGTERM before killing the
