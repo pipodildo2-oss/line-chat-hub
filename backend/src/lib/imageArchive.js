@@ -35,8 +35,12 @@ const DELETE_LOCAL = process.env.ARCHIVE_DELETE_LOCAL === 'true';
 const PAGE_SIZE = 200;
 // Deliberately modest: this runs alongside live traffic on the same volume and
 // there is no deadline. A backlog simply takes a few more passes.
-const BATCH_PER_RUN = Number(process.env.ARCHIVE_BATCH || 500);
+const BATCH_PER_RUN = Number(process.env.ARCHIVE_BATCH || 1000);
 const PROGRESS_EVERY = 25; // rows between progress lines
+// Kept low on purpose: this shares the volume and the database with live
+// traffic, and R2's own limits are nowhere near the constraint here — a few in
+// flight is all it takes to turn the network wait from serial into parallel.
+const CONCURRENCY = Number(process.env.ARCHIVE_CONCURRENCY || 5);
 
 const localPathFor = (storedPath) => path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''));
 
@@ -145,7 +149,24 @@ async function archiveOldImages() {
     if (page.length === 0) break;
     cursor = page[page.length - 1].id;
 
-    for (const m of page) {
+    // Worked on several at a time rather than one after another. Measured on
+    // the first real run: 4.9 seconds per image, because each one waits on
+    // four sequential R2 round-trips. At that rate a single run manages 500
+    // images and the four daily runs total 2,000 — against ~3,600 images a day
+    // crossing the retention line. It would have fallen a permanent 1,600
+    // images a day further behind, forever, which is a backlog that never
+    // recovers and eventually means the volume never actually gets freed.
+    // Concurrency is the whole fix: the time is spent waiting on the network,
+    // not computing, so a handful in flight turns ~5 hours of work a day into
+    // about one.
+    let next = 0;
+    const worker = async () => {
+      while (next < page.length) {
+        const m = page[next++];
+        await processOne(m);
+      }
+    };
+    async function processOne(m) {
       stats.considered++;
       try {
         const outcome = await archiveOne(m);
@@ -173,6 +194,7 @@ async function archiveOldImages() {
         console.log(`Image archive: ${stats.considered}/${BATCH_PER_RUN} considered after ${Math.round((Date.now() - startedAt) / 1000)}s — uploaded ${stats.archived + stats.archivedAndFreed}, failed ${stats.failed}`);
       }
     }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, page.length) }, worker));
   }
 
   // Always logged, even when it found nothing to do. "Ran and there was
