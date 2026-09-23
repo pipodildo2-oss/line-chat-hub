@@ -16,6 +16,7 @@
 // act (a Railway volume can be grown in place) rather than a single alarm once
 // it's already full.
 const fs = require('fs');
+const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { UPLOAD_DIR } = require('./imageStorage');
 
@@ -31,19 +32,34 @@ const GROWTH_WINDOW_DAYS = 7;
 const GB = 1024 ** 3;
 const gb = (bytes) => (bytes / GB).toFixed(2);
 
-// Counts the files on the volume. Their average size is then derived from the
-// bytes actually in use rather than sampled, because the volume is mounted
-// exclusively for this directory: used bytes divided by file count is the true
-// average, not an estimate of it.
+// Measures the uploads directory itself: how many files, and how many bytes
+// they actually occupy.
 //
-// A sample was the obvious approach and it was wrong by 68% here — stored
-// images come in two sizes (a full image and a much smaller thumbnail, see
-// imageStorage.js), so any sample that doesn't happen to draw them in exactly
-// the ratio they exist in skews the figure, and the whole point of this number
-// is to say how many days are left. Guessing at an average is also how an
-// earlier estimate of this came out wrong by a factor of two.
-function countStoredFiles() {
-  try { return fs.readdirSync(UPLOAD_DIR).length; } catch { return null; }
+// Two earlier versions got this wrong in opposite directions and both would
+// have raised false alarms. Sampling 300 files ran 68% high, because stored
+// images come in two very different sizes — a full image and a much smaller
+// thumbnail (imageStorage.js) — and no stride through the directory draws them
+// in the ratio they exist in. Dividing the filesystem's used bytes by the file
+// count fixed that but quietly assumed the volume holds nothing except this
+// directory; the moment that stops being true the average is nonsense and the
+// "days left" figure with it.
+//
+// Summing the files directly is the only version that can't be wrong either
+// way, and it needs no assumption about what else shares the disk. It costs one
+// stat per file — a second or two at the current ~121,000 — on a job that runs
+// every six hours.
+function measureUploadDir() {
+  let entries;
+  try { entries = fs.readdirSync(UPLOAD_DIR); } catch { return null; }
+  let bytes = 0;
+  let fileCount = 0;
+  for (const name of entries) {
+    try {
+      const s = fs.statSync(path.join(UPLOAD_DIR, name));
+      if (s.isFile()) { bytes += s.size; fileCount++; }
+    } catch { /* deleted between readdir and stat — skip it */ }
+  }
+  return { fileCount, bytes };
 }
 
 async function checkStorageHealth() {
@@ -59,8 +75,9 @@ async function checkStorageHealth() {
   const usedBytes = totalBytes - freeBytes;
   const freePercent = totalBytes === 0 ? 0 : (freeBytes / totalBytes) * 100;
 
-  const fileCount = countStoredFiles();
-  const avgFileBytes = fileCount > 0 ? usedBytes / fileCount : null;
+  const dir = measureUploadDir();
+  const fileCount = dir ? dir.fileCount : 0;
+  const avgFileBytes = fileCount > 0 ? dir.bytes / fileCount : null;
   const since = new Date(Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const recentImages = await prisma.message.count({ where: { type: 'image', createdAt: { gte: since } } });
   const imagesPerDay = recentImages / GROWTH_WINDOW_DAYS;
@@ -75,6 +92,20 @@ async function checkStorageHealth() {
     + `, ${Math.round(imagesPerDay)} images/day`
     + (bytesPerDay ? `, ~${gb(bytesPerDay)}GB/day` : '')
     + (daysLeft ? `, about ${Math.round(daysLeft)} days of headroom left` : '');
+
+  // Reported alongside the volume because the two are constantly confused, and
+  // the difference decides where things belong: the database holds only what
+  // has to be searched, filtered and reported on (message text, who sent what,
+  // amounts, timestamps), while the volume holds the bytes of the images. Seeing
+  // both numbers side by side shows at a glance how lopsided that is, and is the
+  // fastest way to answer "should this go in Postgres or on disk?" with
+  // evidence rather than intuition.
+  try {
+    const [{ bytes }] = await prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`;
+    console.log(`Database size: ${gb(Number(bytes))}GB (text only — image bytes live on the volume above, not in here)`);
+  } catch (err) {
+    console.warn(`Could not read database size: ${err.message}`);
+  }
 
   const critical = freePercent <= CRITICAL_FREE_PERCENT || (daysLeft !== null && daysLeft <= CRITICAL_DAYS);
   const warn = freePercent <= WARN_FREE_PERCENT || (daysLeft !== null && daysLeft <= WARN_DAYS);
