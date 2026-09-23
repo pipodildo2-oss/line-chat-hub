@@ -34,11 +34,14 @@ router.get('/', auth, async (req, res) => {
       channels: { select: { channelId: true } },
       categoryId: true,
       category: { select: { id: true, name: true } },
+      twoFactorEnabledAt: true,
     } : {
       id: true, name: true, status: true, avatarUrl: true,
     },
   });
-  res.json(isAdmin ? agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined })) : agents);
+  res.json(isAdmin
+    ? agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined, twoFactorEnabled: !!a.twoFactorEnabledAt, twoFactorEnabledAt: undefined }))
+    : agents);
 });
 
 // POST /api/agents
@@ -80,9 +83,9 @@ router.patch('/me', auth, async (req, res) => {
     const updated = await prisma.agent.update({
       where: { id: req.agent.id },
       data,
-      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true },
+      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true, twoFactorEnabledAt: true },
     });
-    res.json(updated);
+    res.json({ ...updated, twoFactorEnabled: !!updated.twoFactorEnabledAt, twoFactorEnabledAt: undefined });
   } catch (err) {
     console.error('Update own profile failed:', err.message);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
@@ -105,10 +108,10 @@ router.patch('/me/avatar', auth, async (req, res) => {
     const updated = await prisma.agent.update({
       where: { id: req.agent.id },
       data: { avatarUrl: stored },
-      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true },
+      select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true, twoFactorEnabledAt: true },
     });
     if (previous?.avatarUrl) deleteStoredImage(previous.avatarUrl);
-    res.json(updated);
+    res.json({ ...updated, twoFactorEnabled: !!updated.twoFactorEnabledAt, twoFactorEnabledAt: undefined });
   } catch (err) {
     console.error('Update own avatar failed:', err.message);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
@@ -130,6 +133,50 @@ router.patch('/me/password', auth, passwordChangeLimiter, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Change own password failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// POST /api/agents/me/2fa/disable — turn off 2FA for my own account. Setup
+// itself lives at POST /api/auth/2fa/setup-init + setup-confirm (see
+// routes/twoFactor.js), since that flow is also used mid-login when the
+// org requires 2FA and this agent hasn't set one up yet — this endpoint,
+// by contrast, is only ever reached from an already-authenticated session
+// (ProfileModal.jsx), so it can require the current password same as
+// changing it does, rather than accepting a pendingToken.
+router.post('/me/2fa/disable', auth, passwordChangeLimiter, async (req, res) => {
+  try {
+    const agentRow = await prisma.agent.findUnique({ where: { id: req.agent.id } });
+    const valid = await bcrypt.compare(req.body?.password || '', agentRow.password);
+    if (!valid) return res.status(401).json({ error: 'รหัสผ่านไม่ถูกต้อง' });
+    await prisma.agent.update({
+      where: { id: req.agent.id },
+      data: { twoFactorSecret: null, twoFactorEnabledAt: null, twoFactorBackupCodes: [] },
+    });
+    res.json({ enabled: false });
+  } catch (err) {
+    console.error('Disable own 2FA failed:', err.message);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// POST /api/agents/:id/2fa/reset — admin-only lockout recovery: an agent
+// who's lost both their authenticator device AND their backup codes has no
+// other way back into their own account (that's the whole point of 2FA —
+// see schema.prisma), so an admin clearing it for them here is the
+// designed escape hatch, not a bug. Leaves the password untouched; the
+// agent logs in with it as usual and, if "บังคับใช้ 2FA" is still on, is
+// walked straight back through setup (routes/auth.js POST /login).
+router.post('/:id/2fa/reset', auth, async (req, res) => {
+  if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    await prisma.agent.update({
+      where: { id: req.params.id },
+      data: { twoFactorSecret: null, twoFactorEnabledAt: null, twoFactorBackupCodes: [] },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Admin reset agent 2FA failed:', err.message);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' });
   }
 });

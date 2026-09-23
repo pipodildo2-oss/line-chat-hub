@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
-import { X, Check, Camera, Loader2, Monitor, Sun } from 'lucide-react';
+import { X, Check, Camera, Loader2, Monitor, Sun, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import TwoFactorSetup from './TwoFactorSetup';
 
 // Keeps this in sync with the ~10MB cap LINE itself enforces on original
 // images (see imageStorage.js / line.service.js) — no reason to let an
@@ -28,6 +29,35 @@ export default function ProfileModal({ onClose }) {
   const [error, setError] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef(null);
+
+  const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
+  const [showDisableTwoFactor, setShowDisableTwoFactor] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disabling, setDisabling] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState('');
+  const [twoFactorJustEnabled, setTwoFactorJustEnabled] = useState(false);
+
+  function handleTwoFactorSetupComplete() {
+    updateAgent({ twoFactorEnabled: true });
+    setShowTwoFactorSetup(false);
+    setTwoFactorJustEnabled(true);
+    setTimeout(() => setTwoFactorJustEnabled(false), 4000);
+  }
+
+  async function handleDisableTwoFactor() {
+    setTwoFactorError('');
+    setDisabling(true);
+    try {
+      await axios.post('/api/agents/me/2fa/disable', { password: disablePassword });
+      updateAgent({ twoFactorEnabled: false });
+      setShowDisableTwoFactor(false);
+      setDisablePassword('');
+    } catch (err) {
+      setTwoFactorError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally {
+      setDisabling(false);
+    }
+  }
 
   function pickAvatarFile() {
     fileInputRef.current?.click();
@@ -180,6 +210,71 @@ export default function ProfileModal({ onClose }) {
               เปลี่ยนรหัสผ่าน
             </button>
           )}
+
+          <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-medium text-gray-600 dark:text-slate-300">ยืนยันตัวตนสองขั้นตอน (2FA)</p>
+              {agent?.twoFactorEnabled ? (
+                <span className="flex items-center gap-1 text-[11px] text-aurora-teal font-medium"><ShieldCheck size={13} /> เปิดใช้งานอยู่</span>
+              ) : (
+                <span className="text-[11px] text-gray-400 dark:text-slate-500">ยังไม่ได้เปิดใช้งาน</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+              เพิ่มความปลอดภัยด้วยรหัสจากแอป Authenticator ทุกครั้งที่เข้าสู่ระบบ
+            </p>
+
+            {twoFactorJustEnabled && (
+              <p className="flex items-center gap-1 text-xs text-aurora-teal mb-2"><Check size={13} /> เปิดใช้งาน 2FA เรียบร้อยแล้ว</p>
+            )}
+
+            {showTwoFactorSetup ? (
+              <div className="border border-gray-100 dark:border-slate-800 rounded-lg p-3">
+                <TwoFactorSetup onComplete={handleTwoFactorSetupComplete} onCancel={() => setShowTwoFactorSetup(false)} />
+              </div>
+            ) : agent?.twoFactorEnabled ? (
+              showDisableTwoFactor ? (
+                <div className="space-y-2.5 border border-gray-100 dark:border-slate-800 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 dark:text-slate-400">กรอกรหัสผ่านปัจจุบันเพื่อปิดใช้งาน 2FA</p>
+                  <input type="password" className={fieldCls} placeholder="รหัสผ่านปัจจุบัน" value={disablePassword} onChange={e => setDisablePassword(e.target.value)} />
+                  {twoFactorError && <p className="text-rose-400 text-xs">{twoFactorError}</p>}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDisableTwoFactor}
+                      disabled={disabling || !disablePassword}
+                      className="text-sm text-rose-400 hover:text-rose-300 font-medium border border-rose-500/30 rounded-lg px-3 py-1.5 hover:bg-rose-500/10 disabled:opacity-40 transition-colors"
+                    >
+                      {disabling ? 'กำลังปิดใช้งาน...' : 'ยืนยันปิดใช้งาน'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowDisableTwoFactor(false); setDisablePassword(''); setTwoFactorError(''); }}
+                      className="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDisableTwoFactor(true)}
+                  className="flex items-center gap-1.5 text-sm text-rose-400 hover:text-rose-300 font-medium border border-rose-500/30 rounded-lg px-3 py-1.5 hover:bg-rose-500/10 transition-colors"
+                >
+                  <ShieldOff size={14} /> ปิดใช้งาน 2FA
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowTwoFactorSetup(true)}
+                className="flex items-center gap-1.5 text-sm text-aurora-teal hover:brightness-110 font-medium border border-aurora-teal/30 rounded-lg px-3 py-1.5 hover:bg-aurora-teal/10 transition-colors"
+              >
+                <ShieldCheck size={14} /> เปิดใช้งาน 2FA
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3 mt-5">

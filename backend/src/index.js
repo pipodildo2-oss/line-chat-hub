@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
+const twoFactorRoutes = require('./routes/twoFactor');
 const channelRoutes = require('./routes/channels');
 const conversationRoutes = require('./routes/conversations');
 const messageRoutes = require('./routes/messages');
@@ -158,6 +159,7 @@ app.use(express.json({ limit: '30mb' }));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/2fa', twoFactorRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);

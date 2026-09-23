@@ -8,33 +8,56 @@ datasource db {
 }
 
 model Agent {
-  id            String         @id @default(cuid())
-  name          String
-  email         String         @unique
-  password      String
-  role          String         @default("agent") // admin | agent
-  language      String         @default("th") // th | en
-  status        String         @default("online") // online | offline | break
-  avatarUrl     String?        // profile picture, stored as a file path via imageStorage.js (same pattern as message/quick-reply images) — never a raw base64 blob in the DB
-  createdAt     DateTime       @default(now())
-  conversations Conversation[]
-  channels      AgentChannel[]
-  messageViews  MessageView[]
-  sentMessages  Message[]      @relation("MessageSender")
+  id                   String               @id @default(cuid())
+  name                 String
+  email                String               @unique
+  password             String
+  role                 String               @default("agent") // admin | agent
+  language             String               @default("th") // th | en
+  status               String               @default("online") // online | offline | break
+  avatarUrl            String? // profile picture, stored as a file path via imageStorage.js (same pattern as message/quick-reply images) — never a raw base64 blob in the DB
+  // ---------- Two-factor auth (TOTP, backend/src/lib/twoFactor.js) ----------
+  // Set as soon as setup begins (see routes/twoFactor.js's setup-init), but
+  // NOT yet enforced at login until twoFactorEnabledAt is also set — an
+  // agent who starts scanning a QR code and never finishes shouldn't get
+  // silently locked out by a secret nothing has confirmed they actually
+  // hold. Never selected into any API response (see routes/auth.js,
+  // routes/agents.js — only the derived `twoFactorEnabled` boolean ever is).
+  twoFactorSecret      String?
+  // Null = 2FA not active for this agent, regardless of whether
+  // twoFactorSecret is set (see above). Non-null is what routes/auth.js's
+  // login checks to decide whether this agent must be challenged for a
+  // code — deliberately independent of SystemSetting.twoFactorRequired,
+  // which only controls whether agents WITHOUT 2FA are forced to set one up
+  // (see routes/auth.js): once an agent has turned this on for their own
+  // account, an admin later turning the org-wide requirement back off must
+  // not silently weaken THEIR account's protection.
+  twoFactorEnabledAt   DateTime?
+  // Bcrypt-hashed one-time recovery codes (same convention as `password`),
+  // generated once at setup time — see routes/twoFactor.js. Each is removed
+  // from this array the moment it's used, so a stolen/leaked code that's
+  // already been spent can't be replayed. Re-running setup (disable then
+  // re-enable) replaces the whole set.
+  twoFactorBackupCodes String[]             @default([])
+  createdAt            DateTime             @default(now())
+  conversations        Conversation[]
+  channels             AgentChannel[]
+  messageViews         MessageView[]
+  sentMessages         Message[]            @relation("MessageSender")
   // Purely organizational grouping (e.g. by team/department), same pattern as
   // LineChannel.categoryId below — admin creates a category by typing a name,
   // then assigns each teammate to at most one. Independent of `role`, which
   // still controls actual permissions.
-  categoryId    String?
-  category      AgentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  broadcastCampaigns BroadcastCampaign[]
-  upsellSubmissions UpsellSubmission[] @relation("UpsellSubmitter")
-  upsellReviews     UpsellSubmission[] @relation("UpsellReviewer")
-  quickReplyRequests QuickReplyRequest[] @relation("QuickReplyRequester")
-  quickReplyReviews  QuickReplyRequest[] @relation("QuickReplyReviewer")
-  quickReplyAuditLogs QuickReplyAuditLog[]
-  conversationNotes ConversationNote[]
-  activityLogs      AgentActivityLog[]
+  categoryId           String?
+  category             AgentCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  broadcastCampaigns   BroadcastCampaign[]
+  upsellSubmissions    UpsellSubmission[]   @relation("UpsellSubmitter")
+  upsellReviews        UpsellSubmission[]   @relation("UpsellReviewer")
+  quickReplyRequests   QuickReplyRequest[]  @relation("QuickReplyRequester")
+  quickReplyReviews    QuickReplyRequest[]  @relation("QuickReplyReviewer")
+  quickReplyAuditLogs  QuickReplyAuditLog[]
+  conversationNotes    ConversationNote[]
+  activityLogs         AgentActivityLog[]
 
   @@index([categoryId])
 }
@@ -51,27 +74,27 @@ model AgentCategory {
 }
 
 model LineChannel {
-  id                         String         @id @default(cuid())
+  id                         String               @id @default(cuid())
   name                       String
-  channelId                  String         @unique
+  channelId                  String               @unique
   channelSecret              String
   accessToken                String
-  lineId                     String?        // the public @handle customers use to add the OA as a friend
+  lineId                     String? // the public @handle customers use to add the OA as a friend
   pictureUrl                 String?
-  webhookRedeliveryConfirmed Boolean        @default(false) // agent manually confirms they enabled this in LINE console (no API to check it)
+  webhookRedeliveryConfirmed Boolean              @default(false) // agent manually confirms they enabled this in LINE console (no API to check it)
   // "ปิดใช้งาน" (soft-disable) — stops new incoming webhook events from being
   // processed and blocks sending new messages through this channel, but keeps
   // every existing conversation/message/tag intact and reversible by flipping
   // this back to true. Deliberately separate from the hard DELETE below (which
   // cascades and permanently destroys all of it) — this is the safe default
   // action for "we're done with this LINE OA for now."
-  active                     Boolean        @default(true)
-  createdAt                  DateTime       @default(now())
+  active                     Boolean              @default(true)
+  createdAt                  DateTime             @default(now())
   conversations              Conversation[]
   agents                     AgentChannel[]
   quickReplyCategories       QuickReplyCategory[]
   categoryId                 String?
-  category                   ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category                   ChannelCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@index([categoryId])
 }
@@ -83,9 +106,9 @@ model LineChannel {
 // Optionally nested one level deeper under a ChannelCategoryGroup ("หมวดหมู่ใหญ่") —
 // see below.
 model ChannelCategory {
-  id        String        @id @default(cuid())
-  name      String        @unique
-  createdAt DateTime      @default(now())
+  id        String                @id @default(cuid())
+  name      String                @unique
+  createdAt DateTime              @default(now())
   channels  LineChannel[]
   groupId   String?
   group     ChannelCategoryGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -99,9 +122,9 @@ model ChannelCategory {
 // ChannelCategory itself. Deleting a group doesn't delete its categories, just
 // ungroups them (onDelete: SetNull above).
 model ChannelCategoryGroup {
-  id         String             @id @default(cuid())
-  name       String             @unique
-  createdAt  DateTime           @default(now())
+  id         String            @id @default(cuid())
+  name       String            @unique
+  createdAt  DateTime          @default(now())
   categories ChannelCategory[]
 }
 
@@ -110,9 +133,9 @@ model ChannelCategoryGroup {
 // category has zero channels linked, it shows for every OA (same "empty = unrestricted"
 // convention as AgentChannel below).
 model QuickReplyCategory {
-  id           String        @id @default(cuid())
-  name         String        @unique
-  createdAt    DateTime      @default(now())
+  id           String              @id @default(cuid())
+  name         String              @unique
+  createdAt    DateTime            @default(now())
   quickReplies QuickReply[]
   channels     LineChannel[]
   requests     QuickReplyRequest[]
@@ -136,26 +159,26 @@ model QuickReplyCategory {
 //   a delete request must NOT clean up those files, since the live item still
 //   owns them.
 model QuickReplyRequest {
-  id                 String    @id @default(cuid())
-  type               String    @default("create") // create | delete
+  id                 String             @id @default(cuid())
+  type               String             @default("create") // create | delete
   categoryId         String
   category           QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind               String    @default("reply")
+  kind               String             @default("reply")
   name               String
   content            String
-  imageData          String?   // legacy single-image column, superseded by `images` — kept read-only for old rows
-  images             String[]  @default([]) // up to 5 stored image paths (imageStorage.js), same convention as QuickReply.images
-  status             String    @default("pending") // pending | needs_revision | approved | rejected
+  imageData          String? // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images             String[]           @default([]) // up to 5 stored image paths (imageStorage.js), same convention as QuickReply.images
+  status             String             @default("pending") // pending | needs_revision | approved | rejected
   requestedById      String
-  requestedBy        Agent     @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
-  reviewNote         String?   // admin's feedback — why it needs revision / was rejected
+  requestedBy        Agent              @relation("QuickReplyRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewNote         String? // admin's feedback — why it needs revision / was rejected
   reviewedById       String?
-  reviewedBy         Agent?    @relation("QuickReplyReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedBy         Agent?             @relation("QuickReplyReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt         DateTime?
-  targetQuickReplyId String?   // set only for type "delete" — the live item this request wants removed
-  targetQuickReply   QuickReply? @relation("QuickReplyDeleteTarget", fields: [targetQuickReplyId], references: [id], onDelete: SetNull)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  targetQuickReplyId String? // set only for type "delete" — the live item this request wants removed
+  targetQuickReply   QuickReply?        @relation("QuickReplyDeleteTarget", fields: [targetQuickReplyId], references: [id], onDelete: SetNull)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([status])
   @@index([requestedById])
@@ -163,19 +186,19 @@ model QuickReplyRequest {
 }
 
 model QuickReply {
-  id             String             @id @default(cuid())
+  id             String              @id @default(cuid())
   categoryId     String
-  category       QuickReplyCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind           String             @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
-  name           String             // internal shortcut name/title agents see in the picker
-  content        String             // message text
-  imageData      String?            // legacy single-image column, superseded by `images` — kept read-only for old rows
-  images         String[]           @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
-  order          Int                @default(0) // display position within its category, agent-controlled
-  active         Boolean            @default(true) // "เปิด/ปิด" — hides it from the agent picker
-                                                    // and blocks sending it, reversibly (same idea
-                                                    // as LineChannel.active)
-  createdAt      DateTime           @default(now())
+  category       QuickReplyCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind           String              @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
+  name           String // internal shortcut name/title agents see in the picker
+  content        String // message text
+  imageData      String? // legacy single-image column, superseded by `images` — kept read-only for old rows
+  images         String[]            @default([]) // up to 5 attached images, stored as file paths (imageStorage.js)
+  order          Int                 @default(0) // display position within its category, agent-controlled
+  active         Boolean             @default(true) // "เปิด/ปิด" — hides it from the agent picker
+  // and blocks sending it, reversibly (same idea
+  // as LineChannel.active)
+  createdAt      DateTime            @default(now())
   deleteRequests QuickReplyRequest[] @relation("QuickReplyDeleteTarget")
 
   @@index([categoryId])
@@ -191,13 +214,13 @@ model QuickReply {
 // after that (same reasoning as Message.senderName alongside senderId).
 model QuickReplyAuditLog {
   id           String   @id @default(cuid())
-  action       String   // created | updated | deleted | category_created | category_updated | category_deleted | request_submitted | request_resubmitted | request_approved | request_needs_revision | request_rejected | request_withdrawn
-  itemName     String?  // snapshot of the quick reply / request's name at the time of the action
-  categoryName String?  // snapshot of the category name at the time of the action
-  detail       String?  // extra context — e.g. the admin's reviewNote, or which agent a request belonged to
+  action       String // created | updated | deleted | category_created | category_updated | category_deleted | request_submitted | request_resubmitted | request_approved | request_needs_revision | request_rejected | request_withdrawn
+  itemName     String? // snapshot of the quick reply / request's name at the time of the action
+  categoryName String? // snapshot of the category name at the time of the action
+  detail       String? // extra context — e.g. the admin's reviewNote, or which agent a request belonged to
   actorId      String?
   actor        Agent?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  actorName    String   // snapshotted alongside actorId so the entry still reads right if that agent account is later deleted
+  actorName    String // snapshotted alongside actorId so the entry still reads right if that agent account is later deleted
   createdAt    DateTime @default(now())
 
   @@index([createdAt])
@@ -218,10 +241,10 @@ model AgentChannel {
 }
 
 model Tag {
-  id        String            @id @default(cuid())
-  name      String            @unique
-  color     String            @default("#6366f1")
-  createdAt DateTime          @default(now())
+  id            String            @id @default(cuid())
+  name          String            @unique
+  color         String            @default("#6366f1")
+  createdAt     DateTime          @default(now())
   conversations ConversationTag[]
 }
 
@@ -255,10 +278,10 @@ model ConversationNote {
 }
 
 model Conversation {
-  id          String      @id @default(cuid())
-  lineUserId  String
-  displayName String?
-  displayNameCustomized Boolean @default(false) // true once an agent manually renames the customer — stops incoming messages from reverting it to LINE's profile name
+  id                    String               @id @default(cuid())
+  lineUserId            String
+  displayName           String?
+  displayNameCustomized Boolean              @default(false) // true once an agent manually renames the customer — stops incoming messages from reverting it to LINE's profile name
   // The customer's actual LINE profile name, kept in sync from every incoming
   // webhook message REGARDLESS of displayNameCustomized (unlike displayName
   // above, which stops following LINE once an agent renames the customer) —
@@ -267,43 +290,43 @@ model Conversation {
   // was already renamed before this field existed and hasn't messaged again
   // since (the original name was never stored anywhere and can't be
   // recovered) — see seed.js's one-time backfill for everyone else.
-  lineDisplayName String?
-  pictureUrl  String?
-  channelId   String
-  channel     LineChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  agentId     String?
-  agent       Agent?      @relation(fields: [agentId], references: [id])
-  status      String      @default("open") // open | pending | stopped | closed — see conversations.js's CONVERSATION_STATUSES
-  lifecycleStage String   @default("new") // new | contacted | qualified | negotiation | won | lost
+  lineDisplayName       String?
+  pictureUrl            String?
+  channelId             String
+  channel               LineChannel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agentId               String?
+  agent                 Agent?               @relation(fields: [agentId], references: [id])
+  status                String               @default("open") // open | pending | stopped | closed — see conversations.js's CONVERSATION_STATUSES
+  lifecycleStage        String               @default("new") // new | contacted | qualified | negotiation | won | lost
   // Legacy single free-text note — superseded by noteEntries below (an
   // agent can now add multiple, timestamped notes instead of one block of
   // text). Left in place, unused by the UI going forward, so no historical
   // note is lost; any pre-existing value here is migrated into a first
   // ConversationNote row by seed.js's one-time backfill.
-  notes       String?
-  noteEntries ConversationNote[]
+  notes                 String?
+  noteEntries           ConversationNote[]
   // LINE gives us NO error when pushing a message to a user who has blocked
   // the OA (200 OK, message just silently never arrives) — the 'unfollow'
   // webhook event is the only real signal, so this flag is set from there
   // (see line.service.js). Also manually toggleable from the customer panel,
   // since a block that happened before this feature existed can't be detected
   // retroactively — there's no API to query current block status.
-  blocked     Boolean     @default(false)
-  blockedAt   DateTime?
+  blocked               Boolean              @default(false)
+  blockedAt             DateTime?
   // Manual "watch this customer" flag, visible/settable by every role (unlike
   // `blocked` above, which is admin-only) — e.g. a history of rudeness,
   // chargebacks, or anything else the team should be cautious about before
   // replying. cautionReason holds the free-text "why".
-  caution       Boolean     @default(false)
-  cautionReason String?
-  messages    Message[]
-  tags        ConversationTag[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  lastMessageAt DateTime?
-  broadcastRecipients BroadcastRecipient[]
-  upsellSubmissions UpsellSubmission[]
-  activityLogs AgentActivityLog[]
+  caution               Boolean              @default(false)
+  cautionReason         String?
+  messages              Message[]
+  tags                  ConversationTag[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  lastMessageAt         DateTime?
+  broadcastRecipients   BroadcastRecipient[]
+  upsellSubmissions     UpsellSubmission[]
+  activityLogs          AgentActivityLog[]
 
   @@unique([lineUserId, channelId])
   @@index([channelId])
@@ -321,18 +344,18 @@ model Conversation {
 // campaign's createdAt in each recipient's conversation (see broadcasts.js),
 // so it always reflects live conversation state instead of going stale.
 model BroadcastCampaign {
-  id              String   @id @default(cuid())
+  id              String               @id @default(cuid())
   createdById     String
-  createdBy       Agent    @relation(fields: [createdById], references: [id])
+  createdBy       Agent                @relation(fields: [createdById], references: [id])
   message         String?
-  images          String?  // JSON array of stored "/uploads/..." paths (see imageStorage.js), null if text-only
-  filters         String?  // JSON snapshot of the filter criteria used to pick recipients, for reference — null when recipients were hand-picked instead
-  status          String   @default("sending") // sending | completed
-  totalRecipients Int      @default(0)
-  successCount    Int      @default(0)
-  failedCount     Int      @default(0)
-  skippedCount    Int      @default(0) // blocked customers / disabled channels, auto-excluded before any LINE call
-  createdAt       DateTime @default(now())
+  images          String? // JSON array of stored "/uploads/..." paths (see imageStorage.js), null if text-only
+  filters         String? // JSON snapshot of the filter criteria used to pick recipients, for reference — null when recipients were hand-picked instead
+  status          String               @default("sending") // sending | completed
+  totalRecipients Int                  @default(0)
+  successCount    Int                  @default(0)
+  failedCount     Int                  @default(0)
+  skippedCount    Int                  @default(0) // blocked customers / disabled channels, auto-excluded before any LINE call
+  createdAt       DateTime             @default(now())
   completedAt     DateTime?
   recipients      BroadcastRecipient[]
 
@@ -342,36 +365,36 @@ model BroadcastCampaign {
 // One row per customer targeted by a campaign — records the actual outcome for
 // that customer, independent of how many Message rows the send produced.
 model BroadcastRecipient {
-  id             String   @id @default(cuid())
+  id             String            @id @default(cuid())
   campaignId     String
   campaign       BroadcastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  status         String   // sent | failed | skipped_blocked | skipped_channel_inactive
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  status         String // sent | failed | skipped_blocked | skipped_channel_inactive
   error          String?
   sentAt         DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime          @default(now())
 
   @@index([campaignId])
   @@index([conversationId])
 }
 
 model Message {
-  id             String       @id @default(cuid())
+  id             String                 @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         String       // user | agent | bot
+  conversation   Conversation           @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String // user | agent | bot
   senderName     String?
-  senderId       String?      // Agent.id who sent this (only set for sender: 'agent'). Nullable — existing
-                               // rows from before this field was added stay null; not backfilled.
-  senderAgent    Agent?       @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  type           String       @default("text") // text | image | sticker | audio | video | location
+  senderId       String? // Agent.id who sent this (only set for sender: 'agent'). Nullable — existing
+  // rows from before this field was added stay null; not backfilled.
+  senderAgent    Agent?                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  type           String                 @default("text") // text | image | sticker | audio | video | location
   content        String
-  metadata       String?      // JSON string for images, stickers etc
-  imageData      String?      // base64 data URL for images an agent attached & sent (LINE fetches it via a public route)
-  read           Boolean      @default(false)
-  lineMessageId  String?      @unique // LINE's own message id — used to reject duplicate webhook redeliveries
-  createdAt      DateTime     @default(now())
+  metadata       String? // JSON string for images, stickers etc
+  imageData      String? // base64 data URL for images an agent attached & sent (LINE fetches it via a public route)
+  read           Boolean                @default(false)
+  lineMessageId  String?                @unique // LINE's own message id — used to reject duplicate webhook redeliveries
+  createdAt      DateTime               @default(now())
   views          MessageView[]
   upsellItems    UpsellSubmissionItem[]
 
@@ -379,14 +402,14 @@ model Message {
   // freely-typed agent text messages sent to a customer via the composer, and
   // only going forward from when this feature shipped (no historical backfill).
   // Powers the admin-only Report page used for KPI review.
-  flagged        Boolean      @default(false)
-  flagSeverity   String?      // "minor" | "severe" — only set when flagged
-  flagReason     String?      // short Thai explanation from the AI, shown on the Report page
+  flagged      Boolean @default(false)
+  flagSeverity String? // "minor" | "severe" — only set when flagged
+  flagReason   String? // short Thai explanation from the AI, shown on the Report page
   // Which check flagged this — "moderation" (bad words/spam, moderation.service.js)
   // or "link" (unauthorized link, linkGuard.js). Null for rows flagged before
   // this field existed — the ตรวจสอบ report treats null the same as "moderation"
   // for display, since that's the only category that existed back then.
-  flagCategory   String?
+  flagCategory String?
 
   @@index([conversationId, createdAt])
   @@index([flagged])
@@ -443,12 +466,12 @@ model MessageView {
 // open can't be individually traced to one specific reply when the same
 // still-unanswered message was opened more than once).
 model AgentActivityLog {
-  id             String   @id @default(cuid())
-  agentId        String
-  agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  kind           String   // 'view' | 'self_reply' | 'close'
+  id              String       @id @default(cuid())
+  agentId         String
+  agent           Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  kind            String // 'view' | 'self_reply' | 'close'
   // Elapsed seconds from a customer's chat first being opened while still
   // unread/unanswered ("แชทใหม่") to the action that ended that wait — the
   // conversation report's "ความเร็วตอบ" and "ความเร็วปิดเคส" columns. Set on
@@ -472,7 +495,7 @@ model AgentActivityLog {
   // qualifying 'view' row exists (e.g. closed without ever being opened
   // while unanswered), same "no measurement" convention as 'self_reply'.
   responseSeconds Int?
-  createdAt      DateTime @default(now())
+  createdAt       DateTime     @default(now())
 
   @@index([agentId, kind])
   @@index([conversationId])
@@ -501,18 +524,18 @@ model ApprovedLink {
 // @unique on UpsellSubmissionItem.messageId below, not just client-side UI —
 // a second agent's submit attempt hits a real DB constraint violation.
 model UpsellSubmission {
-  id             String    @id @default(cuid())
+  id             String                 @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation           @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   agentId        String
-  agent          Agent     @relation("UpsellSubmitter", fields: [agentId], references: [id])
-  status         String    @default("pending") // pending | approved | rejected
-  amount         Float?    // baht, filled in by the reviewer alongside the ผ่าน/ไม่ผ่าน decision
+  agent          Agent                  @relation("UpsellSubmitter", fields: [agentId], references: [id])
+  status         String                 @default("pending") // pending | approved | rejected
+  amount         Float? // baht, filled in by the reviewer alongside the ผ่าน/ไม่ผ่าน decision
   reviewNote     String?
   reviewedById   String?
-  reviewedBy     Agent?    @relation("UpsellReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedBy     Agent?                 @relation("UpsellReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime               @default(now())
   items          UpsellSubmissionItem[]
 
   @@index([agentId])
@@ -529,12 +552,12 @@ model UpsellSubmission {
 // pending/approved rows," so the rejected row is instead just left in place
 // as history and the new claim gets its own row.
 model UpsellSubmissionItem {
-  id           String   @id @default(cuid())
+  id           String           @id @default(cuid())
   submissionId String
   submission   UpsellSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   messageId    String
-  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
+  message      Message          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now())
 
   @@index([submissionId])
   @@index([messageId])
@@ -547,7 +570,16 @@ model UpsellSubmissionItem {
 // use anywhere else. Always read/written through the fixed id "singleton"
 // (see backend/src/lib/systemSettings.js) so there's exactly one row ever.
 model SystemSetting {
-  id                       String   @id @default("singleton")
+  id                           String   @id @default("singleton")
+  // "บังคับใช้ 2FA สำหรับพนักงานทุกคน" — Settings > "ระบบ", admin-only. When
+  // true, an agent who doesn't have 2FA on their own account yet (Agent.
+  // twoFactorEnabledAt null) is forced through setup right after their
+  // password is verified at login, before they reach the app (see
+  // routes/auth.js POST /login and routes/twoFactor.js). Turning this back
+  // off only stops forcing agents who've never set one up — it does NOT
+  // disable 2FA for an agent who already turned it on for themselves (see
+  // Agent.twoFactorEnabledAt above for why that's deliberate).
+  twoFactorRequired            Boolean  @default(false)
   // How long (in seconds), counted from EACH agent's own MessageView.viewedAt
   // (when they personally opened a still-unanswered conversation), a reply
   // still counts as "answered in time" for THAT agent specifically — see
@@ -557,37 +589,37 @@ model SystemSetting {
   // who opened it right away, and a teammate's timely reply does not save
   // someone whose own deadline had already passed. Settings > "ระบบ" in the
   // frontend is the only place this gets changed.
-  agentConductGraceSeconds Int      @default(60)
+  agentConductGraceSeconds     Int      @default(60)
   // Below this self-reply rate (see AgentActivityLog above for how it's
   // computed), a row in the "อัตราการตอบเทียบกับการเปิดดู" table gets
   // highlighted red — a visual cue only, doesn't affect any other logic.
   // Settings > "ระบบ" is the only place this gets changed.
-  responseRateThresholdPercent Int  @default(50)
+  responseRateThresholdPercent Int      @default(50)
   // Minutes of no browser activity (mouse/keyboard/touch — see AfkTracker.jsx)
   // before an agent is auto-marked away and logged out client-side. 0 =
   // feature off (default, so it doesn't start logging anyone out until an
   // admin explicitly opts in). Settings > "ระบบ" is the only place this gets
   // changed.
-  afkMinutes               Int      @default(0)
+  afkMinutes                   Int      @default(0)
   // Telegram bot credentials for the monthly upsell-score notification below
   // — write-only from the frontend's perspective, same pattern as
   // LineChannel.accessToken (see channels.js): never read back once saved,
   // settings.js exposes only a `telegramBotTokenSet` boolean instead of the
   // real value.
-  telegramBotToken         String?
-  telegramChatId           String?
+  telegramBotToken             String?
+  telegramChatId               String?
   // Whether the monthly job (telegramReportScheduler.js) is actually allowed
   // to fire — kept independent of whether credentials are filled in, so an
   // admin can save a token/chat id ahead of time without it going live yet.
-  telegramReportEnabled    Boolean  @default(false)
-  telegramReportDay        Int      @default(1)  // day of month, 1-28 (29-31 would skip short months)
-  telegramReportHour       Int      @default(9)   // 0-23, Asia/Bangkok wall-clock time
-  telegramReportMinute     Int      @default(0)   // 0-59
+  telegramReportEnabled        Boolean  @default(false)
+  telegramReportDay            Int      @default(1) // day of month, 1-28 (29-31 would skip short months)
+  telegramReportHour           Int      @default(9) // 0-23, Asia/Bangkok wall-clock time
+  telegramReportMinute         Int      @default(0) // 0-59
   // "YYYY-MM" of the last upsell-score period actually sent to Telegram —
   // both the scheduler and the manual "ส่งตอนนี้" button write this after a
   // successful send, purely so the scheduler never re-sends the same
   // month's numbers twice (e.g. if it's also triggered manually earlier that
   // day, or the interval check fires more than once in the same minute).
-  telegramLastSentPeriod   String?
-  updatedAt                DateTime @updatedAt
+  telegramLastSentPeriod       String?
+  updatedAt                    DateTime @updatedAt
 }

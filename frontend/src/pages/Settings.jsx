@@ -429,6 +429,9 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!agentItem.twoFactorEnabled);
+  const [resettingTwoFactor, setResettingTwoFactor] = useState(false);
+  const [twoFactorResetDone, setTwoFactorResetDone] = useState(false);
   const [error, setError] = useState('');
 
   const fieldCls = 'w-full border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aurora-teal placeholder:text-gray-400 dark:placeholder:text-slate-500';
@@ -459,6 +462,22 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
     } catch (err) {
       setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
     } finally { setResetting(false); }
+  }
+
+  // Only ever needed if this agent has lost both their authenticator device
+  // AND their backup codes — clears their 2FA so they can set it up fresh
+  // on next login (see routes/agents.js POST /:id/2fa/reset). Their
+  // password is untouched.
+  async function handleResetTwoFactor() {
+    setResettingTwoFactor(true); setError('');
+    try {
+      await axios.post(`/api/agents/${agentItem.id}/2fa/reset`);
+      setTwoFactorEnabled(false);
+      setTwoFactorResetDone(true);
+      setTimeout(() => setTwoFactorResetDone(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } finally { setResettingTwoFactor(false); }
   }
 
   return (
@@ -532,6 +551,33 @@ function AgentEditModal({ agentItem, channels, categories, onSave, onClose, t })
               </button>
             </div>
             {resetDone && <span className="flex items-center gap-1 text-xs text-aurora-teal mt-1.5"><Check size={13} /> เปลี่ยนรหัสผ่านแล้ว</span>}
+          </div>
+
+          <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className={labelCls + ' mb-0'}>2FA</label>
+              <span className={`text-[11px] font-medium ${twoFactorEnabled ? 'text-aurora-teal' : 'text-gray-400 dark:text-slate-500'}`}>
+                {twoFactorEnabled ? 'เปิดใช้งานอยู่' : 'ยังไม่ได้เปิดใช้งาน'}
+              </span>
+            </div>
+            {twoFactorEnabled ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleResetTwoFactor}
+                  disabled={resettingTwoFactor}
+                  className="text-sm text-rose-400 hover:text-rose-300 font-medium border border-rose-500/30 rounded-lg px-3 py-2 hover:bg-rose-500/10 disabled:opacity-40 transition-colors"
+                >
+                  {resettingTwoFactor ? 'กำลังรีเซ็ต...' : 'รีเซ็ต 2FA'}
+                </button>
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1.5">
+                  ใช้เมื่อพนักงานทำมือถือหายและใช้รหัสสำรองไม่ได้แล้ว — พนักงานจะตั้งค่า 2FA ใหม่ได้ในครั้งถัดไปที่ล็อกอิน รหัสผ่านจะไม่เปลี่ยน
+                </p>
+                {twoFactorResetDone && <span className="flex items-center gap-1 text-xs text-aurora-teal mt-1.5"><Check size={13} /> รีเซ็ตแล้ว</span>}
+              </>
+            ) : (
+              <p className="text-[11px] text-gray-400 dark:text-slate-500">พนักงานคนนี้ยังไม่ได้ตั้งค่า 2FA ของตัวเอง</p>
+            )}
           </div>
         </div>
 
@@ -795,6 +841,10 @@ export default function Settings() {
   const [afkInput, setAfkInput] = useState('');
   const [savingAfk, setSavingAfk] = useState(false);
   const [afkSaved, setAfkSaved] = useState(false);
+  // "บังคับใช้ 2FA" — a plain boolean, so it saves the moment it's clicked
+  // rather than needing a draft-input + separate save button like the
+  // number fields above.
+  const [savingTwoFactorRequired, setSavingTwoFactorRequired] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -1204,6 +1254,18 @@ export default function Settings() {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingAfk(false);
+    }
+  }
+
+  async function toggleTwoFactorRequired() {
+    setSavingTwoFactorRequired(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { twoFactorRequired: !systemSettings?.twoFactorRequired });
+      setSystemSettings(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingTwoFactorRequired(false);
     }
   }
 
@@ -1834,6 +1896,33 @@ export default function Settings() {
             ) : (
               <p className="text-sm text-gray-900 dark:text-slate-100">
                 ค่าปัจจุบัน: {systemSettings ? (systemSettings.afkMinutes > 0 ? `${systemSettings.afkMinutes} นาที` : 'ปิดใช้งาน') : '...'}
+                <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+              </p>
+            )}
+          </div>
+
+          <div className={cardCls}>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">บังคับใช้ 2FA สำหรับพนักงานทุกคน</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+              เมื่อเปิด พนักงานที่ยังไม่เคยตั้งค่ายืนยันตัวตนสองขั้นตอน (2FA) จะถูกบังคับให้ตั้งค่าก่อนเข้าใช้งานได้ในครั้งถัดไปที่ล็อกอิน —
+              พนักงานที่เปิด 2FA ของตัวเองไว้แล้วจะยังคงต้องกรอกรหัสทุกครั้งต่อไป แม้จะปิดสวิตช์นี้ในภายหลังก็ตาม
+            </p>
+            {agent?.role === 'admin' ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleTwoFactorRequired}
+                  disabled={savingTwoFactorRequired || !systemSettings}
+                  className={`relative inline-flex overflow-hidden w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${systemSettings?.twoFactorRequired ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
+                >
+                  <span className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${systemSettings?.twoFactorRequired ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+                <span className="text-sm text-gray-600 dark:text-slate-300">
+                  {systemSettings ? (systemSettings.twoFactorRequired ? 'บังคับใช้อยู่' : 'ปิดใช้งาน') : '...'}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-900 dark:text-slate-100">
+                สถานะปัจจุบัน: {systemSettings ? (systemSettings.twoFactorRequired ? 'บังคับใช้อยู่' : 'ปิดใช้งาน') : '...'}
                 <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}

@@ -5,7 +5,7 @@
 // idle timeout, so that one route is deliberately not admin-gated.
 const router = require('express').Router();
 const auth = require('../middleware/auth');
-const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes } = require('../lib/systemSettings');
+const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes, setTwoFactorRequired } = require('../lib/systemSettings');
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -20,7 +20,7 @@ router.get('/system', auth, requireAdmin, async (req, res) => {
 // form actually changed) so each Settings > "ระบบ" field can be saved on
 // its own without needing to resend the others' current values.
 router.patch('/system', auth, requireAdmin, async (req, res) => {
-  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes } = req.body;
+  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes, twoFactorRequired } = req.body;
 
   if (agentConductGraceSeconds !== undefined) {
     const seconds = Number(agentConductGraceSeconds);
@@ -44,6 +44,10 @@ router.patch('/system', auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'เวลา AFK ต้องเป็นจำนวนเต็มนาที ระหว่าง 0-1440 (0 = ปิดใช้งาน)' });
     }
     await setAfkMinutes(minutes);
+  }
+
+  if (twoFactorRequired !== undefined) {
+    await setTwoFactorRequired(!!twoFactorRequired);
   }
 
   res.json(await getSystemSettings());

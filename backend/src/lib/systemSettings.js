@@ -6,6 +6,7 @@ const SINGLETON_ID = 'singleton';
 const DEFAULT_AGENT_CONDUCT_GRACE_SECONDS = 60;
 const DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT = 50;
 const DEFAULT_AFK_MINUTES = 0; // 0 = feature off
+const DEFAULT_TWO_FACTOR_REQUIRED = false;
 const DEFAULT_TELEGRAM_REPORT_DAY = 1;
 const DEFAULT_TELEGRAM_REPORT_HOUR = 9;
 const DEFAULT_TELEGRAM_REPORT_MINUTE = 0;
@@ -20,6 +21,7 @@ async function getSystemSettings() {
     agentConductGraceSeconds: row?.agentConductGraceSeconds ?? DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
     responseRateThresholdPercent: row?.responseRateThresholdPercent ?? DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
     afkMinutes: row?.afkMinutes ?? DEFAULT_AFK_MINUTES,
+    twoFactorRequired: row?.twoFactorRequired ?? DEFAULT_TWO_FACTOR_REQUIRED,
   };
 }
 
@@ -59,6 +61,19 @@ async function setAfkMinutes(minutes) {
     where: { id: SINGLETON_ID },
     update: { afkMinutes: minutes },
     create: { id: SINGLETON_ID, afkMinutes: minutes },
+  });
+}
+
+async function getTwoFactorRequired() {
+  const { twoFactorRequired } = await getSystemSettings();
+  return twoFactorRequired;
+}
+
+async function setTwoFactorRequired(required) {
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: { twoFactorRequired: required },
+    create: { id: SINGLETON_ID, twoFactorRequired: required },
   });
 }
 
@@ -122,6 +137,8 @@ module.exports = {
   setResponseRateThresholdPercent,
   getAfkMinutes,
   setAfkMinutes,
+  getTwoFactorRequired,
+  setTwoFactorRequired,
   getTelegramSettings,
   getTelegramCredentials,
   setTelegramSettings,
@@ -129,4 +146,5 @@ module.exports = {
   DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
   DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
   DEFAULT_AFK_MINUTES,
+  DEFAULT_TWO_FACTOR_REQUIRED,
 };
