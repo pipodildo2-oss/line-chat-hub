@@ -86,7 +86,7 @@ async function backfillMissingImageStorage() {
   // (imageStorage.js), not this file, so there's no real cycle, but keeping
   // this import lazy avoids the two files' load order mattering at all.
   const { getMessageContent } = require('../services/line.service');
-  const { saveBase64Image } = require('./imageStorage');
+  const { saveBase64Image, saveRawMedia } = require('./imageStorage');
 
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const stats = { scanned: 0, recovered: 0, expired: 0, retryable: 0 };
@@ -103,8 +103,12 @@ async function backfillMissingImageStorage() {
   let lastLoggedTime = Date.now();
   for (;;) {
     const page = await prisma.message.findMany({
-      where: { type: 'image', sender: 'user', lineMessageId: { not: null }, createdAt: { gte: since } },
-      select: { id: true, lineMessageId: true, metadata: true, createdAt: true, conversation: { select: { channel: true } } },
+      // Video and audio expire from LINE on the same ~2 week clock as images
+      // and are stored the same way, so they are rescued on the same terms.
+      // They were left out originally only because nothing downloaded them in
+      // the first place — see line.service.js.
+      where: { type: { in: ['image', 'video', 'audio'] }, sender: 'user', lineMessageId: { not: null }, createdAt: { gte: since } },
+      select: { id: true, type: true, lineMessageId: true, metadata: true, createdAt: true, conversation: { select: { channel: true } } },
       orderBy: { id: 'desc' },
       take: PAGE_SIZE,
       ...(pageCursor ? { cursor: { id: pageCursor }, skip: 1 } : {}),
@@ -127,7 +131,12 @@ async function backfillMissingImageStorage() {
           const { stream, contentType } = await withTimeout(getMessageContent(m.conversation.channel, m.lineMessageId), REQUEST_TIMEOUT_MS);
           const chunks = [];
           for await (const chunk of stream) chunks.push(chunk);
-          const storedPath = await saveBase64Image(`data:${contentType};base64,${Buffer.concat(chunks).toString('base64')}`);
+          const bytes = Buffer.concat(chunks);
+          // Images go through sharp's compression pipeline; video and audio are
+          // written as they arrived, since sharp can't read them at all.
+          const storedPath = m.type === 'image'
+            ? await saveBase64Image(`data:${contentType};base64,${bytes.toString('base64')}`)
+            : saveRawMedia(bytes, contentType).storedPath;
           if (storedPath) {
             const meta = { ...JSON.parse(m.metadata || '{}'), storedPath };
             await prisma.message.update({ where: { id: m.id }, data: { metadata: JSON.stringify(meta) } });

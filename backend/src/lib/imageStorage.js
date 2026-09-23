@@ -113,6 +113,49 @@ async function saveBase64Image(dataUrl) {
   return `/uploads/${id}.jpg`;
 }
 
+// Video and audio a customer sent, stored exactly as LINE delivered them.
+//
+// Separate from saveBase64Image above because that one runs everything through
+// sharp, which only understands still images — a video handed to it is simply
+// rejected, which is why customer video and audio were never stored at all and
+// still expire from LINE's side after about two weeks, the same way ~47,000
+// images did before they were given permanent copies. Nothing is re-encoded
+// here: the bytes are written as they arrived, since the point is to keep the
+// evidence, not to optimise it.
+const MEDIA_EXTENSIONS = {
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/x-m4v': 'm4v',
+  'video/3gpp': '3gp',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/mpeg': 'mp3',
+  'audio/amr': 'amr',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+};
+// A ceiling so one unusually long clip can't take a meaningful bite out of the
+// volume on its own. Anything larger is left unstored and logged by the caller
+// rather than silently dropped — it stays viewable until LINE expires it, and
+// the log is what makes that visible in time to raise the limit if real
+// traffic needs it.
+const MAX_MEDIA_BYTES = Number(process.env.MAX_MEDIA_MB || 60) * 1024 * 1024;
+
+function saveRawMedia(buffer, contentType) {
+  // LINE sends "video/mp4; charset=..." style values on some responses.
+  const base = String(contentType || '').split(';')[0].trim().toLowerCase();
+  const ext = MEDIA_EXTENSIONS[base];
+  if (!ext) return { storedPath: null, reason: `unsupported content type ${base || '(none)'}` };
+  if (buffer.length > MAX_MEDIA_BYTES) {
+    return { storedPath: null, reason: `${(buffer.length / 1024 / 1024).toFixed(1)}MB exceeds the ${MAX_MEDIA_MB_LABEL} limit` };
+  }
+  const id = crypto.randomBytes(16).toString('hex');
+  fs.writeFileSync(path.join(UPLOAD_DIR, `${id}.${ext}`), buffer);
+  return { storedPath: `/uploads/${id}.${ext}`, reason: null };
+}
+const MAX_MEDIA_MB_LABEL = `${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB`;
+
 // Given a stored full-image path (e.g. "/uploads/<id>.jpg"), returns the
 // matching thumbnail's public path — used when pushing previewImageUrl to LINE.
 function thumbPathFor(storedPath) {
@@ -141,4 +184,4 @@ function deleteStoredImage(storedPath) {
   fs.rm(path.join(UPLOAD_DIR, thumbFilename), { force: true }, () => {});
 }
 
-module.exports = { UPLOAD_DIR, saveBase64Image, thumbPathFor, isStoredPath, deleteStoredImage, isValidImageDataUrl };
+module.exports = { UPLOAD_DIR, saveBase64Image, saveRawMedia, thumbPathFor, isStoredPath, deleteStoredImage, isValidImageDataUrl };

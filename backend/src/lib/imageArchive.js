@@ -53,6 +53,18 @@ function keyFor(storedPath, createdAt) {
   return `images/${yyyy}/${mm}/${storedPath.replace('/uploads/', '')}`;
 }
 
+// Whatever the file actually is. R2 stores the content type alongside the
+// object and it is what the browser gets back on retrieval, so guessing wrong
+// here would archive a perfectly good video that then refuses to play.
+const CONTENT_TYPES = {
+  jpg: 'image/jpeg', png: 'image/png',
+  mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', '3gp': 'video/3gpp',
+  m4a: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', amr: 'audio/amr', wav: 'audio/wav',
+};
+function contentTypeFor(storedPath) {
+  return CONTENT_TYPES[String(storedPath).split('.').pop().toLowerCase()] || 'application/octet-stream';
+}
+
 function readIfPresent(filePath) {
   try { return fs.readFileSync(filePath); } catch { return null; }
 }
@@ -80,7 +92,10 @@ async function archiveOne(message) {
   if (!buffer) return 'nolocal';
 
   const key = keyFor(storedPath, message.createdAt);
-  if (!(await r2.putVerified(key, buffer, 'image/jpeg'))) return 'failed';
+  // Derived from the file rather than assumed to be a JPEG — video and audio
+  // are archived through here too, and storing them under an image content
+  // type would hand the browser something it refuses to play.
+  if (!(await r2.putVerified(key, buffer, contentTypeFor(storedPath)))) return 'failed';
 
   // The thumbnail is a separate file and is archived too, so the message keeps
   // everything it had rather than a reduced version of it. Its absence is not
@@ -90,7 +105,7 @@ async function archiveOne(message) {
   let thumbKey = null;
   if (thumbBuffer) {
     const candidate = keyFor(thumbStored, message.createdAt);
-    if (await r2.putVerified(candidate, thumbBuffer, 'image/jpeg')) thumbKey = candidate;
+    if (await r2.putVerified(candidate, thumbBuffer, contentTypeFor(thumbStored))) thumbKey = candidate;
     else return 'failed'; // don't record a partial archive
   }
 
@@ -133,7 +148,9 @@ async function archiveOldImages() {
       // file. Matching on the stored-path markers costs nothing here and makes
       // every batch real work.
       where: {
-        type: 'image',
+        // Video and audio are archived on exactly the same terms as images —
+        // they are stored the same way and cost the volume the same bytes.
+        type: { in: ['image', 'video', 'audio'] },
         createdAt: { lt: before },
         NOT: { metadata: { contains: '"r2Key"' } },
         OR: [

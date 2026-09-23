@@ -3,7 +3,7 @@ const line = require('@line/bot-sdk');
 const { PrismaClient } = require('@prisma/client');
 const { emitToConversation, emitToAll } = require('./socket.service');
 const { linkifyBareDomains } = require('../lib/linkGuard');
-const { saveBase64Image } = require('../lib/imageStorage');
+const { saveBase64Image, saveRawMedia } = require('../lib/imageStorage');
 
 const prisma = new PrismaClient();
 
@@ -237,10 +237,34 @@ async function processLineEvent(channel, event) {
     } else if (type === 'sticker') {
       content = '[Sticker]';
       metadata = { packageId: event.message.packageId, stickerId: event.message.stickerId };
-    } else if (type === 'audio') {
-      content = '[Audio]';
-    } else if (type === 'video') {
-      content = '[Video]';
+    } else if (type === 'audio' || type === 'video') {
+      content = type === 'audio' ? '[Audio]' : '[Video]';
+      metadata = { messageId: event.message.id };
+      // Same two-week expiry as images, and for a long time the same silent
+      // loss: these branches recorded nothing but a label, so a video a
+      // customer sent as proof was only ever fetched live from LINE and simply
+      // stopped existing a fortnight later. That is exactly how ~47,000 images
+      // were lost before they were given permanent copies; this closes the
+      // same hole for the other two content types before it costs anything.
+      //
+      // Stored as-is rather than through saveBase64Image, which only handles
+      // still images (see saveRawMedia). Best-effort in the same way: a
+      // failure here never blocks the message from being recorded, it just
+      // leaves the row falling back to a live LINE fetch as before.
+      try {
+        const { stream, contentType } = await getMessageContent(channel, event.message.id);
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const { storedPath, reason } = saveRawMedia(Buffer.concat(chunks), contentType);
+        if (storedPath) metadata.storedPath = storedPath;
+        // Loud on purpose: an unstored clip is on a two-week fuse, and the
+        // reason (an unexpected content type, or one over the size limit) is
+        // the only signal that the allowlist or MAX_MEDIA_MB needs adjusting
+        // before real evidence goes missing.
+        else console.warn(`Customer ${type} not stored (${reason}) — it will expire from LINE in ~2 weeks.`);
+      } catch (err) {
+        console.warn(`Could not download+store customer ${type}, will rely on live LINE fetch:`, err.message);
+      }
     } else if (type === 'location') {
       content = `[Location] ${event.message.address || ''}`;
       metadata = { lat: event.message.latitude, lng: event.message.longitude };

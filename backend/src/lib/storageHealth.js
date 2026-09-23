@@ -51,15 +51,28 @@ const gb = (bytes) => (bytes / GB).toFixed(2);
 function measureUploadDir() {
   let entries;
   try { entries = fs.readdirSync(UPLOAD_DIR); } catch { return null; }
+  const recentCutoff = Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   let bytes = 0;
   let fileCount = 0;
+  let recentBytes = 0;
   for (const name of entries) {
     try {
       const s = fs.statSync(path.join(UPLOAD_DIR, name));
-      if (s.isFile()) { bytes += s.size; fileCount++; }
+      if (!s.isFile()) continue;
+      bytes += s.size;
+      fileCount++;
+      // Growth measured from the files themselves rather than inferred from a
+      // message count times an average size. That inference held only while
+      // every stored item was an image worth exactly two files (full plus
+      // thumbnail); customer video and audio are now stored too, and they are
+      // one file each and far larger, which would have quietly skewed the
+      // "days of headroom" figure the moment the first video arrived. Summing
+      // what was actually written in the window needs no assumption about
+      // what kind of media it was.
+      if (s.mtimeMs >= recentCutoff) recentBytes += s.size;
     } catch { /* deleted between readdir and stat — skip it */ }
   }
-  return { fileCount, bytes };
+  return { fileCount, bytes, recentBytes };
 }
 
 async function checkStorageHealth() {
@@ -79,18 +92,22 @@ async function checkStorageHealth() {
   const fileCount = dir ? dir.fileCount : 0;
   const avgFileBytes = fileCount > 0 ? dir.bytes / fileCount : null;
   const since = new Date(Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const recentImages = await prisma.message.count({ where: { type: 'image', createdAt: { gte: since } } });
-  const imagesPerDay = recentImages / GROWTH_WINDOW_DAYS;
-  // Each stored image is two files on disk — the full image and its thumbnail
-  // (imageStorage.js) — and avgFileBytes averages across both kinds, so one
-  // image costs two average files.
-  const bytesPerDay = avgFileBytes ? imagesPerDay * avgFileBytes * 2 : null;
+  // Broken out by kind so the cost of storing customer video and audio — new,
+  // and individually far bigger than a photo — is visible from the first day
+  // rather than only showing up later as headroom mysteriously shrinking.
+  const byType = await prisma.message.groupBy({
+    by: ['type'],
+    where: { type: { in: ['image', 'video', 'audio'] }, createdAt: { gte: since } },
+    _count: { _all: true },
+  });
+  const perDay = (t) => Math.round((byType.find(r => r.type === t)?._count._all || 0) / GROWTH_WINDOW_DAYS);
+  const bytesPerDay = dir ? dir.recentBytes / GROWTH_WINDOW_DAYS : null;
   const daysLeft = bytesPerDay > 0 ? freeBytes / bytesPerDay : null;
 
   const summary = `Storage health: ${gb(usedBytes)}GB used of ${gb(totalBytes)}GB (${freePercent.toFixed(1)}% free)`
     + (fileCount ? `, ${fileCount} files averaging ${(avgFileBytes / 1024).toFixed(0)}KB` : '')
-    + `, ${Math.round(imagesPerDay)} images/day`
-    + (bytesPerDay ? `, ~${gb(bytesPerDay)}GB/day` : '')
+    + `, per day: ${perDay('image')} images / ${perDay('video')} videos / ${perDay('audio')} audio`
+    + (bytesPerDay ? `, ~${gb(bytesPerDay)}GB/day written` : '')
     + (daysLeft ? `, about ${Math.round(daysLeft)} days of headroom left` : '');
 
   // Reported alongside the volume because the two are constantly confused, and
@@ -116,7 +133,7 @@ async function checkStorageHealth() {
   } else {
     console.log(summary);
   }
-  return { totalBytes, freeBytes, freePercent, imagesPerDay, bytesPerDay, daysLeft };
+  return { totalBytes, freeBytes, freePercent, bytesPerDay, daysLeft };
 }
 
 module.exports = { checkStorageHealth };
