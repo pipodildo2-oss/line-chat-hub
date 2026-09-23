@@ -71,6 +71,19 @@ export default function Login() {
   }
 
   function handleSetupComplete({ token, agent }) {
+    // token/agent should always be present here (setup-confirm only reaches
+    // this callback via the pendingToken path — see TwoFactorSetup.jsx and
+    // routes/twoFactor.js's resolveSetupSubject). Guarded anyway rather than
+    // trusting that: login() throws on bad values now specifically because
+    // an earlier bug let this path call it with both undefined, which
+    // corrupted localStorage badly enough to crash the app on every later
+    // page load. Falling back to the password step with a clear message is
+    // a far better failure mode than that ever happening again.
+    if (!token || !agent) {
+      setError('เกิดข้อผิดพลาดในการตั้งค่า กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+      backToPasswordStep();
+      return;
+    }
     login(token, agent);
     navigate('/inbox');
   }

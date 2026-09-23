@@ -33,7 +33,31 @@ const twoFactorLimiter = rateLimit({
 // session's req.agent carries) plus whether this came from a pendingToken —
 // setup-confirm uses that to decide whether finishing setup should also
 // complete the login it was blocking (see below).
+//
+// pendingToken checked FIRST, and authoritative whenever the caller sent
+// one — Login.jsx always sends one for the forced-at-login path and NEVER
+// sends one for ProfileModal's voluntary path, so the two call sites are
+// unambiguous from the request shape alone.
+//
+// INCIDENT: this used to check the Authorization header first and only fall
+// back to pendingToken if that was missing. A browser that still carried
+// ANY other agent's still-valid session token (a shared workstation, a
+// second tab, one agent's session simply not yet expired) attached that
+// token to every axios request by default — including this one, made from
+// the LOGIN SCREEN by someone who had not yet finished logging in as
+// themselves. Setup silently ran against the WRONG agent's account instead
+// of the one actually typing at the login screen: a real account mix-up,
+// and setup-confirm then had no session to hand back to the frontend since
+// it was never the pendingToken path, which was mistaken by Login.jsx for a
+// successful login with no token — corrupting localStorage and crashing the
+// app on every subsequent page load for that browser. Checking pendingToken
+// first, and failing outright if it's present but invalid, closes both
+// holes at once.
 async function resolveSetupSubject(req) {
+  if (req.body?.pendingToken) {
+    const result = await verifyPendingTwoFactorToken(req.body.pendingToken, ['setup2fa']);
+    return result ? { agent: result.agent, viaPendingToken: true } : null;
+  }
   const authHeader = req.headers.authorization?.split(' ')[1];
   if (authHeader) {
     const session = await verifyAgentToken(authHeader);
@@ -42,8 +66,7 @@ async function resolveSetupSubject(req) {
       if (agent) return { agent, viaPendingToken: false };
     }
   }
-  const result = await verifyPendingTwoFactorToken(req.body?.pendingToken, ['setup2fa']);
-  return result ? { agent: result.agent, viaPendingToken: true } : null;
+  return null;
 }
 
 // POST /api/auth/2fa/setup-init — generates a fresh secret and returns a QR

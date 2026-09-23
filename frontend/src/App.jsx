@@ -18,6 +18,22 @@ function PrivateRoute({ children }) {
   return token ? children : <Navigate to="/login" replace />;
 }
 
+// The reverse of PrivateRoute: an agent who already has a valid session
+// (didn't explicitly log out — a shared workstation, a second tab, a
+// session that just hasn't expired yet) never had anything stopping them
+// from also landing on /login and typing in different credentials there.
+// That let their OLD session's token sit in axios's default header through
+// the ENTIRE new login attempt, including the 2FA setup calls it makes —
+// which, combined with a since-fixed backend bug (routes/twoFactor.js),
+// silently ran 2FA setup against the wrong agent's account and corrupted
+// this browser's stored session. Redirecting an already-authenticated
+// session straight to /inbox closes that off at the source: reaching
+// /login now means there genuinely is no active session in this browser.
+function LoginRoute() {
+  const { token } = useAuth();
+  return token ? <Navigate to="/inbox" replace /> : <Login />;
+}
+
 // Agent role is restricted to Inbox only — Dashboard and Settings are admin-only.
 function AdminRoute({ children }) {
   const { agent } = useAuth();
@@ -32,7 +48,7 @@ export default function App() {
       <SocketProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<LoginRoute />} />
             <Route
               path="/"
               element={
