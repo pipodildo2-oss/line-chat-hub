@@ -571,15 +571,18 @@ model UpsellSubmissionItem {
 // (see backend/src/lib/systemSettings.js) so there's exactly one row ever.
 model SystemSetting {
   id                           String   @id @default("singleton")
-  // "บังคับใช้ 2FA สำหรับพนักงานทุกคน" — Settings > "ระบบ", admin-only. When
-  // true, an agent who doesn't have 2FA on their own account yet (Agent.
-  // twoFactorEnabledAt null) is forced through setup right after their
-  // password is verified at login, before they reach the app (see
-  // routes/auth.js POST /login and routes/twoFactor.js). Turning this back
-  // off only stops forcing agents who've never set one up — it does NOT
-  // disable 2FA for an agent who already turned it on for themselves (see
-  // Agent.twoFactorEnabledAt above for why that's deliberate).
-  twoFactorRequired            Boolean  @default(false)
+  // "บังคับใช้ 2FA สำหรับพนักงาน" — Settings > "ระบบ", admin-only. One of
+  // "off" | "all" | "admin" | "agent" (matching Agent.role's own values for
+  // the latter two — see routes/auth.js's twoFactorRequiredFor). An agent
+  // in the required scope who doesn't have 2FA on their own account yet
+  // (Agent.twoFactorEnabledAt null) is forced through setup right after
+  // their password is verified at login, before they reach the app (see
+  // routes/auth.js POST /login and routes/twoFactor.js). Narrowing or
+  // turning this off again only stops forcing agents outside the new scope
+  // who've never set one up — it does NOT disable 2FA for an agent who
+  // already turned it on for themselves, in or out of scope (see Agent.
+  // twoFactorEnabledAt above for why that's deliberate).
+  twoFactorRequiredScope       String   @default("off")
   // How long (in seconds), counted from EACH agent's own MessageView.viewedAt
   // (when they personally opened a still-unanswered conversation), a reply
   // still counts as "answered in time" for THAT agent specifically — see

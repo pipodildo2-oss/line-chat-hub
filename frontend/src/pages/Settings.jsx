@@ -6,6 +6,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
 
+// Settings > "ระบบ" > บังคับใช้ 2FA — matches backend/src/lib/systemSettings.js's
+// TWO_FACTOR_REQUIRED_SCOPES exactly ('all'/'admin'/'agent' scope values
+// double as Agent.role for the latter two, see roleIsInTwoFactorScope there).
+const TWO_FACTOR_SCOPE_OPTIONS = [
+  { key: 'off', label: 'ปิดใช้งาน' },
+  { key: 'all', label: 'ทั้งหมด' },
+  { key: 'admin', label: 'เฉพาะ Admin' },
+  { key: 'agent', label: 'เฉพาะ Agent' },
+];
+
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
   function copy(e) {
@@ -1257,10 +1267,11 @@ export default function Settings() {
     }
   }
 
-  async function toggleTwoFactorRequired() {
+  async function setTwoFactorRequiredScope(scope) {
+    if (scope === systemSettings?.twoFactorRequiredScope) return;
     setSavingTwoFactorRequired(true); setError('');
     try {
-      const { data } = await axios.patch('/api/settings/system', { twoFactorRequired: !systemSettings?.twoFactorRequired });
+      const { data } = await axios.patch('/api/settings/system', { twoFactorRequiredScope: scope });
       setSystemSettings(data);
     } catch (err) {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
@@ -1902,27 +1913,33 @@ export default function Settings() {
           </div>
 
           <div className={cardCls}>
-            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">บังคับใช้ 2FA สำหรับพนักงานทุกคน</h3>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">บังคับใช้ 2FA</h3>
             <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-              เมื่อเปิด พนักงานที่ยังไม่เคยตั้งค่ายืนยันตัวตนสองขั้นตอน (2FA) จะถูกบังคับให้ตั้งค่าก่อนเข้าใช้งานได้ในครั้งถัดไปที่ล็อกอิน —
-              พนักงานที่เปิด 2FA ของตัวเองไว้แล้วจะยังคงต้องกรอกรหัสทุกครั้งต่อไป แม้จะปิดสวิตช์นี้ในภายหลังก็ตาม
+              เลือกกลุ่มพนักงานที่ต้องตั้งค่ายืนยันตัวตนสองขั้นตอน (2FA) ก่อนเข้าใช้งานได้ — คนในกลุ่มที่เลือกซึ่งยังไม่เคยตั้งค่าไว้
+              จะถูกบังคับให้ตั้งค่าในครั้งถัดไปที่ล็อกอิน ส่วนคนที่เปิด 2FA ของตัวเองไว้แล้วจะยังคงต้องกรอกรหัสทุกครั้งต่อไป
+              ไม่ว่าจะปรับตัวเลือกนี้เป็นอะไรในภายหลังก็ตาม
             </p>
             {agent?.role === 'admin' ? (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleTwoFactorRequired}
-                  disabled={savingTwoFactorRequired || !systemSettings}
-                  className={`relative inline-flex overflow-hidden w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${systemSettings?.twoFactorRequired ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
-                >
-                  <span className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${systemSettings?.twoFactorRequired ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
-                <span className="text-sm text-gray-600 dark:text-slate-300">
-                  {systemSettings ? (systemSettings.twoFactorRequired ? 'บังคับใช้อยู่' : 'ปิดใช้งาน') : '...'}
-                </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {TWO_FACTOR_SCOPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setTwoFactorRequiredScope(opt.key)}
+                    disabled={savingTwoFactorRequired || !systemSettings}
+                    className={`text-sm px-3 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
+                      systemSettings?.twoFactorRequiredScope === opt.key
+                        ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent'
+                        : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             ) : (
               <p className="text-sm text-gray-900 dark:text-slate-100">
-                สถานะปัจจุบัน: {systemSettings ? (systemSettings.twoFactorRequired ? 'บังคับใช้อยู่' : 'ปิดใช้งาน') : '...'}
+                สถานะปัจจุบัน: {systemSettings ? (TWO_FACTOR_SCOPE_OPTIONS.find(o => o.key === systemSettings.twoFactorRequiredScope)?.label || 'ปิดใช้งาน') : '...'}
                 <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}

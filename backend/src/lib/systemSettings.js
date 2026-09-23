@@ -6,7 +6,8 @@ const SINGLETON_ID = 'singleton';
 const DEFAULT_AGENT_CONDUCT_GRACE_SECONDS = 60;
 const DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT = 50;
 const DEFAULT_AFK_MINUTES = 0; // 0 = feature off
-const DEFAULT_TWO_FACTOR_REQUIRED = false;
+const DEFAULT_TWO_FACTOR_REQUIRED_SCOPE = 'off';
+const TWO_FACTOR_REQUIRED_SCOPES = ['off', 'all', 'admin', 'agent'];
 const DEFAULT_TELEGRAM_REPORT_DAY = 1;
 const DEFAULT_TELEGRAM_REPORT_HOUR = 9;
 const DEFAULT_TELEGRAM_REPORT_MINUTE = 0;
@@ -21,7 +22,7 @@ async function getSystemSettings() {
     agentConductGraceSeconds: row?.agentConductGraceSeconds ?? DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
     responseRateThresholdPercent: row?.responseRateThresholdPercent ?? DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
     afkMinutes: row?.afkMinutes ?? DEFAULT_AFK_MINUTES,
-    twoFactorRequired: row?.twoFactorRequired ?? DEFAULT_TWO_FACTOR_REQUIRED,
+    twoFactorRequiredScope: row?.twoFactorRequiredScope ?? DEFAULT_TWO_FACTOR_REQUIRED_SCOPE,
   };
 }
 
@@ -64,17 +65,27 @@ async function setAfkMinutes(minutes) {
   });
 }
 
-async function getTwoFactorRequired() {
-  const { twoFactorRequired } = await getSystemSettings();
-  return twoFactorRequired;
+async function getTwoFactorRequiredScope() {
+  const { twoFactorRequiredScope } = await getSystemSettings();
+  return twoFactorRequiredScope;
 }
 
-async function setTwoFactorRequired(required) {
+function setTwoFactorRequiredScope(scope) {
+  if (!TWO_FACTOR_REQUIRED_SCOPES.includes(scope)) {
+    throw new Error(`twoFactorRequiredScope ต้องเป็นหนึ่งใน ${TWO_FACTOR_REQUIRED_SCOPES.join(', ')}`);
+  }
   return prisma.systemSetting.upsert({
     where: { id: SINGLETON_ID },
-    update: { twoFactorRequired: required },
-    create: { id: SINGLETON_ID, twoFactorRequired: required },
+    update: { twoFactorRequiredScope: scope },
+    create: { id: SINGLETON_ID, twoFactorRequiredScope: scope },
   });
+}
+
+// Whether `role` currently falls inside the required scope — the one place
+// this decision is made, shared by routes/auth.js's login check and
+// anywhere else that ever needs the same answer.
+function roleIsInTwoFactorScope(role, scope) {
+  return scope === 'all' || scope === role;
 }
 
 // Safe-to-return-to-the-frontend view of the Telegram config — everything
@@ -137,8 +148,9 @@ module.exports = {
   setResponseRateThresholdPercent,
   getAfkMinutes,
   setAfkMinutes,
-  getTwoFactorRequired,
-  setTwoFactorRequired,
+  getTwoFactorRequiredScope,
+  setTwoFactorRequiredScope,
+  roleIsInTwoFactorScope,
   getTelegramSettings,
   getTelegramCredentials,
   setTelegramSettings,
@@ -146,5 +158,6 @@ module.exports = {
   DEFAULT_AGENT_CONDUCT_GRACE_SECONDS,
   DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
   DEFAULT_AFK_MINUTES,
-  DEFAULT_TWO_FACTOR_REQUIRED,
+  DEFAULT_TWO_FACTOR_REQUIRED_SCOPE,
+  TWO_FACTOR_REQUIRED_SCOPES,
 };

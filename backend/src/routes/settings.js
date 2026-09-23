@@ -5,7 +5,7 @@
 // idle timeout, so that one route is deliberately not admin-gated.
 const router = require('express').Router();
 const auth = require('../middleware/auth');
-const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes, setTwoFactorRequired } = require('../lib/systemSettings');
+const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes, setTwoFactorRequiredScope, TWO_FACTOR_REQUIRED_SCOPES } = require('../lib/systemSettings');
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -20,7 +20,7 @@ router.get('/system', auth, requireAdmin, async (req, res) => {
 // form actually changed) so each Settings > "ระบบ" field can be saved on
 // its own without needing to resend the others' current values.
 router.patch('/system', auth, requireAdmin, async (req, res) => {
-  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes, twoFactorRequired } = req.body;
+  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes, twoFactorRequiredScope } = req.body;
 
   if (agentConductGraceSeconds !== undefined) {
     const seconds = Number(agentConductGraceSeconds);
@@ -46,8 +46,11 @@ router.patch('/system', auth, requireAdmin, async (req, res) => {
     await setAfkMinutes(minutes);
   }
 
-  if (twoFactorRequired !== undefined) {
-    await setTwoFactorRequired(!!twoFactorRequired);
+  if (twoFactorRequiredScope !== undefined) {
+    if (!TWO_FACTOR_REQUIRED_SCOPES.includes(twoFactorRequiredScope)) {
+      return res.status(400).json({ error: `twoFactorRequiredScope ต้องเป็นหนึ่งใน ${TWO_FACTOR_REQUIRED_SCOPES.join(', ')}` });
+    }
+    await setTwoFactorRequiredScope(twoFactorRequiredScope);
   }
 
   res.json(await getSystemSettings());

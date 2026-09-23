@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
-const { getTwoFactorRequired } = require('../lib/systemSettings');
+const { getTwoFactorRequiredScope, roleIsInTwoFactorScope } = require('../lib/systemSettings');
 
 const prisma = new PrismaClient();
 
@@ -69,11 +69,11 @@ router.post('/login', loginLimiter, async (req, res) => {
     // Password alone is never enough for an agent who has 2FA turned on for
     // their own account (Agent.twoFactorEnabledAt) — that stays true
     // regardless of the org-wide setting below, see schema.prisma. An agent
-    // WITHOUT 2FA only gets stopped here if the admin has switched on
-    // "บังคับใช้ 2FA" (Settings > ระบบ) — otherwise login proceeds exactly as
-    // it always has.
+    // WITHOUT 2FA only gets stopped here if the admin's "บังคับใช้ 2FA"
+    // scope (Settings > ระบบ — off/all/admin/agent) covers this agent's own
+    // role — otherwise login proceeds exactly as it always has.
     const has2FA = !!agent.twoFactorEnabledAt;
-    const mustSetUp = !has2FA && (await getTwoFactorRequired());
+    const mustSetUp = !has2FA && roleIsInTwoFactorScope(agent.role, await getTwoFactorRequiredScope());
     if (has2FA || mustSetUp) {
       // Short-lived and single-purpose — see middleware/auth.js's `purpose`
       // check for why this can never be used as a real session token, and
