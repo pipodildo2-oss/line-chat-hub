@@ -26,6 +26,7 @@ const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, thumbPathFor, UPLOAD_DIR } = require('./imageStorage');
 const r2 = require('./r2');
+const { sendOpsAlert } = require('./opsAlert');
 
 const prisma = new PrismaClient();
 // Uploading and deleting are two different jobs on two different clocks, and
@@ -292,6 +293,20 @@ async function archiveOldImages() {
   console.log(`Image archive finished in ${Math.round((Date.now() - startedAt) / 1000)}s: backing up anything older than ${BACKUP_AFTER_HOURS}h, freeing local copies after ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
     + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
     + `, already archived ${stats.already}, no local file ${stats.nolocal}, nothing to archive ${stats.skipped}, failed ${stats.failed}`);
+  // Failures here are not cosmetic: a row that can't reach R2 is a file with
+  // no second copy, and once deletion is switched on it is also a file that
+  // will never be reclaimed. Worth interrupting someone for, but only once a
+  // run and only when it's actually happening.
+  if (stats.failed > 0) {
+    sendOpsAlert(
+      'archive-failures',
+      'สำรองรูปขึ้น Cloudflare ไม่สำเร็จ',
+      `รอบล่าสุดมี <b>${stats.failed}</b> รายการที่อัปโหลดหรือตรวจสอบไม่ผ่าน `
+      + `(สำเร็จ ${stats.archived + stats.archivedAndFreed} รายการ)\n\n`
+      + 'ไฟล์ในเครื่องยังอยู่ครบ ไม่มีอะไรถูกลบ ระบบจะลองใหม่ในรอบถัดไป '
+      + 'แต่ถ้ายังไม่หายควรตรวจการตั้งค่า R2',
+    );
+  }
   return stats;
 }
 

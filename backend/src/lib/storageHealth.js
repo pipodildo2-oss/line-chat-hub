@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { UPLOAD_DIR } = require('./imageStorage');
+const { sendOpsAlert } = require('./opsAlert');
 
 const prisma = new PrismaClient();
 // Days of remaining headroom below which this starts complaining. Growing a
@@ -132,6 +133,24 @@ async function checkStorageHealth() {
     console.warn(`${summary} — WARNING: plan to grow the uploads volume. Running out means new customer images silently stop being stored.`);
   } else {
     console.log(summary);
+  }
+
+  // Out of the log and in front of a person. This is the one condition where
+  // noticing late is the same as not noticing: once the volume is full, new
+  // images stop being stored silently and are gone two weeks later, and by the
+  // time anyone sees a blank thumbnail the evidence it stood for no longer
+  // exists anywhere.
+  if (critical || warn) {
+    const days = daysLeft ? `${Math.round(daysLeft)} วัน` : 'ไม่ทราบ';
+    sendOpsAlert(
+      critical ? 'storage-critical' : 'storage-warning',
+      critical ? 'พื้นที่เก็บรูปใกล้เต็มแล้ว (ด่วน)' : 'พื้นที่เก็บรูปเริ่มเหลือน้อย',
+      `ใช้ไป ${gb(usedBytes)} GB จาก ${gb(totalBytes)} GB (เหลือว่าง ${freePercent.toFixed(1)}%)\n`
+      + `เพิ่มขึ้นวันละ ~${gb(bytesPerDay || 0)} GB\n`
+      + `คาดว่าจะเต็มในอีก <b>${days}</b>\n\n`
+      + 'ถ้าพื้นที่เต็ม รูปที่ลูกค้าส่งใหม่จะไม่ถูกเก็บ และจะหายถาวรหลังจากนั้นประมาณ 2 สัปดาห์ '
+      + 'แก้โดยขยาย Volume ของบริการ line-chat-hub ใน Railway',
+    );
   }
   return { totalBytes, freeBytes, freePercent, bytesPerDay, daysLeft };
 }
