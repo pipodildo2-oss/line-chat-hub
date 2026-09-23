@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Mail, ArrowRight, Clock, ShieldCheck, KeyRound } from 'lucide-react';
 import TwoFactorSetup from '../components/TwoFactorSetup';
+import OtpBoxInput from '../components/OtpBoxInput';
 
 export default function Login() {
   const { login } = useAuth();
@@ -50,12 +51,16 @@ export default function Login() {
     }
   }
 
-  async function handleVerifyCode(e) {
-    e.preventDefault();
+  async function handleVerifyCode(e, codeOverride) {
+    e?.preventDefault();
+    // codeOverride lets OtpBoxInput auto-submit the instant its 6th box
+    // fills — passing the freshly-completed string directly rather than
+    // relying on `code` state, which wouldn't have caught up yet.
+    const codeToSend = codeOverride ?? code;
     setVerifying(true);
     setError('');
     try {
-      const { data } = await axios.post('/api/auth/2fa/verify-login', { pendingToken, code });
+      const { data } = await axios.post('/api/auth/2fa/verify-login', { pendingToken, code: codeToSend });
       login(data.token, data.agent);
       navigate('/inbox');
     } catch (err) {
@@ -173,21 +178,32 @@ export default function Login() {
                   {useBackupCode ? 'กรอกรหัสสำรองชุดใดชุดหนึ่ง' : 'กรอกรหัส 6 หลักจากแอป Authenticator'}
                 </p>
               </div>
-              <div className="relative">
-                {!useBackupCode && <KeyRound size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />}
-                <input
-                  type="text"
-                  inputMode={useBackupCode ? 'text' : 'numeric'}
-                  autoComplete="one-time-code"
-                  maxLength={useBackupCode ? 11 : 6}
+              {useBackupCode ? (
+                <div className="relative">
+                  <KeyRound size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                  <input
+                    type="text"
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    maxLength={11}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-sm text-white text-center tracking-[0.3em] placeholder:text-white/25 placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-aurora-teal/40 focus:border-aurora-teal/40 transition-colors"
+                    placeholder="XXXXX-XXXXX"
+                    autoFocus
+                    required
+                  />
+                </div>
+              ) : (
+                <OtpBoxInput
                   value={code}
-                  onChange={(e) => setCode(useBackupCode ? e.target.value : e.target.value.replace(/\D/g, ''))}
-                  className={`w-full bg-white/[0.03] border border-white/10 rounded-lg ${useBackupCode ? 'px-3' : 'pl-9 pr-3'} py-2.5 text-sm text-white text-center tracking-[0.3em] placeholder:text-white/25 placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-aurora-teal/40 focus:border-aurora-teal/40 transition-colors`}
-                  placeholder={useBackupCode ? 'XXXXX-XXXXX' : '000000'}
+                  onChange={setCode}
+                  onComplete={(full) => handleVerifyCode(null, full)}
+                  disabled={verifying}
                   autoFocus
-                  required
+                  forceDark
                 />
-              </div>
+              )}
               {error && <p className="text-rose-400 text-xs">{error}</p>}
               <button
                 type="submit"

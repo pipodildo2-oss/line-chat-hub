@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Check, Copy, Loader2, ShieldCheck } from 'lucide-react';
+import OtpBoxInput from './OtpBoxInput';
 
 // The QR-scan → confirm-code → show-backup-codes flow for turning on TOTP
 // 2FA, shared by two very different callers:
@@ -50,13 +51,16 @@ export default function TwoFactorSetup({ pendingToken, onComplete, onCancel, for
       .catch(() => setStep('error'));
   }, [pendingToken]);
 
-  async function handleConfirm(e) {
-    e.preventDefault();
+  async function handleConfirm(e, codeOverride) {
+    e?.preventDefault();
+    // codeOverride lets OtpBoxInput auto-submit the instant its 6th box
+    // fills, without waiting on `code` state to catch up.
+    const codeToSend = codeOverride ?? code;
     setError('');
     setSubmitting(true);
     try {
       const { data } = await axios.post('/api/auth/2fa/setup-confirm', {
-        code,
+        code: codeToSend,
         ...(pendingToken ? { pendingToken } : {}),
       });
       setBackupCodes(data.backupCodes);
@@ -80,14 +84,12 @@ export default function TwoFactorSetup({ pendingToken, onComplete, onCancel, for
     mutedText: 'text-white/50',
     faintText: 'text-white/30',
     secondaryBtn: 'text-white/50 hover:text-white/80',
-    input: 'border border-white/10 bg-white/[0.03] text-white placeholder:text-white/25 focus:ring-2 focus:ring-aurora-teal/40 focus:border-aurora-teal/40',
     codeBox: 'bg-white/[0.03] border border-white/10 text-white/90',
     cancelBtn: 'text-white/50 hover:text-white/80',
   } : {
     mutedText: 'text-gray-500 dark:text-slate-400',
     faintText: 'text-gray-400 dark:text-slate-500',
     secondaryBtn: 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300',
-    input: 'border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-aurora-teal',
     codeBox: 'bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-800 dark:text-slate-200',
     cancelBtn: 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200',
   };
@@ -150,18 +152,16 @@ export default function TwoFactorSetup({ pendingToken, onComplete, onCancel, for
       <p className={`text-[11px] ${c.faintText} text-center mb-4 break-all`}>
         สแกนไม่ได้? กรอกรหัสนี้ด้วยตัวเอง: <span className="font-mono">{secret}</span>
       </p>
-      <input
-        type="text"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        maxLength={6}
-        placeholder="000000"
-        value={code}
-        onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-        className={`w-full text-center tracking-[0.4em] text-lg rounded-lg px-3 py-2.5 focus:outline-none mb-2 ${c.input}`}
-        required
-      />
-      {error && <p className="text-rose-400 text-xs mb-2">{error}</p>}
+      <div className="mb-2">
+        <OtpBoxInput
+          value={code}
+          onChange={setCode}
+          onComplete={(full) => handleConfirm(null, full)}
+          disabled={submitting}
+          forceDark={forceDark}
+        />
+      </div>
+      {error && <p className="text-rose-400 text-xs mb-2 text-center">{error}</p>}
       <div className="flex items-center gap-2 mt-2">
         <button
           type="submit"
