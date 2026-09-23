@@ -16,7 +16,6 @@
 // act (a Railway volume can be grown in place) rather than a single alarm once
 // it's already full.
 const fs = require('fs');
-const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { UPLOAD_DIR } = require('./imageStorage');
 
@@ -27,31 +26,24 @@ const WARN_DAYS = 60;
 const CRITICAL_DAYS = 21;
 const WARN_FREE_PERCENT = 20;
 const CRITICAL_FREE_PERCENT = 8;
-const SAMPLE_FILES = 300;
 const GROWTH_WINDOW_DAYS = 7;
 
 const GB = 1024 ** 3;
 const gb = (bytes) => (bytes / GB).toFixed(2);
 
-// Measured rather than assumed: file sizes depend entirely on what customers
-// happen to send, and guessing at an average is how the earlier "full in 3-4
-// months" estimate ended up wrong by a factor of two.
-function averageStoredFileBytes() {
-  let entries;
-  try { entries = fs.readdirSync(UPLOAD_DIR); } catch { return null; }
-  if (entries.length === 0) return null;
-  // Spread the sample across the directory instead of taking the first N,
-  // which on most filesystems would be biased towards one era of files.
-  const step = Math.max(1, Math.floor(entries.length / SAMPLE_FILES));
-  let bytes = 0;
-  let counted = 0;
-  for (let i = 0; i < entries.length && counted < SAMPLE_FILES; i += step) {
-    try {
-      const s = fs.statSync(path.join(UPLOAD_DIR, entries[i]));
-      if (s.isFile()) { bytes += s.size; counted++; }
-    } catch { /* file vanished between readdir and stat — skip it */ }
-  }
-  return counted === 0 ? null : { avgBytes: bytes / counted, fileCount: entries.length };
+// Counts the files on the volume. Their average size is then derived from the
+// bytes actually in use rather than sampled, because the volume is mounted
+// exclusively for this directory: used bytes divided by file count is the true
+// average, not an estimate of it.
+//
+// A sample was the obvious approach and it was wrong by 68% here — stored
+// images come in two sizes (a full image and a much smaller thumbnail, see
+// imageStorage.js), so any sample that doesn't happen to draw them in exactly
+// the ratio they exist in skews the figure, and the whole point of this number
+// is to say how many days are left. Guessing at an average is also how an
+// earlier estimate of this came out wrong by a factor of two.
+function countStoredFiles() {
+  try { return fs.readdirSync(UPLOAD_DIR).length; } catch { return null; }
 }
 
 async function checkStorageHealth() {
@@ -67,18 +59,19 @@ async function checkStorageHealth() {
   const usedBytes = totalBytes - freeBytes;
   const freePercent = totalBytes === 0 ? 0 : (freeBytes / totalBytes) * 100;
 
-  const sample = averageStoredFileBytes();
+  const fileCount = countStoredFiles();
+  const avgFileBytes = fileCount > 0 ? usedBytes / fileCount : null;
   const since = new Date(Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const recentImages = await prisma.message.count({ where: { type: 'image', createdAt: { gte: since } } });
   const imagesPerDay = recentImages / GROWTH_WINDOW_DAYS;
-  // Each stored image is two files (full + thumbnail, see imageStorage.js) and
-  // the directory sample already averages across both, so the per-image cost is
-  // two average files.
-  const bytesPerDay = sample ? imagesPerDay * sample.avgBytes * 2 : null;
+  // Each stored image is two files on disk — the full image and its thumbnail
+  // (imageStorage.js) — and avgFileBytes averages across both kinds, so one
+  // image costs two average files.
+  const bytesPerDay = avgFileBytes ? imagesPerDay * avgFileBytes * 2 : null;
   const daysLeft = bytesPerDay > 0 ? freeBytes / bytesPerDay : null;
 
   const summary = `Storage health: ${gb(usedBytes)}GB used of ${gb(totalBytes)}GB (${freePercent.toFixed(1)}% free)`
-    + (sample ? `, ${sample.fileCount} files averaging ${(sample.avgBytes / 1024).toFixed(0)}KB` : '')
+    + (fileCount ? `, ${fileCount} files averaging ${(avgFileBytes / 1024).toFixed(0)}KB` : '')
     + `, ${Math.round(imagesPerDay)} images/day`
     + (bytesPerDay ? `, ~${gb(bytesPerDay)}GB/day` : '')
     + (daysLeft ? `, about ${Math.round(daysLeft)} days of headroom left` : '');
