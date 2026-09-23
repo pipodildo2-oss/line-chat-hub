@@ -54,8 +54,24 @@ export default function Dashboard() {
     setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]);
   }
 
+  // No guard against out-of-order responses previously — switching the date
+  // range fires a new request while the old one may still be in flight, and
+  // nothing stopped a slower OLDER response (e.g. the initial "วันนี้" load,
+  // still pending) from resolving AFTER a faster newer one and overwriting
+  // it. The visible symptom: pick "เดือนนี้" right after the page loads, and
+  // the hourly chart from the still-in-flight "วันนี้" request lands last,
+  // showing hour-of-day labels under a "(เดือนนี้)" heading even though
+  // activityGranularity is only ever 'hour' for a single selected day. The
+  // `cancelled` flag (the standard fix for this in a plain useEffect, no
+  // AbortController plumbing needed since the request has no side effects
+  // worth aborting server-side) makes a response from a superseded request
+  // a no-op once a newer one for the current from/to has started.
   useEffect(() => {
-    axios.get('/api/analytics/summary', { params: { from, to } }).then(r => setData(r.data));
+    let cancelled = false;
+    axios.get('/api/analytics/summary', { params: { from, to } })
+      .then(r => { if (!cancelled) setData(r.data); })
+      .catch(err => { if (!cancelled) console.error('Failed to load dashboard summary:', err); });
+    return () => { cancelled = true; };
   }, [from, to]);
 
   const rangeLabel = useMemo(() => {
