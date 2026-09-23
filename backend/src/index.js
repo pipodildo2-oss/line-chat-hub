@@ -324,6 +324,11 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     // opening each agent in the UI one at a time both misses submissions and
     // can't tell the two causes apart. See upsellImageReport.js.
     .then(() => require('../src/lib/upsellImageReport').reportUpsellImageHealth())
+    // Settles whether claiming a message for an upsell is what makes its image
+    // disappear — see imageLossAnalysis.js. Compares claimed against never-
+    // claimed images directly rather than reasoning from the claimed ones
+    // alone, which are the only ones anyone looks at twice.
+    .then(() => require('../src/lib/imageLossAnalysis').analyseImageLoss())
     .catch(err => console.error('Quick-reply image ownership repair failed:', err.message));
 });
 
