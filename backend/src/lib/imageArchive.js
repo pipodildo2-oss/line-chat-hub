@@ -28,9 +28,22 @@ const { isStoredPath, thumbPathFor, UPLOAD_DIR } = require('./imageStorage');
 const r2 = require('./r2');
 
 const prisma = new PrismaClient();
+// Uploading and deleting are two different jobs on two different clocks, and
+// conflating them was a real weakness in the original design: while the only
+// copy of an image lived on the volume until it turned 90 days old, that volume
+// was a single point of failure for every recent piece of evidence in the
+// system — the newest and most-used images were exactly the ones with no second
+// copy anywhere. Losing it would have meant losing months of proof, and the
+// archive would have been no help at all.
+//
+// So the copy goes up almost immediately, and deletion still waits the full
+// retention period. Storage in R2 is about $0.015/GB/month and reads cost
+// nothing, so a permanent second copy of everything is a rounding error against
+// what it protects.
+const BACKUP_AFTER_HOURS = Number(process.env.BACKUP_AFTER_HOURS || 1);
 const RETENTION_DAYS = Number(process.env.ARCHIVE_AFTER_DAYS || 90);
-// Opt-in second phase. Until this is set, archiving only ever adds a copy to
-// R2 — the local file stays, so a mistake costs disk space rather than data.
+// Opt-in third phase. Until this is set, nothing is ever deleted from the
+// volume — the R2 copy simply accumulates alongside it.
 const DELETE_LOCAL = process.env.ARCHIVE_DELETE_LOCAL === 'true';
 const PAGE_SIZE = 200;
 // Deliberately modest: this runs alongside live traffic on the same volume and
@@ -79,10 +92,37 @@ function locate(message) {
   return { meta, storedPath };
 }
 
-async function archiveOne(message) {
+// Frees the local copies of a row that is already in R2, once it is past
+// retention. Split out because backing up and freeing are now on separate
+// clocks: a row backed up weeks ago comes back through here later purely to
+// have its local copy reclaimed, and without this it would return "already" and
+// keep both copies forever — the volume would never actually shrink.
+async function freeLocalCopy(storedPath, r2Key) {
+  const fullLocal = localPathFor(storedPath);
+  const thumbStored = thumbPathFor(storedPath);
+  if (!fs.existsSync(fullLocal)) return 'already'; // nothing left to reclaim
+  // Re-checked against R2 rather than trusted from the database. The recorded
+  // key is evidence that an upload once succeeded; this is the last moment
+  // before the local file stops existing, and the whole reason ~47,000 images
+  // were lost is that something assumed a copy existed elsewhere without
+  // asking. A missing object here is a real fault and is reported, not skipped
+  // over.
+  if (!(await r2.objectExists(r2Key))) {
+    console.error(`Refusing to free ${storedPath}: its archived copy ${r2Key} is not in R2.`);
+    return 'failed';
+  }
+  fs.rmSync(fullLocal, { force: true });
+  if (thumbStored !== storedPath) fs.rmSync(localPathFor(thumbStored), { force: true });
+  return 'archivedAndFreed';
+}
+
+async function archiveOne(message, deleteBefore) {
   const { meta, storedPath } = locate(message);
   if (!isStoredPath(storedPath)) return 'skipped';
-  if (meta.r2Key) return 'already';
+  if (meta.r2Key) {
+    if (!DELETE_LOCAL || message.createdAt >= deleteBefore) return 'already';
+    return freeLocalCopy(storedPath, meta.r2Key);
+  }
 
   const fullLocal = localPathFor(storedPath);
   const buffer = readIfPresent(fullLocal);
@@ -117,7 +157,12 @@ async function archiveOne(message) {
     data: { metadata: JSON.stringify({ ...meta, r2Key: key, ...(thumbKey ? { r2ThumbKey: thumbKey } : {}) }) },
   });
 
-  if (DELETE_LOCAL) {
+  // Freeing the local copy is a separate decision from having backed it up,
+  // and only happens once the message is genuinely past the retention window.
+  // Anything newer keeps both copies: the volume serves it fast, R2 holds the
+  // insurance.
+  const pastRetention = message.createdAt < deleteBefore;
+  if (DELETE_LOCAL && pastRetention) {
     fs.rmSync(fullLocal, { force: true });
     if (thumbBuffer) fs.rmSync(localPathFor(thumbStored), { force: true });
     return 'archivedAndFreed';
@@ -131,7 +176,11 @@ async function archiveOldImages() {
     return { skipped: 'R2 not configured' };
   }
 
-  const before = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  // Everything that isn't in R2 yet is a candidate, not just the old rows. The
+  // short delay only avoids racing the ingestion path that is still writing the
+  // file (line.service.js stores it moments after the message arrives).
+  const backupBefore = new Date(Date.now() - BACKUP_AFTER_HOURS * 60 * 60 * 1000);
+  const deleteBefore = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const stats = { considered: 0, archived: 0, archivedAndFreed: 0, already: 0, nolocal: 0, failed: 0, skipped: 0 };
   const startedAt = Date.now();
   let announcedFirst = false;
@@ -151,15 +200,36 @@ async function archiveOldImages() {
         // Video and audio are archived on exactly the same terms as images —
         // they are stored the same way and cost the volume the same bytes.
         type: { in: ['image', 'video', 'audio'] },
-        createdAt: { lt: before },
-        NOT: { metadata: { contains: '"r2Key"' } },
-        OR: [
-          { imageData: { startsWith: '/uploads/' } },      // agent-sent
-          { metadata: { contains: '"storedPath"' } },      // customer-sent
+        createdAt: { lt: backupBefore },
+        AND: [
+          // Has a file of ours at all. Narrowed here rather than filtered in
+          // code because the first production run showed the cost: all 500 of
+          // its batch were ancient rows whose content LINE deleted long before
+          // this app kept copies, so it skipped every one, and it would have
+          // spent dozens of passes walking past ~47,000 of those before
+          // reaching a single real file.
+          { OR: [
+            { imageData: { startsWith: '/uploads/' } },    // agent-sent
+            { metadata: { contains: '"storedPath"' } },    // customer-sent
+          ] },
+          // Either not backed up yet, or backed up and now old enough that its
+          // local copy can be reclaimed. The second case only matters once
+          // deletion is switched on — including it otherwise would just load
+          // rows that have nothing left to do.
+          { OR: DELETE_LOCAL
+            ? [
+              { NOT: { metadata: { contains: '"r2Key"' } } },
+              { createdAt: { lt: deleteBefore } },
+            ]
+            : [
+              { NOT: { metadata: { contains: '"r2Key"' } } },
+            ] },
         ],
       },
       select: { id: true, sender: true, metadata: true, imageData: true, createdAt: true },
-      orderBy: { id: 'asc' }, // oldest first — the least likely to be opened
+      // Newest first: the recent files are the ones an outage would hurt most,
+      // since they are the only ones nobody has a second copy of yet.
+      orderBy: { id: 'desc' },
       take: Math.min(PAGE_SIZE, BATCH_PER_RUN - stats.considered),
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
@@ -186,7 +256,7 @@ async function archiveOldImages() {
     async function processOne(m) {
       stats.considered++;
       try {
-        const outcome = await archiveOne(m);
+        const outcome = await archiveOne(m, deleteBefore);
         stats[outcome]++;
         // The very first successful upload gets its own line, immediately.
         // "Can this service reach the bucket at all" is the one question worth
@@ -219,7 +289,7 @@ async function archiveOldImages() {
   // are completely different situations that a silent no-op renders
   // identical — a distinction that has already cost hours twice in this
   // codebase, once for the recovery sweep and once for its progress output.
-  console.log(`Image archive finished in ${Math.round((Date.now() - startedAt) / 1000)}s: cutoff ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
+  console.log(`Image archive finished in ${Math.round((Date.now() - startedAt) / 1000)}s: backing up anything older than ${BACKUP_AFTER_HOURS}h, freeing local copies after ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
     + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
     + `, already archived ${stats.already}, no local file ${stats.nolocal}, nothing to archive ${stats.skipped}, failed ${stats.failed}`);
   return stats;
