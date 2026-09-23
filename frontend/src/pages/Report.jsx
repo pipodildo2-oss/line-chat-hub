@@ -1320,6 +1320,8 @@ function ConversationReportPage() {
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState('messagesSent');
   const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     setLoading(true);
@@ -1327,6 +1329,11 @@ function ConversationReportPage() {
       .then(r => setData(r.data))
       .finally(() => setLoading(false));
   }, [from, to]);
+
+  // A new date range or a re-sort can change which agents land on page 1 —
+  // same reset-on-change pattern as this page's other tables (e.g. the
+  // unanswered-chats one above), so page 3 doesn't silently end up empty.
+  useEffect(() => { setPage(1); }, [from, to, sortKey, sortDir]);
 
   function handleSort(key) {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -1337,6 +1344,7 @@ function ConversationReportPage() {
     () => (data ? [...data.rows].sort((a, b) => compareConversationRows(a, b, sortKey, sortDir)) : []),
     [data, sortKey, sortDir],
   );
+  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -1428,7 +1436,7 @@ function ConversationReportPage() {
               {!loading && rows.length === 0 && (
                 <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>
               )}
-              {!loading && rows.map(r => (
+              {!loading && pagedRows.map(r => (
                 <tr key={r.agentId} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0">
                   <td className="px-3 py-2.5">
                     <span className="text-gray-800 dark:text-slate-200">{r.name}</span>
@@ -1453,6 +1461,7 @@ function ConversationReportPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
       </div>
 
       {/* Said plainly rather than left for someone to discover: neither closes
