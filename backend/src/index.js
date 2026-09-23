@@ -26,7 +26,8 @@ const approvedLinkRoutes = require('./routes/approvedLinks');
 const settingsRoutes = require('./routes/settings');
 const telegramReportRoutes = require('./routes/telegramReport');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
-const { setIo } = require('./services/socket.service');
+const { agentRoom } = require('./lib/presence');
+const { setIo, emitToAll } = require('./services/socket.service');
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
 const { startTelegramReportScheduler } = require('./lib/telegramScheduler');
@@ -249,8 +250,22 @@ app.use((err, req, res, next) => {
 // Socket.io — every socket reaching here has already passed the io.use()
 // handshake check above, so socket.agent is always a real, currently-valid
 // agent record.
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log('Client connected:', socket.id, 'agent:', socket.agent.id);
+
+  // "ออนไลน์" indicator on Settings > ทีมงาน — see lib/presence.js for why
+  // this is a room join rather than a local counter (Redis-adapter
+  // correctness across replicas). Joining is what makes THIS socket count;
+  // whether it's this agent's ONLY connection right now (a second open tab
+  // joining the same room is a no-op as far as anyone watching should see —
+  // one open tab is already enough to count as online) is what decides
+  // whether to actually tell everyone else anything changed.
+  await socket.join(agentRoom(socket.agent.id));
+  const myAgentSockets = await io.in(agentRoom(socket.agent.id)).fetchSockets();
+  if (myAgentSockets.length === 1) {
+    emitToAll('agent_presence', { agentId: socket.agent.id, online: true });
+  }
+
   // Joining a conversation's room is what actually grants access to its live
   // 'new_message' events (see socket.service.js's emitToConversation) — the
   // handshake check above only proves the caller is SOME logged-in agent, not
@@ -284,7 +299,22 @@ io.on('connection', (socket) => {
     if (!conversationId) return;
     socket.broadcast.emit('agent_typing', { conversationId, agentName: socket.agent.name });
   });
-  socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
+  // Socket.io removes this socket from all its rooms BEFORE 'disconnect'
+  // fires (the 'disconnecting' event is the one that still sees them) — so
+  // by the time this runs, fetchSockets() on the agent room already
+  // reflects this socket's departure, and an empty result genuinely means
+  // no tab/device for this agent is connected anywhere in the cluster.
+  socket.on('disconnect', async () => {
+    console.log('Client disconnected:', socket.id);
+    try {
+      const remaining = await io.in(agentRoom(socket.agent.id)).fetchSockets();
+      if (remaining.length === 0) {
+        emitToAll('agent_presence', { agentId: socket.agent.id, online: false });
+      }
+    } catch (err) {
+      console.error('presence disconnect check failed:', err.message);
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3001;

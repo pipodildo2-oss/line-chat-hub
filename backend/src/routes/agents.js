@@ -4,6 +4,8 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { saveBase64Image, deleteStoredImage } = require('../lib/imageStorage');
+const { getOnlineAgentIds } = require('../lib/presence');
+const { getIo } = require('../services/socket.service');
 
 const prisma = new PrismaClient();
 
@@ -42,6 +44,19 @@ router.get('/', auth, async (req, res) => {
   res.json(isAdmin
     ? agents.map(a => ({ ...a, channelIds: a.channels.map(c => c.channelId), channels: undefined, twoFactorEnabled: !!a.twoFactorEnabledAt, twoFactorEnabledAt: undefined }))
     : agents);
+});
+
+// GET /api/agents/online-ids — every agent with at least one open socket
+// connection right now (see lib/presence.js — live connection presence,
+// NOT the stored Agent.status), for Settings > ทีมงาน's real-time "ออนไลน์"
+// indicator. Declared before GET /:id-shaped routes would matter, but this
+// file has none — kept here purely to sit next to the list it seeds.
+// Every agent can call this, not just admins — there's nothing sensitive in
+// "who currently has the app open" that isn't already visible from seeing
+// a teammate active in the inbox.
+router.get('/online-ids', auth, (req, res) => {
+  const io = getIo();
+  res.json({ ids: io ? getOnlineAgentIds(io) : [] });
 });
 
 // POST /api/agents

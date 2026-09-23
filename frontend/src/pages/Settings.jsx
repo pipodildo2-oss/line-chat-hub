@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Plus, Trash2, Copy, Check, Users, MessageSquare, Tag as TagIcon, AlertTriangle, ArrowLeft, QrCode, MessageCircle, Eye, EyeOff, Pencil, X, ExternalLink, Search, Link2, ChevronUp, ChevronDown, Cog, Send } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useSocket } from '../contexts/SocketContext';
 import { TAG_COLOR_PRESETS } from '../lib/constants';
 
 // Settings > "ระบบ" > บังคับใช้ 2FA — matches backend/src/lib/systemSettings.js's
@@ -380,7 +381,7 @@ function NewChannelWebhookModal({ channelName, webhookUrl, onClose }) {
   );
 }
 
-function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
+function AgentCard({ a, canManage, isMe, online, onEdit, onDelete }) {
   return (
     <div className="group relative rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 hover:border-gray-200 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors">
       {canManage && (
@@ -402,13 +403,26 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
               browser sat idle past Settings > "ระบบ"'s afkMinutes and it
               logged them out; not something anyone picks manually (see
               Sidebar.jsx's status dropdown, which never offers it) — this
-              dot is the only place a teammate sees it happened. */}
-          {a.status === 'away' && (
+              dot is the only place a teammate sees it happened. Takes
+              priority over the online dot below when both could apply
+              (the stored status field can briefly lag the socket actually
+              closing). */}
+          {a.status === 'away' ? (
             <span
               title="ไม่อยู่หน้าจอ (ออกจากระบบอัตโนมัติเนื่องจากไม่มีการใช้งาน)"
               className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-orange-400 ring-2 ring-white dark:ring-slate-900"
             />
-          )}
+          ) : online ? (
+            // Live connection presence (backend/src/lib/presence.js) — true
+            // only while a socket is actually open, unlike `a.status` which
+            // is a stored value that can go stale. No dot at all = offline,
+            // the implicit default, kept quiet rather than drawn as a chip
+            // for every single teammate not currently connected.
+            <span
+              title="ออนไลน์อยู่ตอนนี้"
+              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 ring-2 ring-white dark:ring-slate-900"
+            />
+          ) : null}
         </div>
         <div className="min-w-0 flex-1 pr-9">
           <p className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">{a.name}</p>
@@ -422,9 +436,13 @@ function AgentCard({ a, canManage, isMe, onEdit, onDelete }) {
         {isMe && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 font-medium">คุณ</span>
         )}
-        {a.status === 'away' && (
+        {a.status === 'away' ? (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium">ไม่อยู่หน้าจอ</span>
-        )}
+        ) : online ? (
+          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400" /> ออนไลน์
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -805,8 +823,14 @@ export default function Settings() {
   const { tab } = useParams();
   const { agent } = useAuth();
   const { t } = useLanguage();
+  const { socket } = useSocket();
   const [channels, setChannels] = useState([]);
   const [agents, setAgents] = useState([]);
+  // Live "ออนไลน์" presence on the ทีมงาน page — a Set of agent ids with at
+  // least one open socket right now (backend/src/lib/presence.js), separate
+  // from each agent's own `status` field. Seeded once from the server, then
+  // kept current purely from 'agent_presence' events — no polling.
+  const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [tags, setTags] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [manageChannelId, setManageChannelId] = useState(null);
@@ -886,6 +910,7 @@ export default function Settings() {
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data));
     axios.get('/api/agents').then(r => setAgents(r.data));
+    axios.get('/api/agents/online-ids').then(r => setOnlineIds(new Set(r.data.ids))).catch(() => {});
     axios.get('/api/tags').then(r => setTags(r.data));
     axios.get('/api/channel-categories').then(r => setChannelCategories(r.data));
     axios.get('/api/channel-category-groups').then(r => setChannelCategoryGroups(r.data));
@@ -898,6 +923,22 @@ export default function Settings() {
       setAfkInput(String(r.data.afkMinutes));
     }).catch(() => {});
   }, []);
+
+  // Keeps onlineIds current after the initial seed above — no polling, just
+  // the two events index.js emits when an agent's room goes from 0→1 or
+  // 1→0 open sockets cluster-wide (see lib/presence.js).
+  useEffect(() => {
+    if (!socket) return;
+    function onPresence({ agentId, online }) {
+      setOnlineIds(prev => {
+        const next = new Set(prev);
+        if (online) next.add(agentId); else next.delete(agentId);
+        return next;
+      });
+    }
+    socket.on('agent_presence', onPresence);
+    return () => socket.off('agent_presence', onPresence);
+  }, [socket]);
 
   async function addChannelCategory(e) {
     e.preventDefault();
@@ -1589,6 +1630,7 @@ export default function Settings() {
                 a={a}
                 canManage={canManage(a)}
                 isMe={a.id === agent?.id}
+                online={onlineIds.has(a.id)}
                 onEdit={() => setEditAgentTarget(a)}
                 onDelete={() => deleteAgent(a.id)}
               />
