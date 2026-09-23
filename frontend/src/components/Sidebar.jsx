@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { MessageSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2, Cog } from 'lucide-react';
+import { MessageSquare, MessagesSquare, BarChart2, Settings, LogOut, ChevronDown, Radio, Users, Tag, User, Zap, ShieldAlert, Contact, Search, Clock, Wallet, ClipboardCheck, TrendingUp, FileText, Link2, Cog } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -141,6 +141,7 @@ export default function Sidebar() {
 
   const reportChildren = [
     { to: '/report/audit', icon: Search, label: 'ตรวจสอบ' },
+    { to: '/report/conversations', icon: MessagesSquare, label: 'การสนทนา' },
     { to: '/report/agents', icon: Users, label: 'พนักงาน' },
     { to: '/report/followup', icon: Clock, label: 'ตามลูกค้า' },
   ];

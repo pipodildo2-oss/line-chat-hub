@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus, Link2, Repeat } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, ShieldQuestion, ExternalLink, MessageSquareWarning, Users, Eye, X, Filter, Search, ImagePlus, Send, ChevronLeft, ChevronRight, Loader2, Clock, Plus, Link2, Repeat, MessageSquare, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
@@ -1248,6 +1248,203 @@ function AgentConductPage() {
   );
 }
 
+// ---------- "การสนทนา" (conversation activity per agent) ----------
+
+// Any column header can drive the sort. Kept local to this section rather than
+// shared with the identical-looking one in Upsell.jsx — they render the same
+// affordance but neither owns the other's sort state, and pulling them into a
+// common component would only couple two pages that have no reason to change
+// together.
+const CONV_TH_ALIGN = { left: 'text-left', center: 'text-center', right: 'text-right' };
+function ConvSortableTh({ label, hint, active, dir, onClick, align = 'left' }) {
+  return (
+    <th className={`px-3 py-2.5 font-medium select-none whitespace-nowrap ${CONV_TH_ALIGN[align]}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={hint}
+        className={`inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-slate-200 ${active ? 'text-gray-800 dark:text-slate-100 font-semibold' : ''} ${align === 'right' ? 'flex-row-reverse' : ''}`}
+      >
+        {label}
+        {active ? (dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} className="opacity-40" />}
+      </button>
+    </th>
+  );
+}
+
+// Seconds are what the backend measures, but nobody reads "4,127 วินาที".
+export function formatDuration(seconds) {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${seconds} วินาที`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return s === 0 ? `${m} นาที` : `${m} นาที ${s} วิ`;
+  const h = Math.floor(m / 60);
+  return `${h} ชม. ${m % 60} นาที`;
+}
+
+// Exported so the ordering can be tested directly rather than inferred from
+// the rendered table — the null handling below is the part worth proving.
+export function compareConversationRows(a, b, sortKey, sortDir) {
+  const mul = sortDir === 'asc' ? 1 : -1;
+  if (sortKey === 'name') return mul * a.name.localeCompare(b.name, 'th');
+  if (sortKey === 'avgResponseSeconds') {
+    // An agent with no measured reply yet sorts to the BOTTOM in both
+    // directions, instead of being treated as zero seconds — which would
+    // otherwise put everyone who has never been measured at the top of
+    // "fastest first" and read as though they were the quickest on the team.
+    if (a.avgResponseSeconds == null && b.avgResponseSeconds == null) return 0;
+    if (a.avgResponseSeconds == null) return 1;
+    if (b.avgResponseSeconds == null) return -1;
+    return mul * (a.avgResponseSeconds - b.avgResponseSeconds);
+  }
+  return mul * (a[sortKey] - b[sortKey]);
+}
+
+function SummaryCard({ label, value, sub }) {
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+      <p className="text-xs text-gray-500 dark:text-slate-400">{label}</p>
+      <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 mt-1">{value}</p>
+      {sub && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function ConversationReportPage() {
+  const [preset, setPreset] = useState('thisMonth');
+  const [[from, to], setDateRange] = useState(PRESETS[2].range());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState('messagesSent');
+  const [sortDir, setSortDir] = useState('desc');
+
+  useEffect(() => {
+    setLoading(true);
+    axios.get('/api/reports/conversations', { params: { from, to } })
+      .then(r => setData(r.data))
+      .finally(() => setLoading(false));
+  }, [from, to]);
+
+  function handleSort(key) {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
+  }
+
+  const rows = useMemo(
+    () => (data ? [...data.rows].sort((a, b) => compareConversationRows(a, b, sortKey, sortDir)) : []),
+    [data, sortKey, sortDir],
+  );
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+        <MessageSquare size={20} className="text-aurora-tealDeep dark:text-aurora-teal" />
+        การสนทนา
+      </h1>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => { setPreset(p.key); setDateRange(p.range()); }}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
+          <input
+            type="date"
+            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+            value={from}
+            max={to}
+            onChange={e => { setPreset(null); setDateRange(prev => [e.target.value, prev[1]]); }}
+          />
+          <span>ถึง</span>
+          <input
+            type="date"
+            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+            value={to}
+            min={from}
+            onChange={e => { setPreset(null); setDateRange(prev => [prev[0], e.target.value]); }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <SummaryCard label="ส่งข้อความทั้งหมด" value={loading ? '—' : (data?.overall.messagesSent ?? 0).toLocaleString()} />
+        <SummaryCard label="ปิดแชททั้งหมด" value={loading ? '—' : (data?.overall.chatsClosed ?? 0).toLocaleString()} />
+        <SummaryCard
+          label="ความเร็วเฉลี่ยทั้งหมด"
+          value={loading ? '—' : formatDuration(data?.overall.avgResponseSeconds)}
+          sub={loading ? null : `จาก ${(data?.overall.responseSamples ?? 0).toLocaleString()} ครั้งที่วัดได้`}
+        />
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-800">
+          <p className="text-sm font-semibold text-gray-800 dark:text-slate-100">แยกตามพนักงาน</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">กดหัวคอลัมน์เพื่อเรียงลำดับ</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400">
+                <ConvSortableTh label="พนักงาน" active={sortKey === 'name'} dir={sortDir} onClick={() => handleSort('name')} />
+                <ConvSortableTh label="ส่งข้อความ" align="center" active={sortKey === 'messagesSent'} dir={sortDir} onClick={() => handleSort('messagesSent')} />
+                <ConvSortableTh label="ปิดแชท" align="center" active={sortKey === 'chatsClosed'} dir={sortDir} onClick={() => handleSort('chatsClosed')} />
+                <ConvSortableTh
+                  label="ความเร็วตอบ"
+                  hint="นับจากเวลาที่กดเข้าไปอ่านแชทนั้น จนถึงเวลาที่ตอบ"
+                  align="right"
+                  active={sortKey === 'avgResponseSeconds'}
+                  dir={sortDir}
+                  onClick={() => handleSort('avgResponseSeconds')}
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">กำลังโหลด...</td></tr>
+              )}
+              {!loading && rows.length === 0 && (
+                <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400 dark:text-slate-500">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>
+              )}
+              {!loading && rows.map(r => (
+                <tr key={r.agentId} className="border-b border-gray-50 dark:border-slate-800/60 last:border-0">
+                  <td className="px-3 py-2.5">
+                    <span className="text-gray-800 dark:text-slate-200">{r.name}</span>
+                    {r.team && <span className="text-xs text-gray-400 dark:text-slate-500 ml-1.5">· {r.team}</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.messagesSent.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.chatsClosed.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className="text-gray-700 dark:text-slate-300">{formatDuration(r.avgResponseSeconds)}</span>
+                    {r.responseSamples > 0 && (
+                      <span className="text-xs text-gray-400 dark:text-slate-500 ml-1.5">({r.responseSamples})</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Said plainly rather than left for someone to discover: neither closes
+          nor response times were recorded anywhere before this report existed,
+          so an empty early range is missing data, not a quiet month. */}
+      <p className="text-xs text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
+        <strong>ปิดแชท</strong> และ <strong>ความเร็วตอบ</strong> เริ่มเก็บข้อมูลตั้งแต่วันที่เปิดใช้รายงานนี้เป็นต้นไป
+        ช่วงเวลาก่อนหน้านั้นระบบไม่เคยบันทึกไว้ จึงแสดงเป็น 0 และ — ส่วน <strong>ส่งข้อความ</strong> ย้อนหลังได้ทั้งหมด
+      </p>
+    </div>
+  );
+}
+
 // ---------- "ตามลูกค้า" (customer follow-up + broadcast) ----------
 
 const FOLLOWUP_STATUS_TABS = [
@@ -2128,6 +2325,7 @@ function CustomerFollowupPage() {
 export default function Report() {
   const { tab } = useParams();
   if (tab === 'agents') return <AgentConductPage />;
+  if (tab === 'conversations') return <ConversationReportPage />;
   if (tab === 'followup') return <CustomerFollowupPage />;
   return <AuditReport />;
 }

@@ -43,8 +43,22 @@ async function clearMessageViewsAfterReply({ conversationId, agentId, repliedAt 
   // they'd opened this same still-unanswered chat (matches the "count
   // events, not resolve-one-view-at-a-time" spirit of the 'view' log in
   // messages.js — see AgentActivityLog in schema.prisma).
-  if (toClear.some(v => v.agentId === agentId)) {
-    await prisma.agentActivityLog.create({ data: { agentId, conversationId, kind: 'self_reply' } });
+  //
+  // The row also carries how long the reply took, measured from the EARLIEST
+  // of this agent's own outstanding views (see AgentActivityLog's own comment
+  // for why earliest rather than latest). This has to be captured right here:
+  // the MessageView rows it is measured from were deleted a few lines above,
+  // so after this moment the elapsed time cannot be reconstructed from
+  // anything.
+  const ownViews = toClear.filter(v => v.agentId === agentId);
+  if (ownViews.length > 0) {
+    const firstViewedAt = ownViews.reduce((a, v) => (v.viewedAt < a ? v.viewedAt : a), ownViews[0].viewedAt);
+    // Clamped at zero rather than trusted blindly: repliedAt and viewedAt can
+    // be written by different requests, and a negative "response time" would
+    // quietly drag a whole agent's average down with no way to spot it in the
+    // report.
+    const responseSeconds = Math.max(0, Math.round((repliedAt - firstViewedAt) / 1000));
+    await prisma.agentActivityLog.create({ data: { agentId, conversationId, kind: 'self_reply', responseSeconds } });
   }
 }
 

@@ -117,7 +117,23 @@ async function archiveOldImages() {
 
   while (stats.considered < BATCH_PER_RUN) {
     const page = await prisma.message.findMany({
-      where: { type: 'image', createdAt: { lt: before } },
+      // Narrowed to rows that could actually have something to archive, rather
+      // than every old image message. The first production run showed why:
+      // all 500 of its batch were ancient rows whose content LINE had already
+      // deleted long before this app kept copies, so it skipped all 500 and
+      // archived nothing — and at 500 a run it would have spent dozens of
+      // passes walking past ~47,000 of those before reaching a single real
+      // file. Matching on the stored-path markers costs nothing here and makes
+      // every batch real work.
+      where: {
+        type: 'image',
+        createdAt: { lt: before },
+        NOT: { metadata: { contains: '"r2Key"' } },
+        OR: [
+          { imageData: { startsWith: '/uploads/' } },      // agent-sent
+          { metadata: { contains: '"storedPath"' } },      // customer-sent
+        ],
+      },
       select: { id: true, sender: true, metadata: true, imageData: true, createdAt: true },
       orderBy: { id: 'asc' }, // oldest first — the least likely to be opened
       take: Math.min(PAGE_SIZE, BATCH_PER_RUN - stats.considered),
@@ -144,7 +160,7 @@ async function archiveOldImages() {
   // codebase, once for the recovery sweep and once for its progress output.
   console.log(`Image archive: cutoff ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
     + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
-    + `, already archived ${stats.already}, no local file ${stats.nolocal}, failed ${stats.failed}`);
+    + `, already archived ${stats.already}, no local file ${stats.nolocal}, nothing to archive ${stats.skipped}, failed ${stats.failed}`);
   return stats;
 }
 

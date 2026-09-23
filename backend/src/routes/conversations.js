@@ -228,7 +228,7 @@ router.get('/:id', auth, async (req, res) => {
 // PATCH /api/conversations/:id
 router.patch('/:id', auth, async (req, res) => {
   try {
-    const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true } });
+    const existing = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { channelId: true, status: true } });
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (!(await canAccessChannel(req.agent, existing.channelId))) {
       return res.status(404).json({ error: 'Not found' });
@@ -273,6 +273,20 @@ router.patch('/:id', auth, async (req, res) => {
       data,
       include: CONV_INCLUDE,
     });
+
+    // "จำนวนปิดแชท" on the conversation report counts from here. Only the
+    // transition INTO "ปิด" is logged, not every save while already closed —
+    // otherwise renaming a closed conversation, or any other unrelated edit,
+    // would inflate the count. Reopening and closing again does log a second
+    // row, which is genuinely two closes.
+    //
+    // Fire-and-forget: this is reporting, and failing to write it must never
+    // turn a successful status change into an error for the agent.
+    if (status === 'closed' && existing.status !== 'closed') {
+      prisma.agentActivityLog
+        .create({ data: { agentId: req.agent.id, conversationId: req.params.id, kind: 'close' } })
+        .catch(err => console.error('Could not log chat close:', err.message));
+    }
     emitToAll('conversation_updated', conversation);
     res.json(conversation);
   } catch {

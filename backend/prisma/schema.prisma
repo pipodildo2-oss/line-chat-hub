@@ -427,6 +427,14 @@ model MessageView {
 //                    own still-outstanding MessageView row(s) for that
 //                    conversation (see clearMessageViewsAfterReply) — i.e.
 //                    "I opened this and I'm also the one who answered it."
+//                    Carries responseSeconds (below).
+//   'close'       — logged when an agent sets a conversation's status to
+//                    "ปิด" (conversations.js PATCH /:id). Conversation.status
+//                    is only ever the CURRENT state, so without this row
+//                    there is no record anywhere of who closed a chat or
+//                    when, and "จำนวนปิดแชท" per agent can't be counted at
+//                    all. Re-closing a conversation that was reopened logs a
+//                    second row, which is correct: that is two closes.
 // อัตราตอบเอง (%) = count(kind='self_reply') / count(kind='view') * 100,
 // computed in reports.js — a rate over totals, not a per-view outcome (one
 // open can't be individually traced to one specific reply when the same
@@ -437,11 +445,27 @@ model AgentActivityLog {
   agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  kind           String   // 'view' | 'self_reply'
+  kind           String   // 'view' | 'self_reply' | 'close'
+  // Seconds from the agent FIRST opening this still-unanswered conversation
+  // to the reply that resolved it — "ความเร็วในการตอบนับตั้งแต่กดเข้าไปอ่านแชท"
+  // on the conversation report. Only ever set on 'self_reply' rows.
+  //
+  // It has to be written here, at the moment of the reply, because the
+  // MessageView row it is measured from is deleted in the same operation
+  // (see messageViewClear.js) — the elapsed time exists for exactly that
+  // instant and is unrecoverable afterwards, which is why the report has no
+  // history for this column before the day it shipped.
+  //
+  // Measured from the EARLIEST outstanding view, not the most recent one: if
+  // an agent opened the same unanswered chat three times before replying,
+  // the honest number is how long the customer waited from the first time
+  // that agent saw it, not from whenever they finally settled down to type.
+  responseSeconds Int?
   createdAt      DateTime @default(now())
 
   @@index([agentId, kind])
   @@index([conversationId])
+  @@index([createdAt])
 }
 
 // Admin-registered domains an agent is allowed to send a customer — anything

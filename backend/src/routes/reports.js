@@ -345,4 +345,91 @@ router.get('/response-rate', auth, requireAdmin, async (req, res) => {
   res.json({ agents: summary, responseRateThresholdPercent });
 });
 
+// GET /api/reports/conversations — the "การสนทนา" report: per agent, how much
+// they sent, how many chats they closed, and how quickly they answered.
+//
+// Two of these columns have no history before the day this shipped, and the
+// report says so rather than showing a misleading zero:
+//   - closes come from AgentActivityLog 'close' rows, because
+//     Conversation.status only ever holds the CURRENT state — nothing ever
+//     recorded who closed a chat or when.
+//   - response time comes from 'self_reply' rows' responseSeconds, captured at
+//     reply time because the MessageView it is measured from is deleted in the
+//     same operation (see messageViewClear.js).
+// Messages sent is counted from the messages themselves, so that column is
+// complete for the whole range.
+router.get('/conversations', auth, requireAdmin, async (req, res) => {
+  const { from, to } = req.query;
+  const range = {};
+  if (from) range.gte = dayStart(from);
+  if (to) range.lte = dayEnd(to);
+  const inRange = Object.keys(range).length > 0 ? range : undefined;
+
+  // Every agent, same as the other reports on this page — Agent has no
+  // enabled/disabled flag, and leaving someone out because they've been quiet
+  // would silently drop their numbers from the team totals.
+  const agents = await prisma.agent.findMany({
+    select: { id: true, name: true, category: { select: { name: true } } },
+    orderBy: { name: 'asc' },
+  });
+
+  const [sent, closes, replies] = await Promise.all([
+    prisma.message.groupBy({
+      by: ['senderId'],
+      where: { sender: 'agent', senderId: { not: null }, ...(inRange ? { createdAt: inRange } : {}) },
+      _count: { _all: true },
+    }),
+    prisma.agentActivityLog.groupBy({
+      by: ['agentId'],
+      where: { kind: 'close', ...(inRange ? { createdAt: inRange } : {}) },
+      _count: { _all: true },
+    }),
+    // Averaged over rows that actually have a duration: a 'self_reply' row
+    // written before responseSeconds existed is null, and counting those as
+    // zero would report the fastest possible time for the exact replies we
+    // know least about.
+    prisma.agentActivityLog.groupBy({
+      by: ['agentId'],
+      where: { kind: 'self_reply', responseSeconds: { not: null }, ...(inRange ? { createdAt: inRange } : {}) },
+      _count: { _all: true },
+      _avg: { responseSeconds: true },
+    }),
+  ]);
+
+  const sentBy = new Map(sent.map(r => [r.senderId, r._count._all]));
+  const closedBy = new Map(closes.map(r => [r.agentId, r._count._all]));
+  const repliedBy = new Map(replies.map(r => [r.agentId, r]));
+
+  const rows = agents.map(a => {
+    const r = repliedBy.get(a.id);
+    return {
+      agentId: a.id,
+      name: a.name,
+      team: a.category?.name || null,
+      messagesSent: sentBy.get(a.id) || 0,
+      chatsClosed: closedBy.get(a.id) || 0,
+      // null, not 0 — "no measurement yet" and "answered instantly" must not
+      // look the same in the table or in the sort order.
+      avgResponseSeconds: r?._avg?.responseSeconds != null ? Math.round(r._avg.responseSeconds) : null,
+      responseSamples: r?._count?._all || 0,
+    };
+  });
+
+  // The overall figure is a weighted mean over every measured reply, not the
+  // mean of each agent's average — otherwise someone with two replies would
+  // pull the team number as hard as someone with two hundred.
+  const totalSamples = rows.reduce((n, r) => n + r.responseSamples, 0);
+  const weightedSeconds = rows.reduce((n, r) => n + (r.avgResponseSeconds || 0) * r.responseSamples, 0);
+
+  res.json({
+    rows,
+    overall: {
+      messagesSent: rows.reduce((n, r) => n + r.messagesSent, 0),
+      chatsClosed: rows.reduce((n, r) => n + r.chatsClosed, 0),
+      avgResponseSeconds: totalSamples > 0 ? Math.round(weightedSeconds / totalSamples) : null,
+      responseSamples: totalSamples,
+    },
+  });
+});
+
 module.exports = router;
