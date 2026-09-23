@@ -330,6 +330,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     // claimed images directly rather than reasoning from the claimed ones
     // alone, which are the only ones anyone looks at twice.
     .then(() => require('../src/lib/imageLossAnalysis').analyseImageLoss())
+    // Also on startup, not only on the six-hourly timer. Waiting a full cycle
+    // to find out whether object storage is even reachable is no way to verify
+    // a change — the first run should happen while someone is still watching
+    // the deploy. It archives one modest batch and is harmless to repeat:
+    // anything already archived is skipped, and nothing is deleted unless
+    // ARCHIVE_DELETE_LOCAL says so.
+    .then(() => require('../src/lib/imageArchive').archiveOldImages())
     .catch(err => console.error('Quick-reply image ownership repair failed:', err.message));
 
   // Storing a customer's image at ingestion is deliberately best-effort — a

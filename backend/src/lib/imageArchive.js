@@ -106,7 +106,10 @@ async function archiveOne(message) {
 }
 
 async function archiveOldImages() {
-  if (!r2.isConfigured()) return { skipped: 'R2 not configured' };
+  if (!r2.isConfigured()) {
+    console.log('Image archive: skipped — R2 is not configured (needs R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)');
+    return { skipped: 'R2 not configured' };
+  }
 
   const before = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const stats = { considered: 0, archived: 0, archivedAndFreed: 0, already: 0, nolocal: 0, failed: 0, skipped: 0 };
@@ -134,11 +137,14 @@ async function archiveOldImages() {
     }
   }
 
-  if (stats.archived || stats.archivedAndFreed || stats.failed) {
-    console.log(`Image archive: considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
-      + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
-      + `, already archived ${stats.already}, no local file ${stats.nolocal}, failed ${stats.failed}`);
-  }
+  // Always logged, even when it found nothing to do. "Ran and there was
+  // nothing older than the window with a local file" and "never ran at all"
+  // are completely different situations that a silent no-op renders
+  // identical — a distinction that has already cost hours twice in this
+  // codebase, once for the recovery sweep and once for its progress output.
+  console.log(`Image archive: cutoff ${RETENTION_DAYS} days, considered ${stats.considered}, uploaded+verified ${stats.archived + stats.archivedAndFreed}`
+    + `, local copies freed ${stats.archivedAndFreed}${DELETE_LOCAL ? '' : ' (deletion disabled — set ARCHIVE_DELETE_LOCAL=true once verified)'}`
+    + `, already archived ${stats.already}, no local file ${stats.nolocal}, failed ${stats.failed}`);
   return stats;
 }
 
