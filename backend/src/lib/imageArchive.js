@@ -255,7 +255,18 @@ async function archiveOldImages() {
       }
     };
     async function processOne(m) {
-      stats.considered++;
+      // Captured at claim time, not read back at the end. Several workers run
+      // at once, so a shared counter read after the await can hold the same
+      // value for all of them — which is why the first run under concurrency
+      // printed "200/1000" five times in a row. The point of these lines is to
+      // be trustworthy at a glance; duplicated ones are noise.
+      //
+      // Each milestone is now reported exactly once, though two of them can
+      // still arrive out of order when the worker that claimed the earlier row
+      // finishes after one that claimed a later row. That is inherent to doing
+      // several at a time and costs nothing: every line is still a true
+      // statement about a position that was reached.
+      const position = ++stats.considered;
       try {
         const outcome = await archiveOne(m, deleteBefore);
         stats[outcome]++;
@@ -278,8 +289,8 @@ async function archiveOldImages() {
       // takes minutes — long enough that a run with no output is
       // indistinguishable from one that died, which is the same blind spot
       // that has now cost hours three separate times in this codebase.
-      if (stats.considered % PROGRESS_EVERY === 0) {
-        console.log(`Image archive: ${stats.considered}/${BATCH_PER_RUN} considered after ${Math.round((Date.now() - startedAt) / 1000)}s — uploaded ${stats.archived + stats.archivedAndFreed}, failed ${stats.failed}`);
+      if (position % PROGRESS_EVERY === 0) {
+        console.log(`Image archive: ${position}/${BATCH_PER_RUN} considered after ${Math.round((Date.now() - startedAt) / 1000)}s — uploaded ${stats.archived + stats.archivedAndFreed}, failed ${stats.failed}`);
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, page.length) }, worker));
