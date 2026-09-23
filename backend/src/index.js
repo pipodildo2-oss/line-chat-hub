@@ -356,6 +356,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
         }
       })
       .catch(err => console.error('Scheduled image recovery failed:', err.message))
+      // Moves images past the retention window to R2 — see imageArchive.js.
+      // Does nothing at all until the R2 credentials are set, and even then
+      // only ADDS a copy until ARCHIVE_DELETE_LOCAL is turned on separately.
+      // Runs in modest batches rather than all at once: there's no deadline,
+      // and it shares this volume with live traffic.
+      .then(() => require('../src/lib/imageArchive').archiveOldImages())
+      .catch(err => console.error('Scheduled image archive failed:', err.message))
       .then(() => require('../src/lib/storageHealth').checkStorageHealth())
       .catch(err => console.error('Scheduled storage health check failed:', err.message));
   }, MAINTENANCE_INTERVAL_MS).unref();

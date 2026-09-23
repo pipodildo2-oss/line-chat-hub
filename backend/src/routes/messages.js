@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl, UPLOAD_DIR } = require('../lib/imageStorage');
 const { markContentUnrecoverable } = require('../lib/imageBackfill');
+const r2 = require('../lib/r2');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
@@ -91,6 +92,24 @@ router.get('/content/:messageId', auth, async (req, res) => {
       }
     }
 
+    // Archived to R2 once it aged past the local retention window (see
+    // imageArchive.js). Nothing about this is visible to the agent beyond the
+    // request taking a little longer — the image is not "restored" or queued,
+    // it is simply fetched from the other place it lives and served normally,
+    // which is the entire reason archiving is safe to do at all.
+    if (meta.r2Key) {
+      const archived = await r2.getObject(meta.r2Key);
+      if (archived) {
+        res.set('Content-Type', archived.contentType);
+        res.set('Cache-Control', 'private, max-age=86400');
+        return res.end(archived.buffer);
+      }
+      // Recorded as archived but not actually there: never silently fall
+      // through to a "this expired" answer, because that would misreport our
+      // own storage fault as LINE's retention and hide it. Say it loudly.
+      console.error(`Archived image missing from R2 for message ${message.id} (key ${meta.r2Key})`);
+    }
+
     // No local copy, and LINE has already told us (on some earlier request or
     // during the imageBackfill sweep) that it no longer has this message's
     // content either — see the 404 branch below. There is nothing left to
@@ -159,11 +178,32 @@ router.post('/image-failure', auth, async (req, res) => {
 });
 
 router.get('/image/:id', async (req, res) => {
-  const message = await prisma.message.findUnique({ where: { id: req.params.id }, select: { imageData: true } });
+  const message = await prisma.message.findUnique({ where: { id: req.params.id }, select: { imageData: true, metadata: true } });
   if (!message?.imageData) return res.status(404).end();
   if (isStoredPath(message.imageData)) {
     const target = req.query.preview ? thumbPathFor(message.imageData) : message.imageData;
-    return res.redirect(target);
+    // Redirecting to the static /uploads path is the fast path and stays the
+    // normal case, but only while the file is actually there. Once this image
+    // has been archived to R2 and the local copy freed (imageArchive.js), that
+    // redirect would land on a 404 — so check first and serve the archived
+    // bytes directly instead. Identical result to the caller, including LINE
+    // itself fetching an image we pushed.
+    if (fs.existsSync(path.join(UPLOAD_DIR, target.replace('/uploads/', '')))) {
+      return res.redirect(target);
+    }
+    let meta = {};
+    try { meta = JSON.parse(message.metadata || '{}'); } catch { /* treated as absent */ }
+    const key = req.query.preview ? (meta.r2ThumbKey || meta.r2Key) : meta.r2Key;
+    if (key) {
+      const archived = await r2.getObject(key);
+      if (archived) {
+        res.set('Content-Type', archived.contentType);
+        res.set('Cache-Control', 'public, max-age=86400');
+        return res.end(archived.buffer);
+      }
+      console.error(`Archived image missing from R2 for message ${req.params.id} (key ${key})`);
+    }
+    return res.status(404).end();
   }
   // Restricted to the same safe raster-image allowlist as new uploads (see
   // imageStorage.js) rather than the original permissive `image/[a-zA-Z0-9.+-]+`
