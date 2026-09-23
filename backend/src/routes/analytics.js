@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 // GET /api/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
 // `from`/`to` scope the period-based numbers (new conversations, messages-per-day
-// chart, conversations-by-channel breakdown). totalConversations/open/closed stay
+// chart, messages-by-channel breakdown). totalConversations/open/closed stay
 // as current all-time snapshot counts regardless of the selected range — "currently
 // open" doesn't really mean anything scoped to a past date range.
 router.get('/summary', auth, async (req, res) => {
@@ -43,7 +43,7 @@ router.get('/summary', auth, async (req, res) => {
     closedConversations,
     totalMessages,
     newConversations,
-    conversationsByChannel,
+    messagesByChannel,
     recentActivity,
   ] = await Promise.all([
     prisma.conversation.count(),
@@ -51,12 +51,22 @@ router.get('/summary', auth, async (req, res) => {
     prisma.conversation.count({ where: { status: 'closed' } }),
     prisma.message.count(),
     prisma.conversation.count({ where: { createdAt: { gte: fromDate, lte: toDate } } }),
-    prisma.conversation.groupBy({
-      by: ['channelId'],
-      where: { createdAt: { gte: fromDate, lte: toDate } },
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
+    // "ปริมาณข้อความตาม OA" — a rough proxy for how much of the LINE
+    // Messaging API's per-channel usage each OA is responsible for on a
+    // given day, requested specifically to compare channels against each
+    // other, not as an exact bill (LINE's own metered/free-tier rules for
+    // which messages actually count don't map cleanly onto sender/type, and
+    // aren't reproduced here — see the caption next to this on the
+    // Dashboard). Combines both directions per channel, so it needs a join
+    // Prisma's groupBy can't express on its own (Message has no channelId
+    // of its own — only its Conversation does).
+    prisma.$queryRawUnsafe(
+      `SELECT c."channelId" as "channelId", COUNT(*)::int as count
+       FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+       WHERE (m."createdAt" AT TIME ZONE 'UTC') >= $1 AND (m."createdAt" AT TIME ZONE 'UTC') <= $2
+       GROUP BY c."channelId" ORDER BY count DESC`,
+      fromDate, toDate
+    ),
     // Messages per day (or per hour, for a single selected day) within the
     // selected range.
     //
@@ -81,23 +91,33 @@ router.get('/summary', auth, async (req, res) => {
     // before) belongs to the NEXT calendar day locally. The day query below
     // converts to Bangkok wall-clock first for the same reason the hour
     // query already needs to.
+    // Split into incoming (customer, sender='user') vs outgoing
+    // (everything the API actually sent out: agent replies AND bot
+    // auto-replies — both consume the same LINE API call, so both belong
+    // on the "ออก" side for the cost-awareness this chart is for) rather
+    // than one combined count, so the two directions can be told apart on
+    // the chart.
     isSingleDay
       ? prisma.$queryRawUnsafe(
-          `SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'HH24:00') as date, COUNT(*)::int as count
+          `SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'HH24:00') as date,
+                  COUNT(*) FILTER (WHERE sender = 'user')::int as incoming,
+                  COUNT(*) FILTER (WHERE sender != 'user')::int as outgoing
            FROM "Message" WHERE ("createdAt" AT TIME ZONE 'UTC') >= $1 AND ("createdAt" AT TIME ZONE 'UTC') <= $2
            GROUP BY date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ORDER BY date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ASC`,
           fromDate, toDate
         )
       : prisma.$queryRawUnsafe(
-          `SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'YYYY-MM-DD') as date, COUNT(*)::int as count
+          `SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok'), 'YYYY-MM-DD') as date,
+                  COUNT(*) FILTER (WHERE sender = 'user')::int as incoming,
+                  COUNT(*) FILTER (WHERE sender != 'user')::int as outgoing
            FROM "Message" WHERE ("createdAt" AT TIME ZONE 'UTC') >= $1 AND ("createdAt" AT TIME ZONE 'UTC') <= $2
            GROUP BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ORDER BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok') ASC`,
           fromDate, toDate
         ),
   ]);
 
-  // Attach channel names to groupBy result
-  const channelIds = conversationsByChannel.map((r) => r.channelId);
+  // Attach channel names to the raw query's result
+  const channelIds = messagesByChannel.map((r) => r.channelId);
   const channels = await prisma.lineChannel.findMany({
     where: { id: { in: channelIds } },
     select: { id: true, name: true },
@@ -110,10 +130,10 @@ router.get('/summary', auth, async (req, res) => {
     closedConversations,
     totalMessages,
     newConversations,
-    conversationsByChannel: conversationsByChannel.map((r) => ({
+    messagesByChannel: messagesByChannel.map((r) => ({
       channelId: r.channelId,
       channelName: channelMap[r.channelId] || r.channelId,
-      count: r._count.id,
+      count: r.count,
     })),
     recentActivity,
     activityGranularity: isSingleDay ? 'hour' : 'day',

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { MessageSquare, Users, CheckCircle, Clock } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format } from 'date-fns';
 import { useTheme } from '../contexts/ThemeContext';
@@ -72,7 +72,8 @@ export default function Dashboard() {
   // activityGranularity).
   const activityData = data.recentActivity.map(row => ({
     date: data.activityGranularity === 'hour' ? row.date : new Date(row.date).toLocaleDateString('th', { month: 'short', day: 'numeric' }),
-    messages: Number(row.count),
+    incoming: Number(row.incoming),
+    outgoing: Number(row.outgoing),
   }));
 
   return (
@@ -130,7 +131,7 @@ export default function Dashboard() {
         {/* Activity chart */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
           <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{data.activityGranularity === 'hour' ? 'ข้อความต่อชั่วโมง' : t('dashboard_messages_per_day')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={activityData}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="date" tick={{ fontSize: 12, fill: tickColor }} />
@@ -139,7 +140,11 @@ export default function Dashboard() {
                 contentStyle={isDark ? { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' } : undefined}
                 labelStyle={isDark ? { color: '#e2e8f0' } : undefined}
               />
-              <Bar dataKey="messages" fill="#005BFF" radius={[4, 4, 0, 0]} />
+              <Legend wrapperStyle={{ fontSize: 12, color: tickColor }} />
+              {/* Bot auto-replies count as "ออก" alongside agent replies — both
+                  hit the LINE API the same way (see routes/analytics.js). */}
+              <Bar dataKey="incoming" name="ข้อความเข้า" fill="#005BFF" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="outgoing" name="ข้อความออก" fill="#22C55E" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -148,16 +153,16 @@ export default function Dashboard() {
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
           <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{t('dashboard_by_channel')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
           <div className="space-y-3">
-            {data.conversationsByChannel.length === 0 && (
+            {data.messagesByChannel.length === 0 && (
               <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
             )}
-            {data.conversationsByChannel.map(ch => {
-              const max = Math.max(...data.conversationsByChannel.map(c => c.count), 1);
+            {data.messagesByChannel.map(ch => {
+              const max = Math.max(...data.messagesByChannel.map(c => c.count), 1);
               return (
                 <div key={ch.channelId}>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-700 dark:text-slate-300 truncate">{ch.channelName}</span>
-                    <span className="font-medium text-gray-900 dark:text-slate-100">{ch.count}</span>
+                    <span className="font-medium text-gray-900 dark:text-slate-100">{ch.count.toLocaleString()}</span>
                   </div>
                   <div className="bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
                     <div
@@ -169,6 +174,13 @@ export default function Dashboard() {
               );
             })}
           </div>
+          {/* This is a volume proxy for comparing OAs against each other, not
+              a real bill — LINE's own free-tier/metered rules for which
+              messages actually count don't map cleanly onto a simple
+              in+out sum. */}
+          <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
+            นับข้อความเข้า+ออกรวมกันต่อ OA — ใช้เทียบปริมาณระหว่างไลน์ได้ ไม่ใช่ยอดค่าใช้จ่ายจริงจาก LINE
+          </p>
         </div>
       </div>
     </div>
