@@ -181,6 +181,18 @@ app.use('/api/settings/telegram', telegramReportRoutes);
 // registered before the SPA catch-all below, and intentionally has no `auth`
 // middleware — LINE's own servers fetch these URLs directly.
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1d' }));
+// A stored file that isn't on disk must answer 404 here, not fall through to
+// the SPA catch-all at the bottom of this file.
+//
+// Without this, express.static calls next() for a miss and the catch-all
+// happily returns index.html with 200 OK and Content-Type: text/html. An <img>
+// then receives a successful response full of HTML, fails to decode it, and
+// renders as a broken image — while the access log records a clean 200. That
+// combination is why missing images were effectively undebuggable from the
+// server side: every investigation kept concluding "no 404s anywhere, the
+// server is fine" when the 404s were real and being disguised as successes.
+// It also lets a browser cache the HTML under the image's own url.
+app.use('/uploads', (req, res) => res.status(404).end());
 
 // Checks the process is alive AND can actually reach the database — a plain
 // "process is running" check can stay green while the DB connection is dead.
@@ -206,7 +218,17 @@ const fs = require('fs');
 const distPath = path.join(__dirname, '../dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  app.get('*', (req, res) => {
+    // Only real navigations get the SPA shell. A request for something that
+    // looks like a file (anything with an extension) which express.static
+    // above couldn't find is a genuine 404, and answering it with index.html
+    // and a 200 makes a missing asset indistinguishable from a working one —
+    // see the /uploads guard above for how long that cost us on missing
+    // images. A client-side route like /upsell/review has no extension and
+    // still gets the shell, which is the whole point of this handler.
+    if (path.extname(req.path)) return res.status(404).end();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
 }
 
 // Body-parser errors (e.g. payload too large, malformed JSON) otherwise reach the
