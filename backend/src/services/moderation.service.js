@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const Wordcut = require('wordcut');
 const badWords = require('../config/badWords.json');
+const { getModerationMode } = require('../lib/systemSettings');
 
 // AI is the primary check again (was keyword-only for a while — see below).
 // The keyword list from that period is kept as a fallback for whenever the
@@ -181,12 +182,22 @@ function checkWithKeywords(text) {
 async function checkMessage(text, history = []) {
   if (!text?.trim()) return null;
 
-  const aiResult = await checkWithAI(text);
-  if (aiResult !== undefined) {
-    if (aiResult) return aiResult;
-  } else {
+  // Settings > "ระบบ" picks which check runs first. "keyword" skips the AI
+  // call entirely (an admin's deliberate cost/offline-safety choice); "ai"
+  // (default) tries AI first and only drops to keywords if that call itself
+  // fails — an automatic outage fallback, not the mode the admin picked.
+  const mode = await getModerationMode();
+  if (mode === 'keyword') {
     const keywordHit = checkWithKeywords(text);
     if (keywordHit) return keywordHit;
+  } else {
+    const aiResult = await checkWithAI(text);
+    if (aiResult !== undefined) {
+      if (aiResult) return aiResult;
+    } else {
+      const keywordHit = checkWithKeywords(text);
+      if (keywordHit) return keywordHit;
+    }
   }
 
   // Spam check: the SAME message sent back-to-back 3+ times in a row.

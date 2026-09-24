@@ -627,5 +627,16 @@ model SystemSetting {
   // month's numbers twice (e.g. if it's also triggered manually earlier that
   // day, or the interval check fires more than once in the same minute).
   telegramLastSentPeriod       String?
-  updatedAt                    DateTime @updatedAt
+  // "คำหยาบ/ข้อความไม่เหมาะสม" detection mode — Settings > "ระบบ", admin-only.
+  // "ai" (default): every outgoing agent message is judged for tone/intent by
+  // Claude (moderation.service.js's checkWithAI), catching sarcasm/condescension
+  // a fixed word list never can — falling back to "keyword" automatically if
+  // that call itself fails (no API key, rate limit, or Anthropic credit
+  // exhaustion — see that file's own comment on why this fallback exists).
+  // "keyword": skips the AI call entirely and always uses the
+  // badWords.json list — zero cost, zero external calls, but tone-blind.
+  // This setting picks which one runs FIRST by choice, independent of the
+  // automatic AI-failure fallback, which always applies regardless.
+  moderationMode                String   @default("ai")
+  updatedAt                     DateTime @updatedAt
 }

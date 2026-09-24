@@ -8,6 +8,8 @@ const DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT = 50;
 const DEFAULT_AFK_MINUTES = 0; // 0 = feature off
 const DEFAULT_TWO_FACTOR_REQUIRED_SCOPE = 'off';
 const TWO_FACTOR_REQUIRED_SCOPES = ['off', 'all', 'admin', 'agent'];
+const DEFAULT_MODERATION_MODE = 'ai';
+const MODERATION_MODES = ['ai', 'keyword'];
 const DEFAULT_TELEGRAM_REPORT_DAY = 1;
 const DEFAULT_TELEGRAM_REPORT_HOUR = 9;
 const DEFAULT_TELEGRAM_REPORT_MINUTE = 0;
@@ -23,6 +25,7 @@ async function getSystemSettings() {
     responseRateThresholdPercent: row?.responseRateThresholdPercent ?? DEFAULT_RESPONSE_RATE_THRESHOLD_PERCENT,
     afkMinutes: row?.afkMinutes ?? DEFAULT_AFK_MINUTES,
     twoFactorRequiredScope: row?.twoFactorRequiredScope ?? DEFAULT_TWO_FACTOR_REQUIRED_SCOPE,
+    moderationMode: row?.moderationMode ?? DEFAULT_MODERATION_MODE,
   };
 }
 
@@ -78,6 +81,22 @@ function setTwoFactorRequiredScope(scope) {
     where: { id: SINGLETON_ID },
     update: { twoFactorRequiredScope: scope },
     create: { id: SINGLETON_ID, twoFactorRequiredScope: scope },
+  });
+}
+
+async function getModerationMode() {
+  const { moderationMode } = await getSystemSettings();
+  return moderationMode;
+}
+
+function setModerationMode(mode) {
+  if (!MODERATION_MODES.includes(mode)) {
+    throw new Error(`moderationMode ต้องเป็นหนึ่งใน ${MODERATION_MODES.join(', ')}`);
+  }
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: { moderationMode: mode },
+    create: { id: SINGLETON_ID, moderationMode: mode },
   });
 }
 
@@ -151,6 +170,8 @@ module.exports = {
   getTwoFactorRequiredScope,
   setTwoFactorRequiredScope,
   roleIsInTwoFactorScope,
+  getModerationMode,
+  setModerationMode,
   getTelegramSettings,
   getTelegramCredentials,
   setTelegramSettings,
@@ -160,4 +181,6 @@ module.exports = {
   DEFAULT_AFK_MINUTES,
   DEFAULT_TWO_FACTOR_REQUIRED_SCOPE,
   TWO_FACTOR_REQUIRED_SCOPES,
+  DEFAULT_MODERATION_MODE,
+  MODERATION_MODES,
 };

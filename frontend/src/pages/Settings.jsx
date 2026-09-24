@@ -17,6 +17,11 @@ const TWO_FACTOR_SCOPE_OPTIONS = [
   { key: 'agent', label: 'เฉพาะ Agent' },
 ];
 
+const MODERATION_MODE_OPTIONS = [
+  { key: 'ai', label: 'AI (Claude)' },
+  { key: 'keyword', label: 'ลิสต์คำ (ไม่ใช้ AI)' },
+];
+
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
   function copy(e) {
@@ -879,6 +884,7 @@ export default function Settings() {
   // rather than needing a draft-input + separate save button like the
   // number fields above.
   const [savingTwoFactorRequired, setSavingTwoFactorRequired] = useState(false);
+  const [savingModerationMode, setSavingModerationMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -1331,6 +1337,19 @@ export default function Settings() {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingTwoFactorRequired(false);
+    }
+  }
+
+  async function setModerationMode(mode) {
+    if (mode === systemSettings?.moderationMode) return;
+    setSavingModerationMode(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { moderationMode: mode });
+      setSystemSettings(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingModerationMode(false);
     }
   }
 
@@ -2017,6 +2036,40 @@ export default function Settings() {
             ) : (
               <p className="text-sm text-gray-900 dark:text-slate-100">
                 สถานะปัจจุบัน: {systemSettings ? (TWO_FACTOR_SCOPE_OPTIONS.find(o => o.key === systemSettings.twoFactorRequiredScope)?.label || 'ปิดใช้งาน') : '...'}
+                <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
+              </p>
+            )}
+          </div>
+
+          <div className={cardCls}>
+            <h3 className="font-medium text-gray-900 dark:text-slate-100 mb-1">ตรวจคำหยาบ/ข้อความไม่เหมาะสม</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+              เลือกวิธีตรวจข้อความที่พนักงานพิมพ์ส่งลูกค้า (หน้า รายงาน &gt; ตรวจสอบ) — <span className="font-medium">AI</span> ให้ Claude
+              อ่านทั้งบริบท/น้ำเสียง จับได้แม้ไม่มีคำหยาบตรงๆ เช่น พูดแซะ พูดประชด (มีค่าใช้จ่ายต่อข้อความ และถ้า AI ใช้งานไม่ได้ชั่วคราว
+              ระบบจะสลับไปใช้ลิสต์คำให้อัตโนมัติ) ส่วน <span className="font-medium">ลิสต์คำ</span> ตรวจจากคำในลิสต์เท่านั้น ไม่มีค่าใช้จ่าย
+              แต่จับบริบท/น้ำเสียงไม่ได้
+            </p>
+            {agent?.role === 'admin' ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {MODERATION_MODE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setModerationMode(opt.key)}
+                    disabled={savingModerationMode || !systemSettings}
+                    className={`text-sm px-3 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
+                      systemSettings?.moderationMode === opt.key
+                        ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent'
+                        : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-900 dark:text-slate-100">
+                โหมดปัจจุบัน: {systemSettings ? (MODERATION_MODE_OPTIONS.find(o => o.key === systemSettings.moderationMode)?.label || 'AI (Claude)') : '...'}
                 <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
             )}
