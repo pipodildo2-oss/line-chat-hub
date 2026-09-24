@@ -17,6 +17,50 @@ function parseISO(s) {
   return new Date(y, m - 1, d);
 }
 
+// DD/MM/YY, Buddhist 2-digit year — the trigger button's compact format for
+// a single specific day.
+function formatShortDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const be = String((y + 543) % 100).padStart(2, '0');
+  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${be}`;
+}
+
+// --/MM/YY — the trigger button's format for a whole-month selection (day
+// is blanked out since every day in the month is included).
+function formatMonthOnly(iso) {
+  const [y, m] = iso.split('-').map(Number);
+  const be = String((y + 543) % 100).padStart(2, '0');
+  return `--/${String(m).padStart(2, '0')}/${be}`;
+}
+
+// True when [from, to] covers an entire calendar month: starts on the 1st,
+// and ends either on that month's last day (a past, fully-elapsed month) or
+// on today (the current, still-in-progress month) — both "เดือนนี้" and
+// "เดือนที่แล้ว" resolve to one of these two shapes, and so does any custom
+// pick that happens to land on the same boundaries.
+function isWholeMonthRange(from, to) {
+  const [fy, fm, fd] = from.split('-').map(Number);
+  if (fd !== 1) return false;
+  const [ty, tm, td] = to.split('-').map(Number);
+  if (ty !== fy || tm !== fm) return false;
+  const lastDayOfMonth = new Date(fy, fm, 0).getDate();
+  if (td === lastDayOfMonth) return true;
+  const now = new Date();
+  return fy === now.getFullYear() && fm === now.getMonth() + 1 && td === now.getDate();
+}
+
+// The trigger button's own label — always a compact numeric date once a
+// real range is set, regardless of what the page's own (word-based, e.g.
+// "เดือนนี้") rangeLabel says elsewhere on the page. `fallback` only fires
+// for a genuinely empty range (Upsell's "ทั้งหมด" / all-time preset, [null,
+// null]), where there's no concrete date to format.
+function formatTriggerLabel(from, to, fallback) {
+  if (!from || !to) return fallback;
+  if (from === to) return formatShortDate(from);
+  if (isWholeMonthRange(from, to)) return formatMonthOnly(from);
+  return `${formatShortDate(from)} ถึง ${formatShortDate(to)}`;
+}
+
 // Shared click-click range calendar: click one day to select just that day
 // (applied immediately — closing right here is a valid single-day pick),
 // click a second, different day to extend it into a range (applied on that
@@ -30,9 +74,11 @@ function parseISO(s) {
 //
 // Props:
 //   from, to       ISO 'YYYY-MM-DD' strings, or null/null for "no filter"
-//   label          precomputed display string for the trigger button (each
-//                  page already computes this for its own captions — reused
-//                  here rather than duplicating the formatting logic)
+//   label          fallback trigger-button text used ONLY when from/to are
+//                  both null (Upsell's "ทั้งหมด" preset) — any real range
+//                  renders as a compact numeric date instead, computed
+//                  internally (see formatTriggerLabel above), independent of
+//                  whatever word-based rangeLabel the page shows elsewhere
 //   onCustomRange  (fromISO, toISO) => void — the calendar always knows both
 //                  ends of a pick at once, so there's a single callback
 //                  rather than the old two-call onCustom('from'|'to', value)
@@ -106,7 +152,7 @@ export default function DateRangePicker({ from, to, label, onCustomRange }) {
         }`}
       >
         <CalendarIcon size={14} className="text-gray-400 dark:text-slate-500 flex-shrink-0" />
-        {label}
+        {formatTriggerLabel(from, to, label)}
       </button>
 
       {open && (
