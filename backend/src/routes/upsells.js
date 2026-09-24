@@ -138,7 +138,7 @@ router.get('/agents', auth, requireAdmin, async (req, res) => {
 // every submission across every agent, for the detailed รายงาน page (the
 // score/leaderboard page above is the rollup; this is what backs it).
 router.get('/', auth, requireAdmin, async (req, res) => {
-  const { from, to, status, agentCategoryId } = req.query;
+  const { from, to, status, agentCategoryId, page, limit } = req.query;
   const where = {};
   if (status) where.status = status;
   if (from || to) {
@@ -150,26 +150,39 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     where.agent = agentCategoryId === 'none' ? { categoryId: null } : { categoryId: agentCategoryId };
   }
 
-  const submissions = await prisma.upsellSubmission.findMany({
-    where,
-    select: {
-      id: true, status: true, amount: true, createdAt: true, reviewedAt: true,
-      agent: { select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } } },
-      reviewedBy: { select: { id: true, name: true } },
-      items: {
-        select: {
-          message: {
-            select: {
-              id: true, createdAt: true,
-              conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { name: true } } } },
+  // Was an unpaginated `take: 1000` — fine as a safety cap when this page's
+  // filters kept the list short, but a busy team/date range genuinely
+  // exceeding 1000 submissions had the rest silently invisible AND
+  // unreachable (no way to page to them), while the "found N" count you'd
+  // see was that same 1000 cap rather than the real total. Real limit/skip
+  // paging with a separate count() fixes both.
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(1000, Math.max(1, parseInt(limit, 10) || 10));
+
+  const [total, submissions] = await Promise.all([
+    prisma.upsellSubmission.count({ where }),
+    prisma.upsellSubmission.findMany({
+      where,
+      select: {
+        id: true, status: true, amount: true, createdAt: true, reviewedAt: true,
+        agent: { select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } } },
+        reviewedBy: { select: { id: true, name: true } },
+        items: {
+          select: {
+            message: {
+              select: {
+                id: true, createdAt: true,
+                conversation: { select: { id: true, displayName: true, lineUserId: true, channel: { select: { name: true } } } },
+              },
             },
           },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 1000,
-  });
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
 
   // Flatten each submission down to the one row this table needs — item
   // order isn't guaranteed by Prisma (same reason as GET /agents/:agentId
@@ -191,7 +204,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     };
   });
 
-  res.json({ submissions: rows });
+  res.json({ submissions: rows, total });
 });
 
 // GET /api/upsells/agents/:agentId?status= — admin drill-down for one

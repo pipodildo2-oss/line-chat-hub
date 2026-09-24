@@ -32,6 +32,55 @@ function formatRangeLabel(preset, from, to) {
   return from === to ? from : `${from} ถึง ${to}`;
 }
 
+// Same page-size + prev/next pager as Report.jsx's own Pagination — kept as
+// a separate copy here rather than a shared import since neither file
+// exports one, matching this codebase's existing "small per-page helpers
+// get duplicated, not centralized" convention (see toISODate/PRESETS above).
+const PAGE_SIZE_OPTIONS = [10, 100, 1000];
+function Pagination({ page, setPage, pageSize, setPageSize, total }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total === 0) return null;
+  const startRow = (page - 1) * pageSize + 1;
+  const endRow = Math.min(page * pageSize, total);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 dark:border-slate-800">
+      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
+        <span>แถวต่อหน้า</span>
+        {PAGE_SIZE_OPTIONS.map(size => (
+          <button
+            key={size}
+            type="button"
+            onClick={() => { setPageSize(size); setPage(1); }}
+            className={`px-2 py-1 rounded-full border transition-colors ${pageSize === size ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+          >
+            {size}
+          </button>
+        ))}
+        <span className="ml-1">แสดง {startRow}–{endRow} จาก {total}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+        <button
+          type="button"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          className="px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-gray-400 dark:hover:border-slate-500 transition-colors"
+        >
+          ‹ ก่อนหน้า
+        </button>
+        <span>หน้า {page} / {totalPages}</span>
+        <button
+          type="button"
+          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          disabled={page >= totalPages}
+          className="px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-gray-400 dark:hover:border-slate-500 transition-colors"
+        >
+          ถัดไป ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Same backdrop+centered-image pattern as Inbox.jsx's own Lightbox — kept as
 // a separate local copy since that one isn't exported, but intentionally
 // identical so the viewing experience matches across the app.
@@ -868,6 +917,9 @@ function UpsellReportPage() {
   const [teamFilter, setTeamFilter] = useState('');
   const [teams, setTeams] = useState([]);
   const [rows, setRows] = useState(null);
+  const [rowsTotal, setRowsTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   // Per-employee activity-vs-upsell comparison — shares this page's date
   // range but not the status/team filters below (those scope the detail
   // log only), and deliberately includes every agent (not just submitters)
@@ -887,10 +939,14 @@ function UpsellReportPage() {
 
   function load() {
     axios.get('/api/upsells', {
-      params: { from: from || undefined, to: to || undefined, status: status || undefined, agentCategoryId: teamFilter || undefined },
-    }).then(r => setRows(r.data.submissions));
+      params: { from: from || undefined, to: to || undefined, status: status || undefined, agentCategoryId: teamFilter || undefined, page, limit: pageSize },
+    }).then(r => { setRows(r.data.submissions); setRowsTotal(r.data.total); });
   }
-  useEffect(() => { load(); }, [from, to, status, teamFilter]);
+  useEffect(() => { load(); }, [from, to, status, teamFilter, page, pageSize]);
+  // A new filter/date range can change which page even has any rows —
+  // same reset-on-change pattern as the report tables in Report.jsx, so
+  // page 3 doesn't silently end up empty after narrowing the results.
+  useEffect(() => { setPage(1); }, [from, to, status, teamFilter]);
 
   function loadActivity() {
     axios.get('/api/upsells/agents', { params: { from: from || undefined, to: to || undefined, includeAll: 1 } })
@@ -906,7 +962,7 @@ function UpsellReportPage() {
       socket.off('upsell_reviewed', load);
       socket.off('upsell_claimed', load);
     };
-  }, [socket, from, to, status, teamFilter]);
+  }, [socket, from, to, status, teamFilter, page, pageSize]);
 
   useEffect(() => {
     if (!socket) return;
@@ -1080,7 +1136,7 @@ function UpsellReportPage() {
           <option value="none">ไม่มีทีม</option>
           {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        {rows && <span className="text-sm text-gray-500 dark:text-slate-400">พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{rows.length}</span> รายการ</span>}
+        {rows && <span className="text-sm text-gray-500 dark:text-slate-400">พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{rowsTotal}</span> รายการ</span>}
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-300 dark:border-slate-600 overflow-hidden overflow-x-auto">
@@ -1139,6 +1195,7 @@ function UpsellReportPage() {
             </tbody>
           </table>
         )}
+        <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rowsTotal} />
       </div>
     </div>
   );
