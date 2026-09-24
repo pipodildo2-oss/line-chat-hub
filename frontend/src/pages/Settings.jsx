@@ -1635,6 +1635,15 @@ export default function Settings() {
                 onDelete={() => deleteAgent(a.id)}
               />
             );
+            // ออนไลน์ (live socket presence) ก่อน, แล้วค่อยไม่อยู่หน้าจอ, แล้วค่อย
+            // ออฟไลน์ — applied inside every section below (แอดมิน included),
+            // never across sections, so a team's own grouping stays intact.
+            // A plain stable sort (Array.prototype.sort is stable in every
+            // engine this runs on) so agents sharing a rank keep whatever
+            // order they were already in instead of reshuffling on every
+            // presence change.
+            const presenceRank = a => (onlineIds.has(a.id) ? 0 : a.status === 'away' ? 1 : 2);
+            const byPresence = list => [...list].sort((a, b) => presenceRank(a) - presenceRank(b));
             // Section headings need to actually read as headings — bumped up from
             // the body-text size they were sharing with the card names before.
             const headingCls = 'text-base font-bold text-gray-900 dark:text-white';
@@ -1650,7 +1659,7 @@ export default function Settings() {
                   <p className={`${headingCls} mb-3`}>แอดมิน <span className="text-gray-400 dark:text-slate-500 font-medium text-sm">· {agents.filter(a => a.role === 'admin').length} คน</span></p>
                   {admins.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {admins.map(card)}
+                      {byPresence(admins).map(card)}
                     </div>
                   ) : (
                     <p className="text-sm text-gray-300 dark:text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
@@ -1667,7 +1676,7 @@ export default function Settings() {
                         <p className="text-sm text-gray-300 dark:text-slate-600 px-1">ไม่พบรายชื่อที่ตรงกับ "{agentSearch}"</p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                          {visible.map(card)}
+                          {byPresence(visible).map(card)}
                         </div>
                       );
                     })()}
@@ -1725,7 +1734,7 @@ export default function Settings() {
                           </div>
                           {catAgents.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                              {catAgents.map(card)}
+                              {byPresence(catAgents).map(card)}
                             </div>
                           ) : (
                             <p className="text-xs text-gray-300 dark:text-slate-600">
@@ -1742,7 +1751,7 @@ export default function Settings() {
                         const uncategorized = nonAdmins.filter(a => !a.categoryId && matches(a));
                         return uncategorized.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {uncategorized.map(card)}
+                            {byPresence(uncategorized).map(card)}
                           </div>
                         ) : (
                           <p className="text-xs text-gray-300 dark:text-slate-600">{q ? `ไม่พบรายชื่อที่ตรงกับ "${agentSearch}"` : 'ทุกคนถูกจัดหมวดหมู่แล้ว'}</p>
