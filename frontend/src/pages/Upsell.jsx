@@ -1013,7 +1013,7 @@ function UpsellReportPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {activityTeamGroups.map(team => (
-              <div key={team.id || 'none'} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden overflow-x-auto">
+              <div key={team.id || 'none'} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-300 dark:border-slate-600 overflow-hidden overflow-x-auto">
                 <div className="px-4 py-2.5 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
                   <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
                     <Users size={14} /> {team.name}
@@ -1083,7 +1083,7 @@ function UpsellReportPage() {
         {rows && <span className="text-sm text-gray-500 dark:text-slate-400">พบ <span className="font-semibold text-gray-800 dark:text-slate-200">{rows.length}</span> รายการ</span>}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden overflow-x-auto">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-300 dark:border-slate-600 overflow-hidden overflow-x-auto">
         {!rows ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
         ) : rows.length === 0 ? (
