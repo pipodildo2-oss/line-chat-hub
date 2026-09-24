@@ -1,15 +1,69 @@
+const Anthropic = require('@anthropic-ai/sdk');
 const Wordcut = require('wordcut');
 const badWords = require('../config/badWords.json');
 
-// No AI/API involved here on purpose — the previous version called the
-// Claude API per message, which stopped working once the Anthropic Console
-// credit balance ran out. This is a pure keyword-list checker instead: zero
-// external calls, zero cost, works offline. Trade-off: it can only catch
-// words that are actually in badWords.json (edit that file to tune it) and
-// can't judge tone/context the way an AI could (e.g. "arguing with the
-// customer" without any bad word in it won't be caught) — see the spam
-// check below for the one piece of context-awareness kept from the old
-// version.
+// AI is the primary check again (was keyword-only for a while — see below).
+// The keyword list from that period is kept as a fallback for whenever the
+// AI call itself isn't available (no ANTHROPIC_API_KEY, or the request
+// errors — rate limit, timeout, or the Anthropic Console credit balance
+// running out again, which is exactly what took the ORIGINAL AI version
+// down and led to the keyword-only period this codebase went through).
+// Losing tone/context judgment during an outage is an acceptable
+// degradation; silently flagging nothing at all is not.
+let client = null;
+function getClient() {
+  if (!client && process.env.ANTHROPIC_API_KEY) {
+    client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return client;
+}
+
+// Checks tone/intent via Claude — catches profanity AND things a word list
+// never can, like sarcasm or condescension toward the customer with no
+// individual "bad word" in the sentence at all. Returns:
+//   undefined  — AI unavailable/failed; caller should fall back to keywords
+//   null       — AI ran and the message reads clean
+//   { severity, reason, category: 'moderation' } — AI flagged it
+async function checkWithAI(text) {
+  const c = getClient();
+  if (!c) return undefined;
+  try {
+    const response = await c.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      system: `You are a content-moderation classifier for a Thai customer-service LINE chat.
+Read the EMPLOYEE's outgoing message to a customer and decide if it contains profanity, insults, threats, condescension, sarcasm, or passive-aggressive/sassy remarks directed at the customer — in Thai or English, including disguised or spaced-out swearing. Judge based on tone and intent, not just individual words — a message can be inappropriate even with no profanity in it at all (e.g. a mocking or sarcastic remark).
+Respond with ONLY compact JSON, nothing else, no markdown fences:
+{"flagged": boolean, "severity": "minor" | "severe" | null, "reason": string | null}
+Rules:
+- Normal, professional, or merely blunt/curt-but-clean messages: {"flagged": false, "severity": null, "reason": null}
+- "minor": mildly rude, dismissive, sarcastic, or unprofessional tone, but not profanity or a direct insult.
+- "severe": profanity, direct insults, threats, or clearly abusive/mocking language directed at or about the customer.
+- "reason" (when flagged) must be a short explanation in Thai, e.g. "มีคำหยาบ", "พูดจาเสียดสี/แดกดันลูกค้า", "พูดจาไม่สุภาพกับลูกค้า".`,
+      messages: [{ role: 'user', content: text }],
+    });
+    const raw = response.content[0].text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return undefined; // unparseable response — treat like a failure, fall back
+    const parsed = JSON.parse(match[0]);
+    if (!parsed.flagged) return null;
+    return {
+      severity: parsed.severity === 'severe' ? 'severe' : 'minor',
+      reason: parsed.reason || 'ข้อความไม่เหมาะสม (ตรวจโดย AI)',
+      category: 'moderation',
+    };
+  } catch (e) {
+    console.warn('AI moderation check failed, falling back to keyword list:', e.message);
+    return undefined;
+  }
+}
+
+// Keyword-list fallback — kept from the keyword-only period of this file so
+// moderation degrades gracefully (rather than silently doing nothing) when
+// the AI check above is unavailable. Zero external calls, zero cost, works
+// offline. Trade-off: it can only catch words that are actually in
+// badWords.json (edit that file to tune it) and can't judge tone/context
+// the way the AI check can.
 
 // Strips whitespace/punctuation and lowercases so spaced-out or
 // punctuated evasion ("เ ห ี ้ ย", "f.u.c.k") still matches a plain
@@ -98,23 +152,9 @@ function findMatch(normalizedText, boundaries, wordList) {
   return hit ? hit.raw : null;
 }
 
-/**
- * Checks a single outgoing agent message (freely typed, not a canned quick
- * reply) against the word list in badWords.json, plus a simple repeated-
- * message spam check against recent history. `history` is the last few
- * messages in the conversation (oldest first, [{sender, content}]).
- * Returns null if clean; otherwise
- * { severity: 'minor' | 'severe', reason: string, category: 'moderation' | 'spam' }
- * — category maps directly onto Message.flagCategory (see reports.js), so
- * callers can pass it straight through without re-deriving which check hit.
- *
- * Kept synchronous-looking (still returns a Promise) so the call site in
- * messages.js — which does `.then(history => checkMessage(...)).then(...)` —
- * didn't need to change at all when this was swapped out from the old
- * AI-based version.
- */
-async function checkMessage(text, history = []) {
-  if (!text?.trim()) return null;
+// The keyword-only check this file used to run unconditionally — now only
+// reached when checkWithAI() above returns undefined (AI unavailable/failed).
+function checkWithKeywords(text) {
   const normalized = normalize(text);
   const boundaries = tokenBoundaries(normalized);
 
@@ -124,6 +164,31 @@ async function checkMessage(text, history = []) {
   const minorHit = findMatch(normalized, boundaries, MINOR_WORDS);
   if (minorHit) return { severity: 'minor', reason: 'พบคำพูดไม่สุภาพ/ก้าวร้าวเล็กน้อยในข้อความ', category: 'moderation' };
 
+  return null;
+}
+
+/**
+ * Checks a single outgoing agent message (freely typed, not a canned quick
+ * reply) for profanity/inappropriate tone via AI (falling back to the
+ * badWords.json keyword list if the AI check is unavailable), plus a simple
+ * repeated-message spam check against recent history. `history` is the last
+ * few messages in the conversation (oldest first, [{sender, content}]).
+ * Returns null if clean; otherwise
+ * { severity: 'minor' | 'severe', reason: string, category: 'moderation' | 'spam' }
+ * — category maps directly onto Message.flagCategory (see reports.js), so
+ * callers can pass it straight through without re-deriving which check hit.
+ */
+async function checkMessage(text, history = []) {
+  if (!text?.trim()) return null;
+
+  const aiResult = await checkWithAI(text);
+  if (aiResult !== undefined) {
+    if (aiResult) return aiResult;
+  } else {
+    const keywordHit = checkWithKeywords(text);
+    if (keywordHit) return keywordHit;
+  }
+
   // Spam check: the SAME message sent back-to-back 3+ times in a row.
   // "history" is oldest-first, so walk backward from the most recent entry
   // and count matches — stop at the first message that breaks the streak
@@ -131,6 +196,7 @@ async function checkMessage(text, history = []) {
   // the same message reused at different, non-consecutive points in the
   // conversation (e.g. the same canned "please wait" line sent hours apart)
   // as spam — only an actual uninterrupted burst of repeats counts.
+  const normalized = normalize(text);
   let consecutiveRepeats = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
