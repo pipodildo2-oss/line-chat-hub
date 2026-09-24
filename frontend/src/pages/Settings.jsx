@@ -1642,7 +1642,7 @@ export default function Settings() {
             // engine this runs on) so agents sharing a rank keep whatever
             // order they were already in instead of reshuffling on every
             // presence change.
-            const presenceRank = a => (onlineIds.has(a.id) ? 0 : a.status === 'away' ? 1 : 2);
+            const presenceRank = a => (a.status === 'away' ? 1 : onlineIds.has(a.id) ? 0 : 2);
             const byPresence = list => [...list].sort((a, b) => presenceRank(a) - presenceRank(b));
             // Section headings need to actually read as headings — bumped up from
             // the body-text size they were sharing with the card names before.
