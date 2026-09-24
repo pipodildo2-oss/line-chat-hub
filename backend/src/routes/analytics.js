@@ -120,9 +120,28 @@ router.get('/summary', auth, async (req, res) => {
   const channelIds = messagesByChannel.map((r) => r.channelId);
   const channels = await prisma.lineChannel.findMany({
     where: { id: { in: channelIds } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, categoryId: true, category: { select: { id: true, name: true } } },
   });
   const channelMap = Object.fromEntries(channels.map((c) => [c.id, c.name]));
+
+  // "ข้อความที่ใช้ไปตามหมวดหมู่" — rolls messagesByChannel's per-channel
+  // counts up to whichever ChannelCategory each channel belongs to (e.g. two
+  // separately-named LINE OAs sharing one category become a single bar),
+  // same "ไม่มีหมวดหมู่" bucket convention reports.js already uses for
+  // uncategorized agents. Requested specifically so multiple LINE OAs that
+  // are really the same brand/team don't have to be eyeballed and added up
+  // by hand on the by-channel panel.
+  const channelInfoMap = Object.fromEntries(channels.map((c) => [c.id, c]));
+  const categoryTotals = new Map();
+  for (const row of messagesByChannel) {
+    const ch = channelInfoMap[row.channelId];
+    const key = ch?.categoryId || '__none__';
+    if (!categoryTotals.has(key)) {
+      categoryTotals.set(key, { categoryId: ch?.categoryId || null, categoryName: ch?.category?.name || 'ไม่มีหมวดหมู่', count: 0 });
+    }
+    categoryTotals.get(key).count += row.count;
+  }
+  const messagesByCategory = [...categoryTotals.values()].sort((a, b) => b.count - a.count);
 
   res.json({
     totalConversations,
@@ -135,6 +154,7 @@ router.get('/summary', auth, async (req, res) => {
       channelName: channelMap[r.channelId] || r.channelId,
       count: r.count,
     })),
+    messagesByCategory,
     recentActivity,
     activityGranularity: isSingleDay ? 'hour' : 'day',
   });

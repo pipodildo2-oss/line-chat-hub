@@ -24,6 +24,37 @@ function StatCard({ icon: Icon, label, value, color, caption }) {
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
+// Custom tooltip for the incoming/outgoing activity chart — adds "สุทธิ"
+// (the sum of both bars) so it doesn't have to be added up by hand off the
+// two separate numbers recharts' default tooltip would otherwise show.
+function ActivityTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const incoming = payload.find(p => p.dataKey === 'incoming')?.value ?? 0;
+  const outgoing = payload.find(p => p.dataKey === 'outgoing')?.value ?? 0;
+  return (
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 shadow-lg text-sm min-w-[160px]">
+      <p className="font-semibold text-gray-900 dark:text-slate-100 mb-1">{label}</p>
+      <p style={{ color: '#005BFF' }}>ข้อความเข้า : {incoming.toLocaleString()}</p>
+      <p style={{ color: '#22C55E' }}>ข้อความออก : {outgoing.toLocaleString()}</p>
+      <p className="text-gray-700 dark:text-slate-200 font-semibold mt-1.5 pt-1.5 border-t border-gray-100 dark:border-slate-700">
+        สุทธิ : {(incoming + outgoing).toLocaleString()}
+      </p>
+    </div>
+  );
+}
+
+// Custom tooltip for the by-category chart — same "no default recharts
+// styling" reason as ActivityTooltip above, just a single value to show.
+function CategoryTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 shadow-lg text-sm">
+      <p className="font-semibold text-gray-900 dark:text-slate-100 mb-1">{label}</p>
+      <p className="text-gray-700 dark:text-slate-200">ข้อความ : {payload[0].value.toLocaleString()}</p>
+    </div>
+  );
+}
+
 // Horizontal quick-pick tabs. Each returns a [from, to] ISO date pair (inclusive).
 const PRESETS = [
   { key: 'today', label: 'วันนี้', range: () => { const d = toISODate(new Date()); return [d, d]; } },
@@ -137,10 +168,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="date" tick={{ fontSize: 12, fill: tickColor }} />
               <YAxis tick={{ fontSize: 12, fill: tickColor }} />
-              <Tooltip
-                contentStyle={isDark ? { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' } : undefined}
-                labelStyle={isDark ? { color: '#e2e8f0' } : undefined}
-              />
+              <Tooltip content={<ActivityTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12, color: tickColor }} />
               {/* Bot auto-replies count as "ออก" alongside agent replies — both
                   hit the LINE API the same way (see routes/analytics.js). */}
@@ -183,6 +211,32 @@ export default function Dashboard() {
             นับข้อความเข้า+ออกรวมกันต่อ OA — ใช้เทียบปริมาณระหว่างไลน์ได้ ไม่ใช่ยอดค่าใช้จ่ายจริงจาก LINE
           </p>
         </div>
+      </div>
+
+      {/* By category — same channels as the "ปริมาณข้อความตาม OA" panel
+          above, rolled up by ChannelCategory (Settings > ช่องทาง LINE OA)
+          instead of shown one row per OA, so LINE OAs that are really the
+          same brand/team don't have to be eyeballed and added up by hand. */}
+      <div className="mt-4 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
+        <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">
+          ข้อความที่ใช้ไปตามหมวดหมู่ <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span>
+        </h2>
+        {data.messagesByCategory.length === 0 ? (
+          <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={data.messagesByCategory} margin={{ bottom: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="categoryName" tick={{ fontSize: 12, fill: tickColor }} interval={0} angle={-15} textAnchor="end" height={50} />
+              <YAxis tick={{ fontSize: 12, fill: tickColor }} />
+              <Tooltip content={<CategoryTooltip />} />
+              <Bar dataKey="count" name="ข้อความ" fill="#A855F7" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
+          รวมข้อความเข้า+ออกของทุกไลน์ในหมวดหมู่เดียวกันเป็นแท่งเดียว — จัดหมวดหมู่ไลน์ได้ที่ ตั้งค่า &gt; ช่องทาง LINE OA
+        </p>
       </div>
     </div>
   );
