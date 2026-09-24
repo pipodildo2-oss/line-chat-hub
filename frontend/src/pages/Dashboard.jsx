@@ -99,9 +99,20 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">Dashboard</h1>
       </div>
 
-      {/* Date range picker — preset sidebar + click-click range calendar */}
-      <div className="mb-6">
-        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+      {/* Date range: preset pills + a calendar for a custom range */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={rangeLabel} onCustomRange={pickCustomRange} />
       </div>
 
       {/* Stats — the first 3 are live snapshots of current status (a chat is

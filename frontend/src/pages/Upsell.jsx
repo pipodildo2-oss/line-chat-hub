@@ -508,7 +508,20 @@ function UpsellReviewPage() {
         ตรวจสอบอัพเซลล์
       </h1>
 
-      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {DATE_PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={formatRangeLabel(preset, from, to)} onCustomRange={pickCustomRange} />
+      </div>
 
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
@@ -745,7 +758,20 @@ function UpsellScorePage() {
         คะแนนอัพเซลล์
       </h1>
 
-      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {DATE_PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={formatRangeLabel(preset, from, to)} onCustomRange={pickCustomRange} />
+      </div>
 
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
@@ -960,7 +986,20 @@ function UpsellReportPage() {
         รายงานอัพเซลล์
       </h1>
 
-      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {DATE_PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={formatRangeLabel(preset, from, to)} onCustomRange={pickCustomRange} />
+      </div>
 
       <div className="mb-6">
         <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">สรุปกิจกรรมรายพนักงาน</p>

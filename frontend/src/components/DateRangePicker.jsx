@@ -21,27 +21,22 @@ function parseISO(s) {
 // (applied immediately — closing right here is a valid single-day pick),
 // click a second, different day to extend it into a range (applied on that
 // second click, which also closes the popover). Clicking the SAME day again
-// re-confirms the single-day selection and closes. Presets sit in a sidebar
-// to the left, same as the custom-range calendar — picking one applies
-// instantly and closes too.
+// re-confirms the single-day selection and closes.
 //
-// Drop-in replacement for the old "preset pills + two native <input
-// type=date>" pattern every report/dashboard/upsell page used to duplicate —
-// see Dashboard.jsx, Report.jsx (x3) and Upsell.jsx (x3) for call sites.
+// Pure calendar, no presets inside — each page keeps its own preset pill row
+// alongside this (the original always-visible pills UI), and this replaces
+// only the old two native <input type=date> fields for picking a custom
+// range. See Dashboard.jsx, Report.jsx (x3) and Upsell.jsx (x3) for call sites.
 //
 // Props:
-//   presets        [{ key, label, range: () => [fromISO, toISO] }]
-//   preset         active preset key, or null if the range was set manually
 //   from, to       ISO 'YYYY-MM-DD' strings, or null/null for "no filter"
 //   label          precomputed display string for the trigger button (each
 //                  page already computes this for its own captions — reused
 //                  here rather than duplicating the formatting logic)
-//   onPreset       (presetObj) => void — same signature pages already have
-//   onCustomRange  (fromISO, toISO) => void — replaces the old two-call
-//                  onCustom('from'|'to', value); the calendar always knows
-//                  both ends at once, so there's no reason to split it back
-//                  into two updates the way two separate <input> fields did
-export default function DateRangePicker({ presets = [], preset, from, to, label, onPreset, onCustomRange }) {
+//   onCustomRange  (fromISO, toISO) => void — the calendar always knows both
+//                  ends of a pick at once, so there's a single callback
+//                  rather than the old two-call onCustom('from'|'to', value)
+export default function DateRangePicker({ from, to, label, onCustomRange }) {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => (to ? parseISO(to) : new Date()));
   const [pendingStart, setPendingStart] = useState(null); // ISO string mid-sequence, else null
@@ -115,24 +110,7 @@ export default function DateRangePicker({ presets = [], preset, from, to, label,
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-2 flex bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden">
-          {presets.length > 0 && (
-            <div className="w-36 border-r border-gray-100 dark:border-slate-800 p-2 space-y-1 flex-shrink-0">
-              {presets.map(p => (
-                <button
-                  key={p.key}
-                  type="button"
-                  onClick={() => { onPreset(p); setOpen(false); }}
-                  className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-colors ${
-                    preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          )}
-
+        <div className="absolute z-50 top-full left-0 mt-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden">
           <div className="p-4 w-72">
             <div className="flex items-center justify-between mb-3">
               <button type="button" onClick={() => setViewMonth(m => subMonths(m, 1))} className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800">

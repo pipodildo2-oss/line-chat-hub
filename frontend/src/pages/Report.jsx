@@ -1053,9 +1053,20 @@ function AuditReport() {
         AI ตรวจข้อความที่พนักงานพิมพ์ส่งลูกค้าแบบอัตโนมัติ (เฉพาะข้อความใหม่นับจากนี้) — ใช้สำหรับตรวจสอบและประเมิน KPI
       </p>
 
-      {/* Date range */}
+      {/* Date range: preset pills + a calendar for a custom range */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={rangeLabel} onCustomRange={pickCustomRange} />
         <select
           className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
           value={agentId}
@@ -1212,7 +1223,18 @@ function AgentConductPage() {
       </h1>
 
       <div className="flex flex-wrap items-center gap-3 mb-2">
-        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={rangeLabel} onCustomRange={pickCustomRange} />
       </div>
 
       <AgentConductSection from={from} to={to} navigate={navigate} />
@@ -1337,7 +1359,18 @@ function ConversationReportPage() {
       </h1>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => pickPreset(p)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <DateRangePicker from={from} to={to} label={rangeLabel} onCustomRange={pickCustomRange} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
