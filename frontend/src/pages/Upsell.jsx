@@ -6,6 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths, subDays } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
 import MissingMedia, { reportImageFailure, agentImageSrc, fetchMediaBlob } from '../components/MissingMedia';
+import DateRangePicker from '../components/DateRangePicker';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -22,39 +23,13 @@ const DATE_PRESETS = [
   { key: 'all', label: 'ทั้งหมด', range: () => [null, null] },
 ];
 
-function DateRangeFilter({ preset, from, to, onPreset, onCustom }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3 mb-4">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {DATE_PRESETS.map(p => (
-          <button
-            key={p.key}
-            onClick={() => onPreset(p)}
-            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
-        <input
-          type="date"
-          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-          value={from || ''}
-          max={to || undefined}
-          onChange={e => onCustom('from', e.target.value)}
-        />
-        <span>ถึง</span>
-        <input
-          type="date"
-          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-          value={to || ''}
-          min={from || undefined}
-          onChange={e => onCustom('to', e.target.value)}
-        />
-      </div>
-    </div>
-  );
+// Trigger-button label for every DATE_PRESETS-based DateRangePicker on this
+// page — the preset's own label when one's active (this is what makes "all"
+// display as "ทั้งหมด" instead of "null ถึง null"), else the literal from/to.
+function formatRangeLabel(preset, from, to) {
+  const activePreset = DATE_PRESETS.find(p => p.key === preset);
+  if (activePreset) return activePreset.label;
+  return from === to ? from : `${from} ถึง ${to}`;
 }
 
 // Same backdrop+centered-image pattern as Inbox.jsx's own Lightbox — kept as
@@ -448,7 +423,7 @@ function UpsellReviewPage() {
   // point of this page.
   const [sortKey, setSortKey] = useState('pending'); // 'name'|'total'|'pending'|'approved'|'rejected'|'approvedAmount'
   const [sortDir, setSortDir] = useState('desc');
-  // Same DateRangeFilter used by คะแนน/รายงาน — defaults to "ทั้งหมด" (no
+  // Same DateRangePicker used by คะแนน/รายงาน — defaults to "ทั้งหมด" (no
   // date filter at all) rather than "เดือนนี้" like those pages, since this
   // page's whole job is a worklist of everything still รอตรวจ, which could
   // predate this month.
@@ -458,7 +433,7 @@ function UpsellReviewPage() {
   const navigate = useNavigate();
 
   function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
-  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
+  function pickCustomRange(newFrom, newTo) { setPreset(null); setDateRange([newFrom, newTo]); }
 
   function openAgent(id) {
     setSearchParams(prev => {
@@ -533,7 +508,7 @@ function UpsellReviewPage() {
         ตรวจสอบอัพเซลล์
       </h1>
 
-      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
+      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
 
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
@@ -706,7 +681,7 @@ function UpsellScorePage() {
   }
 
   function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
-  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
+  function pickCustomRange(newFrom, newTo) { setPreset(null); setDateRange([newFrom, newTo]); }
 
   function load() {
     axios.get('/api/upsells/agents', { params: { from: from || undefined, to: to || undefined } }).then(r => setAgents(r.data.agents));
@@ -770,7 +745,7 @@ function UpsellScorePage() {
         คะแนนอัพเซลล์
       </h1>
 
-      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
+      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
 
       {!agents ? (
         <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">กำลังโหลด...</p>
@@ -882,7 +857,7 @@ function UpsellReportPage() {
   }, []);
 
   function pickPreset(p) { setPreset(p.key); setDateRange(p.range()); }
-  function pickCustom(which, value) { setPreset(null); setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]); }
+  function pickCustomRange(newFrom, newTo) { setPreset(null); setDateRange([newFrom, newTo]); }
 
   function load() {
     axios.get('/api/upsells', {
@@ -985,7 +960,7 @@ function UpsellReportPage() {
         รายงานอัพเซลล์
       </h1>
 
-      <DateRangeFilter preset={preset} from={from} to={to} onPreset={pickPreset} onCustom={pickCustom} />
+      <DateRangePicker presets={DATE_PRESETS} preset={preset} from={from} to={to} label={formatRangeLabel(preset, from, to)} onPreset={pickPreset} onCustomRange={pickCustomRange} />
 
       <div className="mb-6">
         <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">สรุปกิจกรรมรายพนักงาน</p>

@@ -5,6 +5,7 @@ import { MessageSquare, Users, CheckCircle, Clock } from 'lucide-react';
 import { startOfMonth, endOfMonth, subMonths, subDays, format } from 'date-fns';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import DateRangePicker from '../components/DateRangePicker';
 
 function StatCard({ icon: Icon, label, value, color, caption }) {
   return (
@@ -49,9 +50,9 @@ export default function Dashboard() {
     setDateRange(p.range());
   }
 
-  function pickCustomDate(which, value) {
-    setPreset(null); // manual edit — no longer matches any quick-pick tab
-    setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]);
+  function pickCustomRange(newFrom, newTo) {
+    setPreset(null); // manual pick — no longer matches any quick-pick tab
+    setDateRange([newFrom, newTo]);
   }
 
   // No guard against out-of-order responses previously — switching the date
@@ -98,36 +99,9 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">Dashboard</h1>
       </div>
 
-      {/* Date range: horizontal quick-pick tabs + custom from/to pickers */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.key}
-              onClick={() => pickPreset(p)}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={from}
-            max={to}
-            onChange={e => pickCustomDate('from', e.target.value)}
-          />
-          <span>ถึง</span>
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={to}
-            min={from}
-            onChange={e => pickCustomDate('to', e.target.value)}
-          />
-        </div>
+      {/* Date range picker — preset sidebar + click-click range calendar */}
+      <div className="mb-6">
+        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
       </div>
 
       {/* Stats — the first 3 are live snapshots of current status (a chat is

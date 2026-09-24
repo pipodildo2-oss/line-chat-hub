@@ -6,6 +6,7 @@ import { startOfMonth, endOfMonth, subMonths, subDays, format, formatDistanceToN
 import { th } from 'date-fns/locale';
 import { useSocket } from '../contexts/SocketContext';
 import { LIFECYCLE_STAGES, stageInfo, STATUS_COLORS, STATUS_DOT_COLORS } from '../lib/constants';
+import DateRangePicker from '../components/DateRangePicker';
 
 function toISODate(d) { return format(d, 'yyyy-MM-dd'); }
 
@@ -19,6 +20,15 @@ const PRESETS = [
     return [toISODate(startOfMonth(d)), toISODate(endOfMonth(d))];
   } },
 ];
+
+// Shared trigger-button label for every PRESETS-based DateRangePicker on this
+// page — the preset's own label when one's active, else the literal from/to
+// (collapsed to one date when they're the same day).
+function formatRangeLabel(preset, from, to) {
+  const activePreset = PRESETS.find(p => p.key === preset);
+  if (activePreset) return activePreset.label;
+  return from === to ? from : `${from} ถึง ${to}`;
+}
 
 const SEVERITY_TABS = [
   { key: '', label: 'ทั้งหมด' },
@@ -959,9 +969,9 @@ function AuditReport() {
     setDateRange(p.range());
   }
 
-  function pickCustomDate(which, value) {
+  function pickCustomRange(newFrom, newTo) {
     setPreset(null);
-    setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]);
+    setDateRange([newFrom, newTo]);
   }
 
   const load = useCallback(async () => {
@@ -1028,11 +1038,7 @@ function AuditReport() {
     return () => socket.off('message_flagged', handleFlagged);
   }, [socket, severity, category, agentId]);
 
-  const rangeLabel = useMemo(() => {
-    const activePreset = PRESETS.find(p => p.key === preset);
-    if (activePreset) return activePreset.label;
-    return from === to ? from : `${from} ถึง ${to}`;
-  }, [preset, from, to]);
+  const rangeLabel = useMemo(() => formatRangeLabel(preset, from, to), [preset, from, to]);
 
   if (!data) return <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 h-full">กำลังโหลด...</div>;
 
@@ -1049,34 +1055,7 @@ function AuditReport() {
 
       {/* Date range */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.key}
-              onClick={() => pickPreset(p)}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={from}
-            max={to}
-            onChange={e => pickCustomDate('from', e.target.value)}
-          />
-          <span>ถึง</span>
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={to}
-            min={from}
-            onChange={e => pickCustomDate('to', e.target.value)}
-          />
-        </div>
+        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
         <select
           className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none"
           value={agentId}
@@ -1218,10 +1197,12 @@ function AgentConductPage() {
     setDateRange(p.range());
   }
 
-  function pickCustomDate(which, value) {
+  function pickCustomRange(newFrom, newTo) {
     setPreset(null);
-    setDateRange(prev => which === 'from' ? [value, prev[1]] : [prev[0], value]);
+    setDateRange([newFrom, newTo]);
   }
+
+  const rangeLabel = formatRangeLabel(preset, from, to);
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -1231,34 +1212,7 @@ function AgentConductPage() {
       </h1>
 
       <div className="flex flex-wrap items-center gap-3 mb-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.key}
-              onClick={() => pickPreset(p)}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={from}
-            max={to}
-            onChange={e => pickCustomDate('from', e.target.value)}
-          />
-          <span>ถึง</span>
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={to}
-            min={from}
-            onChange={e => pickCustomDate('to', e.target.value)}
-          />
-        </div>
+        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
       </div>
 
       <AgentConductSection from={from} to={to} navigate={navigate} />
@@ -1363,6 +1317,17 @@ function ConversationReportPage() {
     [data, sortKey, sortDir],
   );
   const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const rangeLabel = formatRangeLabel(preset, from, to);
+
+  function pickPreset(p) {
+    setPreset(p.key);
+    setDateRange(p.range());
+  }
+
+  function pickCustomRange(newFrom, newTo) {
+    setPreset(null);
+    setDateRange([newFrom, newTo]);
+  }
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -1372,34 +1337,7 @@ function ConversationReportPage() {
       </h1>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.key}
-              onClick={() => { setPreset(p.key); setDateRange(p.range()); }}
-              className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${preset === p.key ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent' : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400">
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={from}
-            max={to}
-            onChange={e => { setPreset(null); setDateRange(prev => [e.target.value, prev[1]]); }}
-          />
-          <span>ถึง</span>
-          <input
-            type="date"
-            className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-            value={to}
-            min={from}
-            onChange={e => { setPreset(null); setDateRange(prev => [prev[0], e.target.value]); }}
-          />
-        </div>
+        <DateRangePicker presets={PRESETS} preset={preset} from={from} to={to} label={rangeLabel} onPreset={pickPreset} onCustomRange={pickCustomRange} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
