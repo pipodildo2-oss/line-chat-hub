@@ -185,7 +185,7 @@ export default function Dashboard() {
               up by hand. */}
           <div className="border-t border-gray-100 dark:border-slate-800 mt-5 pt-5">
             <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">
-              ข้อความที่ใช้ไปตามหมวดหมู่ <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span>
+              ข้อความต่อเว็บ <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span>
             </h2>
             {data.messagesByCategory.length === 0 ? (
               <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
