@@ -72,9 +72,9 @@ function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onTog
 
 const QR_KIND_OPTIONS = [
   { key: 'reply', label: 'ตอบกลับ' },
+  { key: 'account', label: 'บัญชี' },
   { key: 'howto', label: 'วิธีการ' },
   { key: 'promotion', label: 'โปรโมชั่น' },
-  { key: 'account', label: 'บัญชี' },
 ];
 // 'account' is the one kind any agent can create/edit/delete directly —
 // no admin review needed (backend/src/routes/quickReplies.js canManageDirectly).

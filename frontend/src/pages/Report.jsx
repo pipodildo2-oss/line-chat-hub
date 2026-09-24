@@ -527,7 +527,7 @@ function SortableTh({ label, sortKey, activeKey, dir, onClick }) {
 
 function ConductThead({ sortKey, sortDir, onSort }) {
   return (
-    <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
+    <thead className="bg-white dark:bg-slate-900">
       <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
         <th className="px-4 py-2.5 font-medium">พนักงาน</th>
         <th className="px-4 py-2.5 font-medium">ยศ</th>
@@ -549,10 +549,14 @@ function ResponseRateTable({ from, to }) {
   const [data, setData] = useState(null);
   const [sortKey, setSortKey] = useState('responseRatePercent');
   const [sortDir, setSortDir] = useState('asc'); // worst (lowest rate) first by default
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     axios.get('/api/reports/response-rate', { params: { from, to } }).then(r => setData(r.data));
   }, [from, to]);
+
+  useEffect(() => { setPage(1); }, [from, to, sortKey, sortDir]);
 
   const employees = data?.agents || [];
   // Settings > "ระบบ" — default 50 if this admin hasn't saved a value yet
@@ -575,6 +579,8 @@ function ResponseRateTable({ from, to }) {
     });
     return list;
   }, [employees, sortKey, sortDir]);
+
+  const paged = useMemo(() => sorted.slice((page - 1) * pageSize, page * pageSize), [sorted, page, pageSize]);
 
   function toggleSort(key) {
     if (sortKey === key) {
@@ -601,9 +607,9 @@ function ResponseRateTable({ from, to }) {
         ) : employees.length === 0 ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
         ) : (
-          <div className="max-h-[460px] overflow-y-auto">
+          <>
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900">
+              <thead className="bg-white dark:bg-slate-900">
                 <tr className="border-b border-gray-100 dark:border-slate-800 text-left text-gray-500 dark:text-slate-400">
                   <th className="px-4 py-2.5 font-medium">พนักงาน</th>
                   <SortableTh label="จำนวนครั้งที่เปิดดู" sortKey="viewCount" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -612,7 +618,7 @@ function ResponseRateTable({ from, to }) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(a => (
+                {paged.map(a => (
                   <tr key={a.id} className="border-b border-gray-50 dark:border-slate-800/60">
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
@@ -638,7 +644,8 @@ function ResponseRateTable({ from, to }) {
                 ))}
               </tbody>
             </table>
-          </div>
+            <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={sorted.length} />
+          </>
         )}
       </div>
     </div>
@@ -667,10 +674,17 @@ function AgentConductSection({ from, to, navigate }) {
   // viewedNoReplyCount/flaggedTotal are just its members' sums).
   const [sortKey, setSortKey] = useState('viewedNoReplyCount');
   const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     axios.get('/api/reports/agent-conduct', { params: { from, to } }).then(r => setData(r.data));
   }, [from, to]);
+
+  // Any change that reshuffles or reshapes which rows are showing should land
+  // back on page 1 — otherwise switching individual/team view or sort can
+  // strand you on a page number that no longer exists for the new row set.
+  useEffect(() => { setPage(1); }, [groupBy, sortKey, sortDir, filterAgentIds, filterTeamKeys]);
 
   useEffect(() => {
     axios.get('/api/agent-categories').then(r => setCategories(r.data)).catch(() => {});
@@ -716,6 +730,10 @@ function AgentConductSection({ from, to, navigate }) {
   const visibleEmployees = filterAgentIds.length > 0 ? employees.filter(a => filterAgentIds.includes(a.id)) : employees;
   const visibleTeamGroups = filterTeamKeys.length > 0 ? teamGroups.filter(g => filterTeamKeys.includes(g.key)) : teamGroups;
   const activeFilterCount = groupBy === 'individual' ? filterAgentIds.length : filterTeamKeys.length;
+  // Paginated by top-level row (a person in individual view, a team in team
+  // view) — an expanded team's member rows don't count against the page.
+  const pagedEmployees = useMemo(() => visibleEmployees.slice((page - 1) * pageSize, page * pageSize), [visibleEmployees, page, pageSize]);
+  const pagedTeamGroups = useMemo(() => visibleTeamGroups.slice((page - 1) * pageSize, page * pageSize), [visibleTeamGroups, page, pageSize]);
 
   function toggleTeam(key) {
     setExpandedTeams(prev => {
@@ -842,29 +860,28 @@ function AgentConductSection({ from, to, navigate }) {
         ) : employees.length === 0 ? (
           <p className="text-center text-gray-400 dark:text-slate-500 text-sm py-10">ยังไม่มีพนักงานในระบบ</p>
         ) : groupBy === 'individual' ? (
-          // Fixed height ≈ 6 rows, scrolls for the rest — keeps this box from
-          // pushing everything else on the page down as the team grows.
-          <div className="max-h-[460px] overflow-y-auto">
+          <>
             <table className="w-full text-sm">
               <ConductThead sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               <tbody>
                 {visibleEmployees.length === 0 ? (
                   <tr><td colSpan={5} className="text-center text-gray-400 dark:text-slate-500 text-sm py-6">ไม่พบพนักงานตามตัวกรองที่เลือก</td></tr>
-                ) : visibleEmployees.map(a => (
+                ) : pagedEmployees.map(a => (
                   <ConductRow key={a.id} a={a} onClick={() => setSelectedAgentId(a.id)} />
                 ))}
               </tbody>
             </table>
-          </div>
+            <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={visibleEmployees.length} />
+          </>
         ) : (
-          <div className="max-h-[460px] overflow-y-auto">
+          <>
             <table className="w-full text-sm">
               <ConductThead sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               <tbody>
                 {visibleTeamGroups.length === 0 && (
                   <tr><td colSpan={5} className="text-center text-gray-400 dark:text-slate-500 text-sm py-6">ไม่พบทีมตามตัวกรองที่เลือก</td></tr>
                 )}
-                {visibleTeamGroups.map(g => (
+                {pagedTeamGroups.map(g => (
                   <Fragment key={g.key}>
                     <tr
                       onClick={() => toggleTeam(g.key)}
@@ -900,7 +917,8 @@ function AgentConductSection({ from, to, navigate }) {
                 ))}
               </tbody>
             </table>
-          </div>
+            <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={visibleTeamGroups.length} />
+          </>
         )}
       </div>
 
