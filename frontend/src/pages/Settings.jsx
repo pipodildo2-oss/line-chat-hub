@@ -1361,8 +1361,13 @@ export default function Settings() {
           />
         ) : (
           <div className="space-y-6 max-w-6xl">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">หมวดหมู่ไลน์ OA</p>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <button
+                onClick={() => setShowAddChannel(true)}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm font-medium hover:brightness-110"
+              >
+                <Plus size={15} /> เพิ่ม LINE OA
+              </button>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowAddChannelCategoryGroup(v => !v)}
@@ -1378,6 +1383,7 @@ export default function Settings() {
                 </button>
               </div>
             </div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 -mt-3">หมวดหมู่ไลน์ OA</p>
 
             {showAddChannelCategoryGroup && (
               <form onSubmit={addChannelCategoryGroup} className="flex items-center gap-2 max-w-md">
@@ -1488,40 +1494,47 @@ export default function Settings() {
             )}
 
             {showAddChannel && (
-              <form onSubmit={addChannel} className={`${cardCls} space-y-3 max-w-xl`}>
-                <h3 className="font-medium text-gray-900 dark:text-slate-100">เพิ่ม LINE OA</h3>
-                <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
-                <input className={inputCls} placeholder="LINE ID (เช่น abc1234 ไม่ต้องใส่ @) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
-                <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
-                <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
-                <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
-                <div>
-                  <select
-                    className={inputCls}
-                    value={channelForm.categoryId}
-                    onChange={e => { setChannelForm(f => ({ ...f, categoryId: e.target.value })); setNewChannelCategoryName(''); }}
-                  >
-                    <option value="">ไม่มีหมวดหมู่</option>
-                    {channelCategories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                    <option value="__new__">+ เพิ่มหมวดหมู่ใหม่...</option>
-                  </select>
-                  {channelForm.categoryId === '__new__' && (
-                    <input
-                      autoFocus
-                      className={`${inputCls} mt-2`}
-                      placeholder="ชื่อหมวดหมู่ใหม่"
-                      value={newChannelCategoryName}
-                      onChange={e => setNewChannelCategoryName(e.target.value)}
-                    />
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
-                  <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
-                </div>
-              </form>
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowAddChannel(false)}>
+                <form
+                  onSubmit={addChannel}
+                  className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-xl p-5 w-full max-w-md max-h-[85vh] overflow-y-auto space-y-3"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <h3 className="font-medium text-gray-900 dark:text-slate-100">เพิ่ม LINE OA</h3>
+                  <input className={inputCls} placeholder="ชื่อ OA (เช่น ร้านค้าหลัก)" value={channelForm.name} onChange={e => setChannelForm(f => ({ ...f, name: e.target.value }))} required />
+                  <input className={inputCls} placeholder="LINE ID (เช่น abc1234 ไม่ต้องใส่ @) — ไม่บังคับ" value={channelForm.lineId} onChange={e => setChannelForm(f => ({ ...f, lineId: e.target.value }))} />
+                  <input className={inputCls} placeholder="Channel ID" value={channelForm.channelId} onChange={e => setChannelForm(f => ({ ...f, channelId: e.target.value }))} required />
+                  <input className={inputCls} placeholder="Channel Secret" value={channelForm.channelSecret} onChange={e => setChannelForm(f => ({ ...f, channelSecret: e.target.value }))} required />
+                  <textarea className={inputCls} placeholder="Channel Access Token" rows={3} value={channelForm.accessToken} onChange={e => setChannelForm(f => ({ ...f, accessToken: e.target.value }))} required />
+                  <div>
+                    <select
+                      className={inputCls}
+                      value={channelForm.categoryId}
+                      onChange={e => { setChannelForm(f => ({ ...f, categoryId: e.target.value })); setNewChannelCategoryName(''); }}
+                    >
+                      <option value="">ไม่มีหมวดหมู่</option>
+                      {channelCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                      <option value="__new__">+ เพิ่มหมวดหมู่ใหม่...</option>
+                    </select>
+                    {channelForm.categoryId === '__new__' && (
+                      <input
+                        autoFocus
+                        className={`${inputCls} mt-2`}
+                        placeholder="ชื่อหมวดหมู่ใหม่"
+                        value={newChannelCategoryName}
+                        onChange={e => setNewChannelCategoryName(e.target.value)}
+                      />
+                    )}
+                  </div>
+                  {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg">{error}</div>}
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={saving} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">บันทึก</button>
+                    <button type="button" onClick={() => setShowAddChannel(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
+                  </div>
+                </form>
+              </div>
             )}
           </div>
         )
