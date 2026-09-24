@@ -5,7 +5,7 @@ const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { saveBase64Image, deleteStoredImage } = require('../lib/imageStorage');
 const { getOnlineAgentIds } = require('../lib/presence');
-const { getIo } = require('../services/socket.service');
+const { getIo, emitToAll } = require('../services/socket.service');
 
 const prisma = new PrismaClient();
 
@@ -100,6 +100,10 @@ router.patch('/me', auth, async (req, res) => {
       data,
       select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true, twoFactorEnabledAt: true },
     });
+    // Teammates' already-open Settings > ทีมงาน page fetched the agent list
+    // once on mount, so without this it never learns this agent's name or
+    // status changed until someone reloads the page.
+    emitToAll('agent_updated', { id: updated.id, name: updated.name, status: updated.status, avatarUrl: updated.avatarUrl });
     res.json({ ...updated, twoFactorEnabled: !!updated.twoFactorEnabledAt, twoFactorEnabledAt: undefined });
   } catch (err) {
     console.error('Update own profile failed:', err.message);
@@ -126,6 +130,7 @@ router.patch('/me/avatar', auth, async (req, res) => {
       select: { id: true, name: true, email: true, role: true, language: true, status: true, avatarUrl: true, twoFactorEnabledAt: true },
     });
     if (previous?.avatarUrl) deleteStoredImage(previous.avatarUrl);
+    emitToAll('agent_updated', { id: updated.id, name: updated.name, status: updated.status, avatarUrl: updated.avatarUrl });
     res.json({ ...updated, twoFactorEnabled: !!updated.twoFactorEnabledAt, twoFactorEnabledAt: undefined });
   } catch (err) {
     console.error('Update own avatar failed:', err.message);

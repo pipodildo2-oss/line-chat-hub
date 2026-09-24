@@ -940,6 +940,19 @@ export default function Settings() {
     return () => socket.off('agent_presence', onPresence);
   }, [socket]);
 
+  // Keeps name/avatar/status current after the initial fetch above — a
+  // teammate editing their own profile elsewhere shouldn't need everyone
+  // else to reload this page to see it (backend/src/routes/agents.js
+  // PATCH /me and /me/avatar).
+  useEffect(() => {
+    if (!socket) return;
+    function onAgentUpdated(patch) {
+      setAgents(prev => prev.map(a => (a.id === patch.id ? { ...a, ...patch } : a)));
+    }
+    socket.on('agent_updated', onAgentUpdated);
+    return () => socket.off('agent_updated', onAgentUpdated);
+  }, [socket]);
+
   async function addChannelCategory(e) {
     e.preventDefault();
     if (!channelCategoryName.trim()) return;
