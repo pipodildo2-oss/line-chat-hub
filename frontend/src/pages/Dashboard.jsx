@@ -160,10 +160,11 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Activity chart */}
+        {/* Activity chart + by-category chart, stacked in one card so they
+            share its frame instead of each fighting for a whole row. */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
           <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">{data.activityGranularity === 'hour' ? 'ข้อความต่อชั่วโมง' : t('dashboard_messages_per_day')} <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span></h2>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={200}>
             <BarChart data={activityData}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="date" tick={{ fontSize: 12, fill: tickColor }} />
@@ -176,6 +177,33 @@ export default function Dashboard() {
               <Bar dataKey="outgoing" name="ข้อความออก" fill="#22C55E" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+
+          {/* By category — same channels as the "ปริมาณข้อความตาม OA" panel
+              to the right, rolled up by ChannelCategory (Settings > ช่องทาง
+              LINE OA) instead of shown one row per OA, so LINE OAs that are
+              really the same brand/team don't have to be eyeballed and added
+              up by hand. */}
+          <div className="border-t border-gray-100 dark:border-slate-800 mt-5 pt-5">
+            <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">
+              ข้อความที่ใช้ไปตามหมวดหมู่ <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span>
+            </h2>
+            {data.messagesByCategory.length === 0 ? (
+              <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={data.messagesByCategory} margin={{ bottom: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="categoryName" tick={{ fontSize: 12, fill: tickColor }} interval={0} angle={-15} textAnchor="end" height={50} />
+                  <YAxis tick={{ fontSize: 12, fill: tickColor }} />
+                  <Tooltip content={<CategoryTooltip />} />
+                  <Bar dataKey="count" name="ข้อความ" fill="#A855F7" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
+              รวมข้อความเข้า+ออกของทุกไลน์ในหมวดหมู่เดียวกันเป็นแท่งเดียว — จัดหมวดหมู่ไลน์ได้ที่ ตั้งค่า &gt; ช่องทาง LINE OA
+            </p>
+          </div>
         </div>
 
         {/* By channel */}
@@ -211,32 +239,6 @@ export default function Dashboard() {
             นับข้อความเข้า+ออกรวมกันต่อ OA — ใช้เทียบปริมาณระหว่างไลน์ได้ ไม่ใช่ยอดค่าใช้จ่ายจริงจาก LINE
           </p>
         </div>
-      </div>
-
-      {/* By category — same channels as the "ปริมาณข้อความตาม OA" panel
-          above, rolled up by ChannelCategory (Settings > ช่องทาง LINE OA)
-          instead of shown one row per OA, so LINE OAs that are really the
-          same brand/team don't have to be eyeballed and added up by hand. */}
-      <div className="mt-4 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-        <h2 className="font-semibold text-gray-800 dark:text-slate-200 mb-4">
-          ข้อความที่ใช้ไปตามหมวดหมู่ <span className="font-normal text-gray-400 dark:text-slate-500">({rangeLabel})</span>
-        </h2>
-        {data.messagesByCategory.length === 0 ? (
-          <p className="text-gray-400 dark:text-slate-500 text-sm">ยังไม่มีข้อมูล</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={data.messagesByCategory} margin={{ bottom: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="categoryName" tick={{ fontSize: 12, fill: tickColor }} interval={0} angle={-15} textAnchor="end" height={50} />
-              <YAxis tick={{ fontSize: 12, fill: tickColor }} />
-              <Tooltip content={<CategoryTooltip />} />
-              <Bar dataKey="count" name="ข้อความ" fill="#A855F7" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-        <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3 leading-relaxed">
-          รวมข้อความเข้า+ออกของทุกไลน์ในหมวดหมู่เดียวกันเป็นแท่งเดียว — จัดหมวดหมู่ไลน์ได้ที่ ตั้งค่า &gt; ช่องทาง LINE OA
-        </p>
       </div>
     </div>
   );
