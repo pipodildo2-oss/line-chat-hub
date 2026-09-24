@@ -9,8 +9,17 @@ const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
 const prisma = new PrismaClient();
 
-const KINDS = ['reply', 'howto', 'promotion'];
-const KIND_ERROR = 'kind ต้องเป็น reply, howto หรือ promotion';
+const KINDS = ['reply', 'howto', 'promotion', 'account'];
+const KIND_ERROR = 'kind ต้องเป็น reply, howto, promotion หรือ account';
+// 'account' quick replies (บัญชี — payment/account info) skip the usual
+// admin-only + request/approval flow entirely: any agent can create, edit or
+// delete one directly, same as an admin. Every other kind stays exactly as
+// restrictive as before. Ownership isn't tracked — these are meant as a
+// shared team resource (e.g. bank account details everyone keeps current),
+// not a private draft.
+function canManageDirectly(agent, kind) {
+  return agent.role === 'admin' || kind === 'account';
+}
 const MAX_IMAGES = 5;
 const TOO_MANY_IMAGES_ERROR = `แนบรูปได้สูงสุด ${MAX_IMAGES} รูป`;
 const REVIEW_AUDIT_ACTION = { approved: 'request_approved', needs_revision: 'request_needs_revision', rejected: 'request_rejected' };
@@ -266,10 +275,12 @@ router.patch('/reorder', auth, async (req, res) => {
   }
 });
 
-// POST /api/quick-replies — admin only
-router.post('/', auth, requireAdmin, async (req, res) => {
+// POST /api/quick-replies — admin only, EXCEPT kind: 'account' which any
+// agent can create directly (see canManageDirectly above).
+router.post('/', auth, async (req, res) => {
   try {
     const { categoryId, kind, name, content, images } = req.body;
+    if (!canManageDirectly(req.agent, kind)) return res.status(403).json({ error: 'Admin only' });
     if (!categoryId || !name?.trim() || !content?.trim()) {
       return res.status(400).json({ error: 'categoryId, name and content required' });
     }
@@ -306,9 +317,20 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 // leaves the images untouched — same "not present = don't touch" convention
 // the rest of this route already uses for name/content/etc. This sidesteps
 // ever needing to hand the client a real stored path to echo back.
-router.patch('/:id', auth, requireAdmin, async (req, res) => {
+router.patch('/:id', auth, async (req, res) => {
   try {
     const { name, content, categoryId, kind, active, removeImageIndexes, addImages } = req.body;
+    // Non-admins may only reach this far for an 'account'-kind item (their
+    // direct-manage exception), and can't use an edit to move it out of that
+    // kind — otherwise they could relabel their way into content types that
+    // are supposed to stay admin/request-gated.
+    if (req.agent.role !== 'admin') {
+      const current = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { kind: true } });
+      if (!current) return res.status(404).json({ error: 'Not found' });
+      if (current.kind !== 'account' || (kind && kind !== 'account')) {
+        return res.status(403).json({ error: 'Admin only' });
+      }
+    }
     if (kind && !KINDS.includes(kind)) return res.status(400).json({ error: KIND_ERROR });
     if (addImages !== undefined) {
       if (!Array.isArray(addImages)) return res.status(400).json({ error: 'ข้อมูลรูปภาพไม่ถูกต้อง' });
@@ -361,9 +383,15 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/quick-replies/:id — admin only
-router.delete('/:id', auth, requireAdmin, async (req, res) => {
+// DELETE /api/quick-replies/:id — admin only, except an agent deleting their
+// own-kind 'account' item directly (see canManageDirectly above).
+router.delete('/:id', auth, async (req, res) => {
   try {
+    if (req.agent.role !== 'admin') {
+      const current = await prisma.quickReply.findUnique({ where: { id: req.params.id }, select: { kind: true } });
+      if (!current) return res.status(404).json({ error: 'Not found' });
+      if (current.kind !== 'account') return res.status(403).json({ error: 'Admin only' });
+    }
     const quickReply = await prisma.quickReply.delete({
       where: { id: req.params.id },
       include: { category: { select: { name: true } } },

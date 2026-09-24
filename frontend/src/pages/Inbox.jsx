@@ -1144,6 +1144,7 @@ const QR_KIND_TABS = [
   { key: 'reply', label: 'ตอบกลับ' },
   { key: 'howto', label: 'วิธีการ' },
   { key: 'promotion', label: 'โปรโมชั่น' },
+  { key: 'account', label: 'บัญชี' },
 ];
 
 // Curated set rather than a full picker library/dependency — covers the

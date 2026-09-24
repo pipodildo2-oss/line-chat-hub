@@ -54,9 +54,15 @@ function MultiImagePicker({ existingUrls = [], removedIndexes = new Set(), onTog
         </div>
       ))}
       {total < MAX_IMAGES && (
-        <label className="w-16 h-16 flex flex-col items-center justify-center gap-0.5 border border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-aurora-teal text-gray-400 dark:text-slate-500 hover:text-aurora-teal transition-colors">
-          <ImagePlus size={16} />
-          <span className="text-[9px]">{total}/{MAX_IMAGES}</span>
+        <label
+          title={`แนบรูปภาพ (${total}/${MAX_IMAGES})`}
+          className="relative w-16 h-16 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-aurora-teal/50 rounded-lg cursor-pointer hover:border-aurora-teal hover:bg-aurora-teal/5 text-aurora-teal transition-colors"
+        >
+          <ImagePlus size={20} />
+          <span className="text-[9px] font-medium leading-none">แนบรูป</span>
+          <span className="absolute -bottom-1 -right-1 bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-slate-400 text-[8px] font-semibold rounded-full px-1 min-w-[16px] text-center border border-gray-200 dark:border-slate-700">
+            {total}/{MAX_IMAGES}
+          </span>
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} />
         </label>
       )}
@@ -68,7 +74,11 @@ const QR_KIND_OPTIONS = [
   { key: 'reply', label: 'ตอบกลับ' },
   { key: 'howto', label: 'วิธีการ' },
   { key: 'promotion', label: 'โปรโมชั่น' },
+  { key: 'account', label: 'บัญชี' },
 ];
+// 'account' is the one kind any agent can create/edit/delete directly —
+// no admin review needed (backend/src/routes/quickReplies.js canManageDirectly).
+const canManageQrDirectly = (isAdmin, kind) => isAdmin || kind === 'account';
 const qrKindLabel = (kind) => QR_KIND_OPTIONS.find(k => k.key === kind)?.label || kind;
 
 // Small "+N" badge overlaid on a thumbnail when an item has more than one
@@ -127,7 +137,7 @@ function ImageLightbox({ urls, index, onClose, onIndexChange }) {
   );
 }
 
-function QuickReplyEditModal({ item, onSave, onClose }) {
+function QuickReplyEditModal({ item, isAdmin, onSave, onClose }) {
   const [name, setName] = useState(item.name);
   const [kind, setKind] = useState(item.kind || 'reply');
   const [content, setContent] = useState(item.content);
@@ -175,21 +185,30 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
         </div>
         {error && <div className="bg-rose-500/10 text-rose-400 text-sm px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="space-y-3">
-          <div>
-            <label className={labelCls}>ประเภท</label>
-            <div className="flex gap-2">
-              {QR_KIND_OPTIONS.map(opt => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setKind(opt.key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          {isAdmin ? (
+            <div>
+              <label className={labelCls}>ประเภท</label>
+              <div className="flex gap-2">
+                {QR_KIND_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setKind(opt.key)}
+                    className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${kind === opt.key ? 'bg-aurora-teal/15 border-aurora-teal text-aurora-teal' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            // Agents can only reach this modal for a 'บัญชี' item — kind stays
+            // fixed (changing it away would 403 on save, see quickReplies.js).
+            <div>
+              <label className={labelCls}>ประเภท</label>
+              <span className="text-sm px-3 py-1.5 rounded-lg border border-aurora-teal bg-aurora-teal/15 text-aurora-teal inline-block">{qrKindLabel(kind)}</span>
+            </div>
+          )}
           <div>
             <label className={labelCls}>ชื่อข้อความ</label>
             <input className={fieldCls} value={name} onChange={e => setName(e.target.value)} />
@@ -226,13 +245,15 @@ function QuickReplyEditModal({ item, onSave, onClose }) {
 
 // 1. เลือกหมวดหมู่ = หมวดที่แอดมินพิมพ์สร้างเอง แล้วเลือกได้ว่าจะให้แสดงกับไลน์ OA ไหนบ้าง
 //    (ไม่เลือกไลน์เลย = แสดงกับทุกไลน์)
-// 2. เลือกประเภท = ตอบกลับ / วิธีการ / โปรโมชั่น
+// 2. เลือกประเภท = ตอบกลับ / วิธีการ / โปรโมชั่น / บัญชี
 // 3-5. ตั้งชื่อ/รายละเอียด/รูปภาพของข้อความลัดแต่ละอัน
-// Category CRUD and existing-item edit/delete/toggle stay isAdmin-only, but any
-// authenticated agent can browse categories, reorder existing items (it's just
-// organizing the picker, not changing content), and submit a NEW quick reply —
-// for a non-admin that submission goes through /requests instead of landing
-// live, see addQuickReply below.
+// Category CRUD stays isAdmin-only. Any authenticated agent can browse
+// categories and reorder existing items (it's just organizing the picker,
+// not changing content). Creating/editing/deleting an item is also
+// isAdmin-only EXCEPT for kind 'บัญชี' — an agent manages those directly,
+// same as an admin (see canManageQrDirectly / backend's canManageDirectly).
+// Every other kind still goes through /requests for a non-admin instead of
+// landing live — see addQuickReply below.
 function QuickReplyCatalog({ isAdmin, channels }) {
   const [categories, setCategories] = useState([]);
   const [categoryId, setCategoryId] = useState('');
@@ -321,7 +342,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
     if (!qrForm.name.trim() || !qrForm.content.trim()) return;
     setSavingQr(true); setError('');
     try {
-      if (isAdmin) {
+      if (canManageQrDirectly(isAdmin, qrForm.kind)) {
         const { data } = await axios.post('/api/quick-replies', { categoryId, ...qrForm, images: qrImages });
         setQuickReplies(prev => [...prev, data]);
         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, _count: { quickReplies: (c._count?.quickReplies || 0) + 1 } } : c));
@@ -492,11 +513,19 @@ function QuickReplyCatalog({ isAdmin, channels }) {
 
           {showAddQr && (
             <form onSubmit={addQuickReply} className={`${cardCls} space-y-3`}>
-              <h3 className="font-medium text-gray-900 dark:text-slate-100">{isAdmin ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}</h3>
+              <h3 className="font-medium text-gray-900 dark:text-slate-100">
+                {canManageQrDirectly(isAdmin, qrForm.kind) ? 'เพิ่มข้อความลัด' : 'ขอเพิ่มข้อความลัด'}
+              </h3>
               {!isAdmin && (
-                <p className="text-xs text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                  ข้อความที่คุณเพิ่มจะถูกส่งเป็นคำขอ รอแอดมินตรวจสอบและอนุมัติก่อน ถึงจะใช้งานได้จริง — ดูสถานะได้ที่แท็บ "คำขอ"
-                </p>
+                qrForm.kind === 'account' ? (
+                  <p className="text-xs text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 rounded-lg px-3 py-2">
+                    ข้อความลัดประเภท "บัญชี" บันทึกใช้งานได้ทันที ไม่ต้องรอแอดมินอนุมัติ
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800/60 rounded-lg px-3 py-2">
+                    ข้อความที่คุณเพิ่มจะถูกส่งเป็นคำขอ รอแอดมินตรวจสอบและอนุมัติก่อน ถึงจะใช้งานได้จริง — ดูสถานะได้ที่แท็บ "คำขอ"
+                  </p>
+                )
               )}
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1.5 block">เลือกประเภท</label>
@@ -527,7 +556,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
               </div>
               <div className="flex gap-2">
                 <button type="submit" disabled={savingQr} className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50">
-                  {isAdmin ? 'บันทึก' : 'ส่งคำขอ'}
+                  {canManageQrDirectly(isAdmin, qrForm.kind) ? 'บันทึก' : 'ส่งคำขอ'}
                 </button>
                 <button type="button" onClick={() => setShowAddQr(false)} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-4 py-2">ยกเลิก</button>
               </div>
@@ -574,20 +603,21 @@ function QuickReplyCatalog({ isAdmin, channels }) {
                 </div>
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5 whitespace-pre-wrap line-clamp-3">{qr.content}</p>
               </div>
-              {isAdmin && (
+              {canManageQrDirectly(isAdmin, qr.kind) ? (
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => saveQuickReplyEdit(qr.id, { active: !isActive })}
-                    title={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                    className={`relative inline-flex overflow-hidden w-8 h-4 rounded-full transition-colors flex-shrink-0 mr-1 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
-                  >
-                    <span className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => saveQuickReplyEdit(qr.id, { active: !isActive })}
+                      title={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                      className={`relative inline-flex overflow-hidden w-8 h-4 rounded-full transition-colors flex-shrink-0 mr-1 ${isActive ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple' : 'bg-gray-200 dark:bg-slate-700'}`}
+                    >
+                      <span className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  )}
                   <button onClick={() => setEditTarget(qr)} className="text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 p-1.5"><Pencil size={14} /></button>
                   <button onClick={() => deleteQuickReply(qr.id)} className="text-gray-400 dark:text-slate-500 hover:text-rose-400 p-1.5"><Trash2 size={14} /></button>
                 </div>
-              )}
-              {!isAdmin && (
+              ) : (
                 <button
                   onClick={() => requestDeleteQuickReply(qr.id)}
                   title="ขอลบข้อความลัดนี้"
@@ -604,7 +634,7 @@ function QuickReplyCatalog({ isAdmin, channels }) {
       )}
 
       {editTarget && (
-        <QuickReplyEditModal item={editTarget} onSave={saveQuickReplyEdit} onClose={() => setEditTarget(null)} />
+        <QuickReplyEditModal item={editTarget} isAdmin={isAdmin} onSave={saveQuickReplyEdit} onClose={() => setEditTarget(null)} />
       )}
     </div>
   );

@@ -189,7 +189,10 @@ model QuickReply {
   id             String              @id @default(cuid())
   categoryId     String
   category       QuickReplyCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  kind           String              @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion
+  kind           String              @default("reply") // "ประเภท" — fixed choice: reply | howto | promotion | account
+  // 'account' ("บัญชี") is the one kind any agent can create/edit/delete
+  // directly, bypassing the admin-only + request/approval flow every other
+  // kind goes through — see canManageDirectly in routes/quickReplies.js.
   name           String // internal shortcut name/title agents see in the picker
   content        String // message text
   imageData      String? // legacy single-image column, superseded by `images` — kept read-only for old rows
