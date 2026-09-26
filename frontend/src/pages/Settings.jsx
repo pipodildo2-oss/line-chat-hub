@@ -18,8 +18,8 @@ const TWO_FACTOR_SCOPE_OPTIONS = [
 ];
 
 const MODERATION_MODE_OPTIONS = [
-  { key: 'ai', label: 'AI (Claude)' },
-  { key: 'keyword', label: 'ลิสต์คำ (ไม่ใช้ AI)' },
+  { key: 'ai', label: 'AI (Claude)', desc: 'อ่านบริบท/น้ำเสียง จับได้แม้ไม่มีคำหยาบตรงๆ' },
+  { key: 'keyword', label: 'ลิสต์คำ (ไม่ใช้ AI)', desc: 'ตรวจจากคำในลิสต์เท่านั้น ไม่มีค่าใช้จ่าย' },
 ];
 
 function CopyButton({ text }) {
@@ -2050,28 +2050,54 @@ export default function Settings() {
               แต่จับบริบท/น้ำเสียงไม่ได้
             </p>
             {agent?.role === 'admin' ? (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {MODERATION_MODE_OPTIONS.map(opt => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setModerationMode(opt.key)}
-                    disabled={savingModerationMode || !systemSettings}
-                    className={`text-sm px-3 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
-                      systemSettings?.moderationMode === opt.key
-                        ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple text-white border-transparent'
-                        : 'text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+              <div className="grid sm:grid-cols-2 gap-2.5">
+                {MODERATION_MODE_OPTIONS.map(opt => {
+                  const active = systemSettings?.moderationMode === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setModerationMode(opt.key)}
+                      disabled={savingModerationMode || !systemSettings}
+                      className={`text-left px-3.5 py-2.5 rounded-xl border transition-colors disabled:opacity-50 ${
+                        active
+                          ? 'bg-gradient-to-r from-aurora-teal to-aurora-purple border-transparent text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-800/60 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                            active ? 'border-white' : 'border-gray-300 dark:border-slate-600'
+                          }`}
+                        >
+                          {active && <span className="w-2 h-2 rounded-full bg-white" />}
+                        </span>
+                        <span className="text-sm font-medium">{opt.label}</span>
+                      </div>
+                      <p className={`text-xs mt-1 ml-6 ${active ? 'text-white/80' : 'text-gray-500 dark:text-slate-400'}`}>
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-gray-900 dark:text-slate-100">
                 โหมดปัจจุบัน: {systemSettings ? (MODERATION_MODE_OPTIONS.find(o => o.key === systemSettings.moderationMode)?.label || 'AI (Claude)') : '...'}
                 <span className="text-gray-400 dark:text-slate-500"> (เฉพาะแอดมินเท่านั้นที่แก้ไขได้)</span>
               </p>
+            )}
+            {agent?.role === 'admin' && (
+              <a
+                href="https://console.anthropic.com/settings/billing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm text-aurora-purple dark:text-aurora-teal hover:underline"
+              >
+                <ExternalLink size={14} />
+                เชื่อมต่อ/เติมเครดิต Claude AI (Anthropic Console)
+              </a>
             )}
           </div>
 
