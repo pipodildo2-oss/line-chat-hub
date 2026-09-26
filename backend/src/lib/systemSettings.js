@@ -26,7 +26,24 @@ async function getSystemSettings() {
     afkMinutes: row?.afkMinutes ?? DEFAULT_AFK_MINUTES,
     twoFactorRequiredScope: row?.twoFactorRequiredScope ?? DEFAULT_TWO_FACTOR_REQUIRED_SCOPE,
     moderationMode: row?.moderationMode ?? DEFAULT_MODERATION_MODE,
+    hasAnthropicApiKey: !!row?.anthropicApiKey,
   };
+}
+
+// Internal only (lib/anthropicClient.js) — the one place the raw key is ever
+// read back out of the DB. Never expose this to a route response; the public
+// view is the `hasAnthropicApiKey` boolean in getSystemSettings() above.
+async function getAnthropicApiKeyRaw() {
+  const row = await prisma.systemSetting.findUnique({ where: { id: SINGLETON_ID } });
+  return row?.anthropicApiKey || null;
+}
+
+function setAnthropicApiKey(key) {
+  return prisma.systemSetting.upsert({
+    where: { id: SINGLETON_ID },
+    update: { anthropicApiKey: key },
+    create: { id: SINGLETON_ID, anthropicApiKey: key },
+  });
 }
 
 async function getAgentConductGraceSeconds() {
@@ -172,6 +189,8 @@ module.exports = {
   roleIsInTwoFactorScope,
   getModerationMode,
   setModerationMode,
+  getAnthropicApiKeyRaw,
+  setAnthropicApiKey,
   getTelegramSettings,
   getTelegramCredentials,
   setTelegramSettings,

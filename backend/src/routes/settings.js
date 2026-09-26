@@ -5,7 +5,7 @@
 // idle timeout, so that one route is deliberately not admin-gated.
 const router = require('express').Router();
 const auth = require('../middleware/auth');
-const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes, setTwoFactorRequiredScope, TWO_FACTOR_REQUIRED_SCOPES, setModerationMode, MODERATION_MODES } = require('../lib/systemSettings');
+const { getSystemSettings, setAgentConductGraceSeconds, setResponseRateThresholdPercent, getAfkMinutes, setAfkMinutes, setTwoFactorRequiredScope, TWO_FACTOR_REQUIRED_SCOPES, setModerationMode, MODERATION_MODES, setAnthropicApiKey } = require('../lib/systemSettings');
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -20,7 +20,7 @@ router.get('/system', auth, requireAdmin, async (req, res) => {
 // form actually changed) so each Settings > "ระบบ" field can be saved on
 // its own without needing to resend the others' current values.
 router.patch('/system', auth, requireAdmin, async (req, res) => {
-  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes, twoFactorRequiredScope, moderationMode } = req.body;
+  const { agentConductGraceSeconds, responseRateThresholdPercent, afkMinutes, twoFactorRequiredScope, moderationMode, anthropicApiKey } = req.body;
 
   if (agentConductGraceSeconds !== undefined) {
     const seconds = Number(agentConductGraceSeconds);
@@ -58,6 +58,13 @@ router.patch('/system', auth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: `moderationMode ต้องเป็นหนึ่งใน ${MODERATION_MODES.join(', ')}` });
     }
     await setModerationMode(moderationMode);
+  }
+
+  // Blank/whitespace-only means "leave the saved key alone" — same
+  // leave-empty-to-keep convention as the Telegram bot token field below,
+  // since the frontend never gets the real value back to resend.
+  if (anthropicApiKey !== undefined && anthropicApiKey.trim()) {
+    await setAnthropicApiKey(anthropicApiKey.trim());
   }
 
   res.json(await getSystemSettings());

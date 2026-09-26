@@ -1,13 +1,4 @@
-const Anthropic = require('@anthropic-ai/sdk');
-
-let client = null;
-
-function getClient() {
-  if (!client && process.env.ANTHROPIC_API_KEY) {
-    client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return client;
-}
+const { getAnthropicClient } = require('../lib/anthropicClient');
 
 /**
  * Suggest a reply based on conversation history
@@ -16,7 +7,7 @@ function getClient() {
  * @returns {Promise<string>}
  */
 async function suggestReply(messages, channelName) {
-  const c = getClient();
+  const c = await getAnthropicClient();
   if (!c) return null;
 
   const history = messages

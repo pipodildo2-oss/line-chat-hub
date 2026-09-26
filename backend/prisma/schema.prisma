@@ -638,5 +638,14 @@ model SystemSetting {
   // This setting picks which one runs FIRST by choice, independent of the
   // automatic AI-failure fallback, which always applies regardless.
   moderationMode                String   @default("ai")
+  // Anthropic API key used by both AI moderation (checkWithAI above) and the
+  // reply-suggestion feature (claude.service.js) — write-only from the
+  // frontend's perspective, same pattern as telegramBotToken above: never
+  // read back once saved, settings.js exposes only a `hasAnthropicApiKey`
+  // boolean. Lets an admin set/rotate the key from Settings > "ระบบ" without
+  // a Railway redeploy; falls back to the ANTHROPIC_API_KEY env var (see
+  // lib/anthropicClient.js) when this is left unset, so existing deployments
+  // that only set the env var keep working untouched.
+  anthropicApiKey               String?
   updatedAt                     DateTime @updatedAt
 }

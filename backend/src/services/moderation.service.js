@@ -1,23 +1,16 @@
-const Anthropic = require('@anthropic-ai/sdk');
 const Wordcut = require('wordcut');
 const badWords = require('../config/badWords.json');
 const { getModerationMode } = require('../lib/systemSettings');
+const { getAnthropicClient } = require('../lib/anthropicClient');
 
 // AI is the primary check again (was keyword-only for a while — see below).
 // The keyword list from that period is kept as a fallback for whenever the
-// AI call itself isn't available (no ANTHROPIC_API_KEY, or the request
+// AI call itself isn't available (no API key configured, or the request
 // errors — rate limit, timeout, or the Anthropic Console credit balance
 // running out again, which is exactly what took the ORIGINAL AI version
 // down and led to the keyword-only period this codebase went through).
 // Losing tone/context judgment during an outage is an acceptable
 // degradation; silently flagging nothing at all is not.
-let client = null;
-function getClient() {
-  if (!client && process.env.ANTHROPIC_API_KEY) {
-    client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return client;
-}
 
 // Checks tone/intent via Claude — catches profanity AND things a word list
 // never can, like sarcasm or condescension toward the customer with no
@@ -26,7 +19,7 @@ function getClient() {
 //   null       — AI ran and the message reads clean
 //   { severity, reason, category: 'moderation' } — AI flagged it
 async function checkWithAI(text) {
-  const c = getClient();
+  const c = await getAnthropicClient();
   if (!c) return undefined;
   try {
     const response = await c.messages.create({

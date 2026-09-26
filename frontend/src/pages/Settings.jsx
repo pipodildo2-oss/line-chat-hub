@@ -885,6 +885,11 @@ export default function Settings() {
   // number fields above.
   const [savingTwoFactorRequired, setSavingTwoFactorRequired] = useState(false);
   const [savingModerationMode, setSavingModerationMode] = useState(false);
+  // Anthropic API key — write-only, same leave-blank-to-keep pattern as the
+  // Telegram bot token field (never pre-filled from the server).
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savingApiKey, setSavingApiKey] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -1350,6 +1355,23 @@ export default function Settings() {
       setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingModerationMode(false);
+    }
+  }
+
+  async function saveAnthropicApiKey(e) {
+    e.preventDefault();
+    if (!apiKeyInput.trim()) return;
+    setSavingApiKey(true); setError('');
+    try {
+      const { data } = await axios.patch('/api/settings/system', { anthropicApiKey: apiKeyInput.trim() });
+      setSystemSettings(data);
+      setApiKeyInput('');
+      setApiKeySaved(true);
+      setTimeout(() => setApiKeySaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingApiKey(false);
     }
   }
 
@@ -2089,15 +2111,41 @@ export default function Settings() {
               </p>
             )}
             {agent?.role === 'admin' && (
-              <a
-                href="https://console.anthropic.com/settings/billing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-sm text-aurora-purple dark:text-aurora-teal hover:underline"
-              >
-                <ExternalLink size={14} />
-                เชื่อมต่อ/เติมเครดิต Claude AI (Anthropic Console)
-              </a>
+              <>
+                <form onSubmit={saveAnthropicApiKey} className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                  <label className="text-xs text-gray-400 dark:text-slate-500 block mb-1">Anthropic API Key</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="password"
+                      className={`${inputCls} flex-1 min-w-[200px]`}
+                      placeholder={systemSettings?.hasAnthropicApiKey ? 'ตั้งค่าไว้แล้ว (เว้นว่างไว้เพื่อไม่เปลี่ยน)' : 'วางค่าจาก console.anthropic.com เช่น sk-ant-...'}
+                      value={apiKeyInput}
+                      onChange={e => setApiKeyInput(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingApiKey || !apiKeyInput.trim()}
+                      className="bg-gradient-to-r from-aurora-teal to-aurora-purple text-white rounded-lg px-4 py-2 text-sm hover:brightness-110 disabled:opacity-50"
+                    >
+                      {savingApiKey ? 'กำลังบันทึก...' : 'บันทึก'}
+                    </button>
+                    {apiKeySaved && <span className="text-sm text-aurora-teal flex items-center gap-1"><Check size={14} /> บันทึกแล้ว</span>}
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5">
+                    ใช้ทั้งฟีเจอร์ AI ตรวจคำหยาบด้านบนและ AI ช่วยแนะนำคำตอบ — ถ้าไม่ใส่ตรงนี้ ระบบจะใช้ค่าที่ตั้งไว้ใน Railway (ANTHROPIC_API_KEY) แทน
+                  </p>
+                </form>
+                <a
+                  href="https://console.anthropic.com/settings/billing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm text-aurora-purple dark:text-aurora-teal hover:underline"
+                >
+                  <ExternalLink size={14} />
+                  เชื่อมต่อ/เติมเครดิต Claude AI (Anthropic Console)
+                </a>
+              </>
             )}
           </div>
 
