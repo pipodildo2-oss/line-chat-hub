@@ -44,10 +44,20 @@ router.post('/', auth, async (req, res) => {
 
   const messages = await prisma.message.findMany({
     where: { id: { in: messageIds } },
-    select: { id: true, conversationId: true },
+    select: { id: true, conversationId: true, sender: true, senderId: true },
   });
   if (messages.length !== messageIds.length) {
     return res.status(400).json({ error: 'ไม่พบข้อความบางรายการ' });
+  }
+  // A message another agent typed and sent isn't proof of THIS agent's
+  // upsell — customer-sent messages (e.g. a payment slip photo) are still
+  // fair game, only claiming a DIFFERENT agent's own text/image is blocked.
+  // Mirrors the frontend's isForeignAgentMessage check in Inbox.jsx, but
+  // enforced here too since the UI check alone is trivially bypassable via
+  // a direct API call.
+  const foreignAgentMessage = messages.some(m => m.sender === 'agent' && m.senderId && m.senderId !== req.agent.id);
+  if (foreignAgentMessage) {
+    return res.status(400).json({ error: 'เลือกได้เฉพาะข้อความของตัวเองเท่านั้น' });
   }
   const conversationIds = [...new Set(messages.map(m => m.conversationId))];
   if (conversationIds.length > 1) {

@@ -30,7 +30,7 @@ const prisma = new PrismaClient();
 // `upsellItem` field so the rest of the codebase (frontend included) can
 // keep treating it as one-claim-at-a-time, which in practice it still is.
 const MESSAGE_SELECT = {
-  id: true, conversationId: true, sender: true, senderName: true, type: true,
+  id: true, conversationId: true, sender: true, senderName: true, senderId: true, type: true,
   content: true, metadata: true, read: true, lineMessageId: true, createdAt: true,
   upsellItems: {
     where: { submission: { status: { not: 'rejected' } } },

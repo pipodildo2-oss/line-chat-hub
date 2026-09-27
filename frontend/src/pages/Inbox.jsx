@@ -2119,8 +2119,16 @@ export default function Inbox() {
     sendQueueRef.current.set(convId, thisSend);
   }
 
+  // A message another agent typed and sent isn't proof of THIS agent's
+  // upsell — only their own agent-sent messages (plus anything the customer
+  // sent, e.g. a payment slip photo) count as selectable evidence.
+  function isForeignAgentMessage(msg) {
+    return msg.sender === 'agent' && msg.senderId && msg.senderId !== agent?.id;
+  }
+
   function toggleUpsellSelect(msg) {
     if (msg.upsellItem) return; // already claimed by someone — not selectable
+    if (isForeignAgentMessage(msg)) return; // another agent's own message — not selectable
     setSelectedUpsellIds(prev => {
       const next = new Set(prev);
       if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
@@ -2453,7 +2461,7 @@ export default function Inbox() {
                         onClick={upsellMode ? () => toggleUpsellSelect(msg) : undefined}
                         className={`-mx-2 px-2 rounded-xl transition-colors duration-700 ${flashMessageId === msg.id ? 'bg-amber-200/60 dark:bg-amber-500/15 ring-2 ring-amber-400' : ''} ${
                           upsellMode
-                            ? msg.upsellItem
+                            ? msg.upsellItem || isForeignAgentMessage(msg)
                               ? 'opacity-40 cursor-not-allowed'
                               : selectedUpsellIds.has(msg.id)
                                 ? 'cursor-pointer ring-2 ring-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
