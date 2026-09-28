@@ -156,6 +156,70 @@ function saveRawMedia(buffer, contentType) {
 }
 const MAX_MEDIA_MB_LABEL = `${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB`;
 
+// Reads back the raw bytes of an already-saved image, given either a stored
+// path ("/uploads/<id>.jpg") or a legacy inline base64 data URL — the two
+// shapes imageAt()/Message.imageData can hold. Used by saveImageGrid below to
+// read a quick reply's own images back off disk before compositing them.
+function loadStoredImageBuffer(storedValueOrDataUrl) {
+  if (!storedValueOrDataUrl) return null;
+  if (isStoredPath(storedValueOrDataUrl)) {
+    const filePath = path.join(UPLOAD_DIR, storedValueOrDataUrl.replace('/uploads/', ''));
+    try { return fs.readFileSync(filePath); } catch { return null; }
+  }
+  const match = SAFE_IMAGE_DATA_URL.exec(storedValueOrDataUrl);
+  return match ? Buffer.from(match[2], 'base64') : null;
+}
+
+// Composites several images into one grid — a single JPEG showing all of
+// them (2 cols up to 4 images, 3 cols beyond that), used so a quick reply
+// with multiple images sends as ONE LINE image message instead of one push
+// per image ("รูปรวม", requested so LINE doesn't spam a customer with N
+// separate image bubbles for what's conceptually a single promo). Each
+// source image is cropped to a uniform square cell (fit: 'cover') so photos
+// of different aspect ratios still line up into a clean grid, same as a
+// typical photo-album grid. Returns a stored "/uploads/..." path exactly
+// like saveBase64Image, or null if there's nothing to composite.
+const GRID_CELL = 640; // px per cell, before the final FULL_MAX_DIMENSION resize
+const GRID_GAP = 8;
+async function saveImageGrid(buffers) {
+  const images = buffers.filter(Boolean);
+  if (images.length === 0) return null;
+
+  const cols = images.length <= 4 ? Math.min(2, images.length) : 3;
+  const rows = Math.ceil(images.length / cols);
+  const canvasWidth = cols * GRID_CELL + (cols - 1) * GRID_GAP;
+  const canvasHeight = rows * GRID_CELL + (rows - 1) * GRID_GAP;
+
+  const cells = await Promise.all(images.map(buf =>
+    sharp(buf).rotate().resize(GRID_CELL, GRID_CELL, { fit: 'cover' }).toBuffer()
+  ));
+  const composite = cells.map((input, i) => ({
+    input,
+    left: (i % cols) * (GRID_CELL + GRID_GAP),
+    top: Math.floor(i / cols) * (GRID_CELL + GRID_GAP),
+  }));
+
+  const gridBuffer = await sharp({
+    create: { width: canvasWidth, height: canvasHeight, channels: 3, background: '#ffffff' },
+  }).composite(composite).jpeg().toBuffer();
+
+  const id = crypto.randomBytes(16).toString('hex');
+  const fullPath = path.join(UPLOAD_DIR, `${id}.jpg`);
+  const thumbPath = path.join(UPLOAD_DIR, `${id}_thumb.jpg`);
+  await Promise.all([
+    sharp(gridBuffer)
+      .resize({ width: FULL_MAX_DIMENSION, height: FULL_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: FULL_QUALITY, mozjpeg: true })
+      .toFile(fullPath),
+    sharp(gridBuffer)
+      .resize({ width: THUMB_MAX_DIMENSION, height: THUMB_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
+      .toFile(thumbPath),
+  ]);
+
+  return `/uploads/${id}.jpg`;
+}
+
 // Given a stored full-image path (e.g. "/uploads/<id>.jpg"), returns the
 // matching thumbnail's public path — used when pushing previewImageUrl to LINE.
 function thumbPathFor(storedPath) {
@@ -184,4 +248,4 @@ function deleteStoredImage(storedPath) {
   fs.rm(path.join(UPLOAD_DIR, thumbFilename), { force: true }, () => {});
 }
 
-module.exports = { UPLOAD_DIR, saveBase64Image, saveRawMedia, thumbPathFor, isStoredPath, deleteStoredImage, isValidImageDataUrl };
+module.exports = { UPLOAD_DIR, saveBase64Image, saveRawMedia, thumbPathFor, isStoredPath, deleteStoredImage, isValidImageDataUrl, loadStoredImageBuffer, saveImageGrid };

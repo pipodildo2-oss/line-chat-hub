@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
-const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage: deleteStoredImageNow, isValidImageDataUrl } = require('../lib/imageStorage');
+const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage: deleteStoredImageNow, isValidImageDataUrl, loadStoredImageBuffer, saveImageGrid } = require('../lib/imageStorage');
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
@@ -787,17 +787,56 @@ router.post('/:id/send', auth, async (req, res) => {
     }
 
     const created = [];
-    // Each image (up to MAX_IMAGES) and the text are separate LINE pushes —
-    // sent one at a time, stopping at the first failure. sendErr tracks
-    // whichever push failed so the response below can tell the agent exactly
-    // what did and didn't go out, instead of either (a) throwing away images
-    // that legitimately DID send because a later push errored, or (b) silently
-    // treating "partially sent" the same as "fully sent."
+    // sendErr tracks whichever push failed so the response below can tell
+    // the agent exactly what did and didn't go out, instead of either (a)
+    // throwing away something that legitimately DID send because a later
+    // push errored, or (b) silently treating "partially sent" the same as
+    // "fully sent."
     let sendErr = null;
     const imageCount = quickReply.images.length > 0 ? quickReply.images.length : (quickReply.imageData ? 1 : 0);
 
-    for (let i = 0; i < imageCount && !sendErr; i++) {
-      const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image/${i}`;
+    if (imageCount > 1) {
+      // Multiple images composite into ONE grid image and go out as a
+      // single LINE push ("รูปรวม") instead of imageCount separate image
+      // bubbles spamming the customer — see saveImageGrid's own comment.
+      const buffers = [];
+      for (let i = 0; i < imageCount; i++) buffers.push(loadStoredImageBuffer(imageAt(quickReply, i)));
+      const gridPath = await saveImageGrid(buffers);
+      if (!gridPath) {
+        sendErr = new Error('ไม่สามารถรวมรูปภาพได้');
+      } else {
+        // Pushes from the grid file's own direct /uploads url (it's a
+        // brand-new file, not the live QuickReply's own image, so there's
+        // no "edited out from under us" risk the comment below warns about),
+        // then records + displays through /api/messages/image/:id exactly
+        // like the single-image case — same push-then-record-on-success
+        // ordering, so a failed push simply leaves no row at all.
+        const imageUrl = `${req.protocol}://${req.get('host')}${gridPath}`;
+        const previewUrl = `${req.protocol}://${req.get('host')}${thumbPathFor(gridPath)}`;
+        try {
+          await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
+          const sent = await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              sender: 'agent',
+              senderName: req.agent.name,
+              senderId: req.agent.id,
+              type: 'image',
+              content: '[Image]',
+              imageData: gridPath,
+              read: true,
+            },
+          });
+          created.push(await prisma.message.update({
+            where: { id: sent.id },
+            data: { metadata: JSON.stringify({ url: `${req.protocol}://${req.get('host')}/api/messages/image/${sent.id}` }) },
+          }));
+        } catch (err) {
+          sendErr = err;
+        }
+      }
+    } else if (imageCount === 1) {
+      const imageUrl = `${req.protocol}://${req.get('host')}/api/quick-replies/${quickReply.id}/image/0`;
       const previewUrl = `${imageUrl}?preview=1`;
       try {
         await sendImageMessage(conversation.channel, conversation.lineUserId, imageUrl, previewUrl);
@@ -821,7 +860,7 @@ router.post('/:id/send', auth, async (req, res) => {
             senderId: req.agent.id,
             type: 'image',
             content: '[Image]',
-            imageData: imageAt(quickReply, i),
+            imageData: imageAt(quickReply, 0),
             read: true,
           },
         });
@@ -830,7 +869,7 @@ router.post('/:id/send', auth, async (req, res) => {
           data: { metadata: JSON.stringify({ url: `${req.protocol}://${req.get('host')}/api/messages/image/${sent.id}` }) },
         }));
       } catch (err) {
-        sendErr = err; // this image push failed — earlier ones (if any) already sent and are recorded above
+        sendErr = err;
       }
     }
 
