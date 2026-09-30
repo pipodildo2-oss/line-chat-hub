@@ -2228,7 +2228,21 @@ export default function Inbox() {
   }
 
   async function changeStatus(status) {
-    const { data } = await axios.patch(`/api/conversations/${selected.id}`, { status });
+    // Unlike every other mutation below, this used to have NO error handling
+    // at all — a failed PATCH (network blip, a channel-access check that no
+    // longer passes, etc.) threw silently with zero feedback to the agent,
+    // who'd have no way of knowing the close never actually reached the
+    // server. They'd walk away believing it was closed while the DB (and
+    // every other agent's screen) still showed "เปิด" — exactly the bug
+    // reported. Surfacing the failure loudly here means an agent who sees no
+    // alert can trust the close went through.
+    let data;
+    try {
+      ({ data } = await axios.patch(`/api/conversations/${selected.id}`, { status }));
+    } catch (err) {
+      alert(err.response?.data?.error || 'เปลี่ยนสถานะไม่สำเร็จ ลองใหม่อีกครั้ง');
+      return;
+    }
     if (status === 'closed' || status === 'stopped') {
       // Closing OR stopping a case is naturally followed by "handle
       // whatever's next," not staring at the one just set aside — jump
@@ -2247,7 +2261,16 @@ export default function Inbox() {
   }
 
   async function updateConv(fields) {
-    const { data } = await axios.patch(`/api/conversations/${selected.id}`, fields);
+    // Same silent-failure gap as changeStatus above — this backs renaming,
+    // assigning, blocking, and the caution flag, all of which deserve the
+    // same "tell the agent it didn't save" treatment instead of failing quietly.
+    let data;
+    try {
+      ({ data } = await axios.patch(`/api/conversations/${selected.id}`, fields));
+    } catch (err) {
+      alert(err.response?.data?.error || 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง');
+      return;
+    }
     applyConversationPatch(data);
   }
 

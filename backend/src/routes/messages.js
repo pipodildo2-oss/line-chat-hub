@@ -438,6 +438,21 @@ router.post('/:conversationId', auth, async (req, res) => {
     // below reflects the new value immediately instead of the old one.
     const now = new Date();
     conversation.lastMessageAt = now;
+    // `conversation` can also be stale on fields OTHER agents may have
+    // changed WHILE this request was busy pushing to LINE (status, assigned
+    // agent, etc.) — sending a message can take a real network round-trip,
+    // long enough for e.g. someone to close this same conversation in
+    // between. Re-broadcasting the object as originally fetched would
+    // clobber that close back to 'open' on every other agent's screen the
+    // moment this send's own 'conversation_updated' event lands, even though
+    // the DB itself is correctly 'closed' — re-reading these specific fields
+    // fresh right before the emit closes that window. A single indexed
+    // point lookup, cheap next to the LINE push that already happened.
+    const fresh = await prisma.conversation.findUnique({
+      where: { id: conversation.id },
+      select: { status: true, agentId: true, lifecycleStage: true, blocked: true, caution: true, cautionReason: true },
+    });
+    if (fresh) Object.assign(conversation, fresh);
     // `conversation` was fetched with the FULL LineChannel row (channel:
     // true, needed above for sendMessage/sendImageMessage's accessToken) —
     // broadcasting it as-is would push channelSecret/accessToken to every
