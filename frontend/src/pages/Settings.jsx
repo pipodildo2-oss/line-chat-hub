@@ -755,7 +755,8 @@ function TelegramReportSettings({ agent, inputCls, cardCls }) {
               placeholder={settings?.hasToken ? 'ตั้งค่าไว้แล้ว (เว้นว่างไว้เพื่อไม่เปลี่ยน)' : 'วางค่าจาก @BotFather'}
               value={botTokenInput}
               onChange={e => setBotTokenInput(e.target.value)}
-              autoComplete="off"
+              name="telegram-bot-token"
+              autoComplete="new-password"
             />
           </div>
           <div>
@@ -2121,7 +2122,8 @@ export default function Settings() {
                       placeholder={systemSettings?.hasAnthropicApiKey ? 'ตั้งค่าไว้แล้ว (เว้นว่างไว้เพื่อไม่เปลี่ยน)' : 'วางค่าจาก console.anthropic.com เช่น sk-ant-...'}
                       value={apiKeyInput}
                       onChange={e => setApiKeyInput(e.target.value)}
-                      autoComplete="off"
+                      name="anthropic-api-key"
+                      autoComplete="new-password"
                     />
                     <button
                       type="submit"

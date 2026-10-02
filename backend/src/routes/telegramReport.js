@@ -25,7 +25,16 @@ router.patch('/', auth, requireAdmin, async (req, res) => {
   const { botToken, chatId, enabled, day, hour, minute } = req.body;
   const patch = {};
 
-  if (botToken) patch.botToken = botToken.trim();
+  if (botToken) {
+    // A real BotFather token looks like "123456789:AAH..." — rejecting anything
+    // else stops a browser-autofilled login password (or a stray paste) from
+    // silently replacing the working token, which then fails every send with
+    // Telegram's bare "Not Found".
+    if (!/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(botToken.trim())) {
+      return res.status(400).json({ error: 'Bot Token ไม่ถูกต้อง — ต้องเป็นรูปแบบ 123456789:AAH... ที่ได้จาก @BotFather' });
+    }
+    patch.botToken = botToken.trim();
+  }
   if (chatId !== undefined) {
     if (typeof chatId !== 'string' || !chatId.trim()) {
       return res.status(400).json({ error: 'Chat ID ห้ามเว้นว่าง' });

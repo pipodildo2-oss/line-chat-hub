@@ -14,6 +14,11 @@ async function sendTelegramMessage(botToken, chatId, text) {
     // "chat not found" for a wrong chat id, "bot was kicked from the group
     // chat") is far more actionable than a bare HTTP status — surfaced as-is
     // to the admin via the ทดสอบส่ง button (see telegramReport.js).
+    // Telegram answers an invalid/revoked bot token with a bare 404 "Not Found"
+    // (a wrong chat id says "chat not found" instead) — say so plainly.
+    if (res.status === 404 || res.status === 401) {
+      throw new Error('Bot Token ไม่ถูกต้องหรือถูกยกเลิก (Telegram ตอบ Not Found) — วาง Token ใหม่จาก @BotFather แล้วกดบันทึก');
+    }
     throw new Error(data?.description || `Telegram API error (HTTP ${res.status})`);
   }
   return data;
