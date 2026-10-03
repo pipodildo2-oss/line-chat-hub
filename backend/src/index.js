@@ -28,6 +28,32 @@ const telegramReportRoutes = require('./routes/telegramReport');
 const { UPLOAD_DIR } = require('./lib/imageStorage');
 const { agentRoom } = require('./lib/presence');
 const { setIo, emitToAll } = require('./services/socket.service');
+
+// Express 4 ignores the promise an `async` route handler returns, so any
+// database/network error thrown inside one (without its own try/catch) became
+// an unhandled rejection — and Node 22 kills the whole process on those. One
+// failed query then dropped every agent's connection and left the app dead for
+// ~30s while Railway restarted it (and re-ran the heavy startup scans). Forward
+// the rejection to Express's error handling instead, so only that one request
+// gets a 500.
+const ExpressLayer = require('express/lib/router/layer');
+ExpressLayer.prototype.handle_request = function handleRequest(req, res, next) {
+  const fn = this.handle;
+  if (fn.length > 3) return next();
+  try {
+    const result = fn(req, res, next);
+    if (result && typeof result.catch === 'function') result.catch(next);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Last line of defence for fire-and-forget promises that no route owns (e.g.
+// background bookkeeping after a response was sent): log them instead of
+// letting a single failed side-effect take the server down.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection (kept running):', reason instanceof Error ? reason.stack || reason.message : reason);
+});
 const { startWorker } = require('./services/queue.service');
 const { processLineEvent } = require('./services/line.service');
 const { startTelegramReportScheduler } = require('./lib/telegramScheduler');

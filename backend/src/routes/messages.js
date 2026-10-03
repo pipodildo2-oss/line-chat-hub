@@ -281,10 +281,15 @@ router.get('/:conversationId', auth, async (req, res) => {
       select: { id: true, sender: true },
     });
     if (latestMessage && latestMessage.sender === 'user') {
-      await prisma.messageView.upsert({
-        where: { messageId_agentId: { messageId: latestMessage.id, agentId: req.agent.id } },
-        create: { messageId: latestMessage.id, agentId: req.agent.id },
-        update: {},
+      // createMany + skipDuplicates (INSERT ... ON CONFLICT DO NOTHING) instead
+      // of upsert: two near-simultaneous opens of the same chat by the same
+      // agent (double click, reconnect refetch racing the initial load) made
+      // Prisma's upsert lose its check-then-insert race and throw P2002,
+      // which — being an unhandled rejection in an async route — crashed the
+      // whole server and dropped every agent's connection.
+      await prisma.messageView.createMany({
+        data: [{ messageId: latestMessage.id, agentId: req.agent.id }],
+        skipDuplicates: true,
       });
       // Permanent log for the "อัตราการตอบเทียบกับการเปิดดู" table (reports.js,
       // AgentActivityLog — see schema.prisma) — unlike the upsert above, this
