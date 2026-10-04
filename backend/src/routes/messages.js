@@ -11,7 +11,7 @@ const path = require('path');
 const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage, isValidImageDataUrl, UPLOAD_DIR } = require('../lib/imageStorage');
 const { markContentUnrecoverable } = require('../lib/imageBackfill');
 const r2 = require('../lib/r2');
-const { canAccessChannel } = require('../lib/conversationQuery');
+const { canAccessChannel, getVisibleChannelIds } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
 const prisma = new PrismaClient();
@@ -223,19 +223,6 @@ router.get('/image/:id', async (req, res) => {
 
 // GET /api/messages/:conversationId
 router.get('/:conversationId', auth, async (req, res) => {
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: req.params.conversationId },
-    select: { channelId: true },
-  });
-  if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
-  // Same channel-restriction gap as the other routes in this file — reading a
-  // conversation's message history (and marking it read / writing an audit
-  // row below) shouldn't be reachable outside an agent's assigned channels
-  // just because they know/guess the conversation id.
-  if (!(await canAccessChannel(req.agent, conversation.channelId))) {
-    return res.status(404).json({ error: 'Conversation not found' });
-  }
-
   const { cursor, limit = 50 } = req.query;
   const where = { conversationId: req.params.conversationId };
   if (cursor) where.createdAt = { lt: new Date(cursor) };
@@ -249,67 +236,81 @@ router.get('/:conversationId', auth, async (req, res) => {
     ? { ...MESSAGE_SELECT, views: { select: { agentId: true, agent: { select: { name: true } } } } }
     : MESSAGE_SELECT;
 
-  const messages = await prisma.message.findMany({
-    where,
-    select,
-    orderBy: { createdAt: 'desc' },
-    take: Number(limit),
-  });
+  // These three don't depend on each other, so they run together instead of
+  // one after another (opening a chat used to wait on ~7 sequential database
+  // round trips before the agent saw anything). The channel-access check below
+  // still gates the response — a restricted agent never receives messages for a
+  // conversation outside their assigned channels (see canAccessChannel's doc
+  // comment), the query just doesn't have to wait its turn to start.
+  const [conversation, visibleChannelIds, messages] = await Promise.all([
+    prisma.conversation.findUnique({ where: { id: req.params.conversationId }, select: { channelId: true } }),
+    getVisibleChannelIds(req.agent),
+    prisma.message.findMany({ where, select, orderBy: { createdAt: 'desc' }, take: Number(limit) }),
+  ]);
+  if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+  if (visibleChannelIds !== null && !visibleChannelIds.includes(conversation.channelId)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
 
+  res.json(messages.map(flattenUpsellItem).reverse());
+
+  // Everything below is bookkeeping the agent doesn't need to wait for, so it
+  // runs after the response is already on its way. It also only runs for the
+  // initial open (no cursor): scrolling up to load older history isn't
+  // "opening" the chat, and used to mark everything read and log another view
+  // each time a page of history was fetched.
+  //
   // Admins are reviewers checking on agents' work, not the ones handling the
   // conversation — so an admin opening a chat should NOT mark it read (the
   // unread badge should keep showing it as new for whoever actually owns it)
   // and should NOT get tagged in the "viewed but didn't reply" audit trail
-  // below (that trail exists to catch AGENTS avoiding a reply, not admins
-  // browsing to check on them).
-  if (!isAdmin) {
-    // Mark as read
-    await prisma.message.updateMany({
-      where: { conversationId: req.params.conversationId, sender: 'user', read: false },
-      data: { read: true },
-    });
-
-    // Audit trail: if the newest message in this conversation is a customer
-    // message (i.e. nobody's replied to it yet), record that this agent viewed
-    // it. Tags accumulate per-message and are permanent — they're only ever
-    // removed when THIS agent goes on to send a reply (see POST below), never
-    // by simply viewing a newer message. upsert avoids duplicate rows if the
-    // same agent reopens the same still-unanswered conversation more than once.
-    const latestMessage = await prisma.message.findFirst({
-      where: { conversationId: req.params.conversationId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, sender: true },
-    });
-    if (latestMessage && latestMessage.sender === 'user') {
-      // createMany + skipDuplicates (INSERT ... ON CONFLICT DO NOTHING) instead
-      // of upsert: two near-simultaneous opens of the same chat by the same
-      // agent (double click, reconnect refetch racing the initial load) made
-      // Prisma's upsert lose its check-then-insert race and throw P2002,
-      // which — being an unhandled rejection in an async route — crashed the
-      // whole server and dropped every agent's connection.
-      await prisma.messageView.createMany({
-        data: [{ messageId: latestMessage.id, agentId: req.agent.id }],
-        skipDuplicates: true,
-      });
-      // Permanent log for the "อัตราการตอบเทียบกับการเปิดดู" table (reports.js,
-      // AgentActivityLog — see schema.prisma) — unlike the upsert above, this
-      // always inserts a fresh row, uncapped: re-opening the same
-      // still-unanswered chat 3 times logs 3 views, since the point here is
-      // literally counting how many times an agent opened one, not tracking
-      // one outstanding item.
-      await prisma.agentActivityLog.create({
-        data: { agentId: req.agent.id, conversationId: req.params.conversationId, kind: 'view' },
-      });
-      emitToConversation(req.params.conversationId, 'message_view', {
-        messageId: latestMessage.id,
-        agentId: req.agent.id,
-        agentName: req.agent.name,
-      });
-    }
-  }
-
-  res.json(messages.map(flattenUpsellItem).reverse());
+  // (that trail exists to catch AGENTS avoiding a reply, not admins browsing
+  // to check on them).
+  if (isAdmin || cursor) return;
+  recordConversationOpen(req, messages[0]).catch(err => {
+    console.error('Recording chat open failed (messages already returned):', err.message);
+  });
 });
+
+async function recordConversationOpen(req, newestMessage) {
+  const conversationId = req.params.conversationId;
+  await prisma.message.updateMany({
+    where: { conversationId, sender: 'user', read: false },
+    data: { read: true },
+  });
+
+  // Audit trail: if the newest message in this conversation is a customer
+  // message (i.e. nobody's replied to it yet), record that this agent viewed
+  // it. Tags accumulate per-message and are permanent — they're only ever
+  // removed when THIS agent goes on to send a reply (see POST below), never
+  // by simply viewing a newer message.
+  if (!newestMessage || newestMessage.sender !== 'user') return;
+
+  // createMany + skipDuplicates (INSERT ... ON CONFLICT DO NOTHING) instead
+  // of upsert: two near-simultaneous opens of the same chat by the same
+  // agent (double click, reconnect refetch racing the initial load) made
+  // Prisma's upsert lose its check-then-insert race and throw P2002, which —
+  // being an unhandled rejection in an async route — crashed the whole
+  // server and dropped every agent's connection.
+  await prisma.messageView.createMany({
+    data: [{ messageId: newestMessage.id, agentId: req.agent.id }],
+    skipDuplicates: true,
+  });
+  // Permanent log for the "อัตราการตอบเทียบกับการเปิดดู" table (reports.js,
+  // AgentActivityLog — see schema.prisma) — unlike the row above, this
+  // always inserts a fresh row, uncapped: re-opening the same
+  // still-unanswered chat 3 times logs 3 views, since the point here is
+  // literally counting how many times an agent opened one, not tracking
+  // one outstanding item.
+  await prisma.agentActivityLog.create({
+    data: { agentId: req.agent.id, conversationId, kind: 'view' },
+  });
+  emitToConversation(conversationId, 'message_view', {
+    messageId: newestMessage.id,
+    agentId: req.agent.id,
+    agentName: req.agent.name,
+  });
+}
 
 // POST /api/messages/:conversationId — send a text message, or an image (imageData
 // as a base64 data URL) attached from the composer.

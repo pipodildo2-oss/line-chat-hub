@@ -163,13 +163,37 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
 // LINE's media content endpoint requires our server's Channel Access Token to fetch —
 // there's no public URL an <img> tag can hit directly. So we fetch it ourselves through
 // our authenticated backend proxy and turn it into a blob URL.
+// True once `ref`'s element is within `margin` of the viewport (and stays true).
+// Opening a chat used to start a proxy download + blob decode for EVERY customer
+// image in the loaded page (up to 50 at once) the instant it mounted, competing
+// with the messages request itself and keeping the tab busy for seconds even
+// though only the newest few are on screen. Only images near the viewport load
+// now; the rest start as the agent scrolls toward them.
+function useNearViewport(margin = '400px') {
+  const ref = useRef(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (near) return undefined;
+    const el = ref.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setNear(true); observer.disconnect(); }
+    }, { rootMargin: margin });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [near, margin]);
+  return [ref, near];
+}
+
 function ImageMessage({ messageId, onImageClick }) {
   const [src, setSrc] = useState(null);
   // null = fine so far, 'expired' = gone for good (410 from the backend),
   // 'error' = failed for some other reason and may well work on a retry.
   const [failure, setFailure] = useState(null);
+  const [placeholderRef, near] = useNearViewport();
 
   useEffect(() => {
+    if (!near) return undefined;
     let objectUrl;
     let cancelled = false;
     setSrc(null);
@@ -190,10 +214,10 @@ function ImageMessage({ messageId, onImageClick }) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [messageId]);
+  }, [messageId, near]);
 
   if (failure) return <MissingMedia expired={failure === 'expired'} />;
-  if (!src) return <div className="w-48 h-48 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
+  if (!src) return <div ref={placeholderRef} className="w-48 h-48 rounded-lg bg-gray-100 dark:bg-slate-800 animate-pulse" />;
   return (
     <button type="button" onClick={() => onImageClick?.(src)} className="block cursor-zoom-in">
       {/* onError covers the case the fetch itself can't catch: a 200 that turns
@@ -240,6 +264,8 @@ function AgentImage({ msg, onImageClick }) {
       <img
         src={url}
         alt=""
+        loading="lazy"
+        decoding="async"
         onError={() => {
           reportImageFailure({ kind: 'inbox-agent-img', messageId: msg.id, status: 'img-onerror', url, detail: fellBack ? 'stored url failed too' : 'own route failed, falling back to stored url' });
           if (!fellBack && meta.url && meta.url !== url) setFellBack(true); else setBroken(true);
@@ -1355,6 +1381,8 @@ export default function Inbox() {
   // next — see handleSend below for why that mattered.
   const sendQueueRef = useRef(new Map());
   const [dragOver, setDragOver] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const loadedConvIdRef = useRef(null);
   const [showQrPicker, setShowQrPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   // Upsell claim tool — while true, clicking a message toggles it in/out of
@@ -1634,7 +1662,21 @@ export default function Inbox() {
     // effect above), which explicitly turns this off itself since it's about
     // to land somewhere in the middle of history instead.
     if (!jumpTargetRef.current) isNearBottomRef.current = true;
-    axios.get(`/api/messages/${selected.id}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
+    const convId = selected.id;
+    // Without this the PREVIOUS customer's messages sat under the new
+    // customer's header until the response landed — it looked like the click
+    // did nothing — and, with no guard on the response, switching quickly
+    // (A → B → C) let a slow earlier response land last and overwrite the chat
+    // actually on screen with the wrong customer's history.
+    let cancelled = false;
+    if (loadedConvIdRef.current !== convId) {
+      setMessages([]);
+      setLoadingMessages(true);
+    }
+    axios.get(`/api/messages/${convId}`, { params: { limit: MESSAGE_PAGE_LIMIT } }).then(r => {
+      if (cancelled) return;
+      loadedConvIdRef.current = convId;
+      setLoadingMessages(false);
       if (r.data.length < MESSAGE_PAGE_LIMIT) hasMoreMessagesRef.current = false;
       setMessages(r.data);
       // That GET call also marks this conversation's unread messages as read
@@ -1646,11 +1688,16 @@ export default function Inbox() {
       // when an admin opens it, so the local badge must stay too, otherwise it
       // would look "handled" to everyone else even though nobody replied.
       if (agent?.role !== 'admin') {
-        setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, _count: { ...c._count, messages: 0 } } : c));
+        setConversations(prev => prev.map(c => c.id === convId ? { ...c, _count: { ...c._count, messages: 0 } } : c));
       }
+    }).catch(() => {
+      if (!cancelled) setLoadingMessages(false);
     });
-    socket?.emit('join', selected.id);
-    return () => socket?.emit('leave', selected.id);
+    socket?.emit('join', convId);
+    return () => {
+      cancelled = true;
+      socket?.emit('leave', convId);
+    };
   }, [selected?.id, socket]);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -2467,6 +2514,11 @@ export default function Inbox() {
               ref={messageListRef}
               className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-aurora-navy relative"
             >
+              {loadingMessages && messages.length === 0 && (
+                <div className="flex justify-center py-10">
+                  <Loader2 size={22} className="animate-spin text-gray-400 dark:text-slate-500" />
+                </div>
+              )}
               {loadingOlder && (
                 <div className="flex justify-center py-2">
                   <Loader2 size={16} className="animate-spin text-gray-400 dark:text-slate-500" />
