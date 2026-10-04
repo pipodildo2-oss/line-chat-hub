@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // Verifies a raw JWT and re-fetches the agent from the DB — shared by the
 // Express middleware below and the Socket.io handshake check in index.js, so

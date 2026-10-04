@@ -2,10 +2,9 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { PrismaClient } = require('@prisma/client');
 const { getTwoFactorRequiredScope, roleIsInTwoFactorScope } = require('../lib/systemSettings');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // Issues the real 7-day session — the one and only place that happens,
 // shared by the no-2FA login path below and routes/twoFactor.js's

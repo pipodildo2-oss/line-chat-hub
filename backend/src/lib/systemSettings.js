@@ -1,6 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 
 const SINGLETON_ID = 'singleton';
 const DEFAULT_AGENT_CONDUCT_GRACE_SECONDS = 60;

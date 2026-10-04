@@ -17,11 +17,10 @@
 // it's already full.
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { UPLOAD_DIR } = require('./imageStorage');
 const { sendOpsAlert } = require('./opsAlert');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 // Days of remaining headroom below which this starts complaining. Growing a
 // volume is not instant and needs a person, so "weeks of notice" is the point.
 const WARN_DAYS = 60;
@@ -49,17 +48,23 @@ const gb = (bytes) => (bytes / GB).toFixed(2);
 // way, and it needs no assumption about what else shares the disk. It costs one
 // stat per file — a second or two at the current ~121,000 — on a job that runs
 // every six hours.
-function measureUploadDir() {
+//
+// Async, in small parallel batches: ~200,000 synchronous stats on the volume
+// held the whole server's event loop at every startup and every six hours, and
+// a slow volume turned that into minutes of the app not accepting connections.
+async function measureUploadDir() {
   let entries;
-  try { entries = fs.readdirSync(UPLOAD_DIR); } catch { return null; }
+  try { entries = await fs.promises.readdir(UPLOAD_DIR); } catch { return null; }
   const recentCutoff = Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   let bytes = 0;
   let fileCount = 0;
   let recentBytes = 0;
-  for (const name of entries) {
-    try {
-      const s = fs.statSync(path.join(UPLOAD_DIR, name));
-      if (!s.isFile()) continue;
+  const STAT_BATCH = 32;
+  for (let i = 0; i < entries.length; i += STAT_BATCH) {
+    const stats = await Promise.all(entries.slice(i, i + STAT_BATCH).map(name =>
+      fs.promises.stat(path.join(UPLOAD_DIR, name)).catch(() => null))); // deleted between readdir and stat — skip it
+    for (const s of stats) {
+      if (!s || !s.isFile()) continue;
       bytes += s.size;
       fileCount++;
       // Growth measured from the files themselves rather than inferred from a
@@ -71,7 +76,7 @@ function measureUploadDir() {
       // what was actually written in the window needs no assumption about
       // what kind of media it was.
       if (s.mtimeMs >= recentCutoff) recentBytes += s.size;
-    } catch { /* deleted between readdir and stat — skip it */ }
+    }
   }
   return { fileCount, bytes, recentBytes };
 }
@@ -89,7 +94,7 @@ async function checkStorageHealth() {
   const usedBytes = totalBytes - freeBytes;
   const freePercent = totalBytes === 0 ? 0 : (freeBytes / totalBytes) * 100;
 
-  const dir = measureUploadDir();
+  const dir = await measureUploadDir();
   const fileCount = dir ? dir.fileCount : 0;
   const avgFileBytes = fileCount > 0 ? dir.bytes / fileCount : null;
   const since = new Date(Date.now() - GROWTH_WINDOW_DAYS * 24 * 60 * 60 * 1000);

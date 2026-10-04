@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage, getMessageContent } = require('../services/line.service');
@@ -14,7 +13,7 @@ const r2 = require('../lib/r2');
 const { canAccessChannel, getVisibleChannelIds } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // Excludes the (potentially large) base64 imageData column from bulk queries —
 // callers get metadata.url for agent-sent images instead, see /image/:id below.
@@ -54,6 +53,12 @@ function flattenUpsellItem(message) {
 // the old blank "[Image]" placeholder read like a bug.
 const EXPIRED_MESSAGE = 'รูปนี้หมดอายุแล้ว (LINE เก็บไฟล์ไว้ประมาณ 2 สัปดาห์) จึงไม่สามารถแสดงได้อีก';
 
+// Non-blocking existence check. fs.existsSync on the uploads volume is a
+// synchronous disk call made on every image view; when the volume is slow it
+// stops the entire server (every other request, socket and webhook included)
+// until the disk answers.
+const fileExists = (p) => fs.promises.access(p).then(() => true, () => false);
+
 // GET /api/messages/content/:messageId — proxy image/video/audio a customer sent us.
 // Placed before the /:conversationId route below since "content" would otherwise be
 // swallowed as a conversationId value.
@@ -85,8 +90,13 @@ router.get('/content/:messageId', auth, async (req, res) => {
     try { meta = message.metadata ? JSON.parse(message.metadata) : {}; } catch { /* ignore */ }
     if (isStoredPath(meta.storedPath)) {
       const filePath = path.join(UPLOAD_DIR, meta.storedPath.replace('/uploads/', ''));
-      if (fs.existsSync(filePath)) {
-        return res.sendFile(filePath, (err) => {
+      if (await fileExists(filePath)) {
+        // A stored file never changes for a given message id, so let the browser
+        // keep it: every revisit of a chat used to send one conditional request
+        // per image just to be told "304 not modified". `private` because this
+        // route sits behind auth (same value the other branches here already use).
+        res.set('Cache-Control', 'private, max-age=86400');
+        return res.sendFile(filePath, { cacheControl: false }, (err) => {
           if (err && !res.headersSent) console.error('sendFile failed for stored message content:', err.message);
         });
       }
@@ -188,7 +198,7 @@ router.get('/image/:id', async (req, res) => {
     // redirect would land on a 404 — so check first and serve the archived
     // bytes directly instead. Identical result to the caller, including LINE
     // itself fetching an image we pushed.
-    if (fs.existsSync(path.join(UPLOAD_DIR, target.replace('/uploads/', '')))) {
+    if (await fileExists(path.join(UPLOAD_DIR, target.replace('/uploads/', '')))) {
       return res.redirect(target);
     }
     let meta = {};

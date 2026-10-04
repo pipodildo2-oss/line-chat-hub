@@ -1,9 +1,8 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { deleteStoredImage } = require('../lib/imageStorage');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });

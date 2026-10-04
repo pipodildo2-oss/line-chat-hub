@@ -1,8 +1,7 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // GET /api/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
 // `from`/`to` scope the period-based numbers (new conversations, messages-per-day

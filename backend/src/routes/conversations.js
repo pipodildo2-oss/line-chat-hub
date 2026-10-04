@@ -1,10 +1,9 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToAll } = require('../services/socket.service');
 const { getVisibleChannelIds, canAccessChannel, buildConversationWhere, daysInactive } = require('../lib/conversationQuery');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // เปิด / รอ / หยุด / ปิด — see PATCH /:id below (the only place status is
 // ever written from the frontend) and line.service.js's reopen-on-message

@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
@@ -7,7 +6,7 @@ const { sendMessage, sendImageMessage } = require('../services/line.service');
 const { saveBase64Image, thumbPathFor, isValidImageDataUrl } = require('../lib/imageStorage');
 const { getVisibleChannelIds, buildConversationWhere } = require('../lib/conversationQuery');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 const MAX_IMAGES = 3;
 // Caps how many recipients get pushed to at once — keeps a large broadcast

@@ -15,10 +15,9 @@
 // is enough to reproduce a bad response directly).
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, UPLOAD_DIR } = require('./imageStorage');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 const LOOKBACK_DAYS = 30;
 const PAGE_SIZE = 500;
 const SAMPLES = 5;
@@ -32,21 +31,28 @@ function resolveStored(storedPath) {
 // file that exists but holds something else (an error body, a truncated write,
 // nothing at all) — which is exactly the shape of failure a browser reports as
 // a broken image while the server considers the response a success.
-function inspectFile(filePath) {
-  let fd;
+//
+// Async (not statSync/openSync/readSync): this is called for every stored image
+// at each startup — hundreds of thousands of files — and the synchronous
+// version held the whole server's event loop for the duration. On a healthy
+// volume that was a stall of seconds on every deploy; when the volume slowed
+// down (Railway's 4 Oct storage incident) it was minutes in which no request
+// was even accepted.
+async function inspectFile(filePath) {
+  let handle;
   try {
-    const size = fs.statSync(filePath).size;
+    const size = (await fs.promises.stat(filePath)).size;
     if (size === 0) return { state: 'empty', size };
     const head = Buffer.alloc(8);
-    fd = fs.openSync(filePath, 'r');
-    const read = fs.readSync(fd, head, 0, 8, 0);
+    handle = await fs.promises.open(filePath, 'r');
+    const { bytesRead: read } = await handle.read(head, 0, 8, 0);
     const isJpeg = read >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
     const isPng = read >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     return { state: isJpeg || isPng ? 'ok' : 'not-an-image', size, head: head.subarray(0, read).toString('hex') };
   } catch (err) {
     return { state: err.code === 'ENOENT' ? 'missing' : 'unreadable', size: 0 };
   } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
+    if (handle) await handle.close().catch(() => {});
   }
 }
 
@@ -91,12 +97,12 @@ async function auditImageStorage() {
         if (!meta.url) bucket(agent, 'no metadata.url', m.id);
         if (!m.imageData) { bucket(agent, 'no imageData at all', m.id); continue; }
         if (!isStoredPath(m.imageData)) { bucket(agent, 'legacy inline base64 (not a file)', m.id); continue; }
-        bucket(agent, `file ${inspectFile(resolveStored(m.imageData)).state}`, m.id);
+        bucket(agent, `file ${(await inspectFile(resolveStored(m.imageData))).state}`, m.id);
       } else {
         if (meta.storageUnrecoverable) { bucket(customer, 'marked expired on LINE', m.id); continue; }
         if (!meta.storedPath) { bucket(customer, 'no local copy (live LINE fetch)', m.id); continue; }
         if (!isStoredPath(meta.storedPath)) { bucket(customer, 'storedPath malformed', m.id); continue; }
-        bucket(customer, `file ${inspectFile(resolveStored(meta.storedPath)).state}`, m.id);
+        bucket(customer, `file ${(await inspectFile(resolveStored(meta.storedPath))).state}`, m.id);
       }
     }
   }

@@ -19,28 +19,27 @@
 //              files get written, so it is called out separately.
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, UPLOAD_DIR } = require('./imageStorage');
 const { inspectFile } = require('./storageAudit');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 const PAGE_SIZE = 200;
 const MAX_AGENTS_LOGGED = 25;
 
-function classify(message) {
+async function classify(message) {
   let meta = {};
   try { meta = JSON.parse(message.metadata || '{}'); } catch { /* treated as absent */ }
 
   if (message.sender === 'agent') {
     if (!isStoredPath(message.imageData)) return 'orphaned';
-    return inspectFile(path.join(UPLOAD_DIR, message.imageData.replace('/uploads/', ''))).state === 'ok' ? 'ok' : 'broken';
+    return (await inspectFile(path.join(UPLOAD_DIR, message.imageData.replace('/uploads/', '')))).state === 'ok' ? 'ok' : 'broken';
   }
   if (meta.storageUnrecoverable) return 'expired';
   // No local copy and not yet marked: the live LINE fetch may still work, so
   // this isn't counted against anyone — it resolves itself either way once
   // that fetch is tried (messages.js marks it on a 404).
   if (!isStoredPath(meta.storedPath)) return 'unknown';
-  return inspectFile(path.join(UPLOAD_DIR, meta.storedPath.replace('/uploads/', ''))).state === 'ok' ? 'ok' : 'broken';
+  return (await inspectFile(path.join(UPLOAD_DIR, meta.storedPath.replace('/uploads/', '')))).state === 'ok' ? 'ok' : 'broken';
 }
 
 async function reportUpsellImageHealth() {
@@ -69,7 +68,7 @@ async function reportUpsellImageHealth() {
       let affected = false;
       for (const item of sub.items) {
         if (item.message?.type !== 'image') continue;
-        const state = classify(item.message);
+        const state = await classify(item.message);
         totals[state]++;
         if (state === 'unknown') continue;
         row[state]++;

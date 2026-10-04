@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow, isToday, isYesterday, isSameDay, format } from 'date-fns';
@@ -101,12 +101,16 @@ function TagChip({ tag, onRemove, small }) {
   );
 }
 
-function ConversationItem({ conv, selected, onClick, typingAgent }) {
+// memo + a stable `onSelect` (instead of a fresh inline arrow per row) so a
+// socket event touching ONE conversation, or someone typing in another, no
+// longer re-renders all 30 rows of the list — React skips any row whose conv
+// object, selected flag and typing label are unchanged.
+const ConversationItem = memo(function ConversationItem({ conv, selected, onSelect, typingAgent }) {
   const lastMsg = conv.messages?.[0];
   const unread = conv._count?.messages || 0;
   return (
     <button
-      onClick={onClick}
+      onClick={() => onSelect(conv)}
       className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors flex gap-3 ${selected ? 'bg-gradient-to-r from-aurora-teal/10 to-aurora-purple/10 border-l-2 border-l-aurora-teal' : ''}`}
     >
       <Avatar name={conv.displayName} pictureUrl={conv.pictureUrl} />
@@ -158,7 +162,7 @@ function ConversationItem({ conv, selected, onClick, typingAgent }) {
       </div>
     </button>
   );
-}
+});
 
 // LINE's media content endpoint requires our server's Channel Access Token to fetch —
 // there's no public URL an <img> tag can hit directly. So we fetch it ourselves through
@@ -2392,7 +2396,7 @@ export default function Inbox() {
               key={conv.id}
               conv={conv}
               selected={selected?.id === conv.id}
-              onClick={() => setSelected(conv)}
+              onSelect={setSelected}
               typingAgent={typingMap[conv.id]}
             />
           ))}

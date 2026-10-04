@@ -24,10 +24,9 @@
 // recovered here.
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, UPLOAD_DIR } = require('./imageStorage');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 const PAGE_SIZE = 500;
 const QUICK_REPLY_URL = /\/api\/quick-replies\/([^/]+)\/image\/(\d+)/;
 
@@ -77,7 +76,7 @@ async function giveQuickReplyImagesToTheirMessages() {
       if (!qr) { stats.quickReplyGone++; continue; }
       const storedPath = imageAt(qr, p.index);
       if (!isStoredPath(storedPath)) { stats.imageGone++; continue; }
-      if (!fs.existsSync(path.join(UPLOAD_DIR, storedPath.replace('/uploads/', '')))) { stats.fileMissing++; continue; }
+      if (!(await fs.promises.access(path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''))).then(() => true, () => false))) { stats.fileMissing++; continue; }
 
       // Keep the origin the agent originally sent through — this app is
       // reachable on both its custom domain and its railway.app one, and an

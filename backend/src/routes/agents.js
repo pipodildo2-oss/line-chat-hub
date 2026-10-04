@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
@@ -7,7 +6,7 @@ const { saveBase64Image, deleteStoredImage } = require('../lib/imageStorage');
 const { getOnlineAgentIds } = require('../lib/presence');
 const { getIo, emitToAll } = require('../services/socket.service');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // Password-change endpoints require `auth` first (so `req.agent` is always
 // set), so keying by agent id rather than IP correctly limits per-account —

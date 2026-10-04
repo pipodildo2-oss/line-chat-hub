@@ -1,6 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 
 // Returns the list of channelIds this agent is restricted to, or null if
 // unrestricted (admin, or an agent with zero AgentChannel rows — see

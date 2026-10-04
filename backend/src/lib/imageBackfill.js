@@ -43,9 +43,8 @@
 // every single deploy would re-scan and re-attempt every already-expired
 // image in the whole 60-day window from scratch, forever — the first run
 // alone already had ~33,500 candidates to get through.
-const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 const LOOKBACK_DAYS = 60;
 const CONCURRENCY = 3; // deliberately low — this can run against many channels' LINE tokens at once on startup, no reason to hammer LINE's API
 const REQUEST_TIMEOUT_MS = 15000;
@@ -136,7 +135,7 @@ async function backfillMissingImageStorage() {
           // written as they arrived, since sharp can't read them at all.
           const storedPath = m.type === 'image'
             ? await saveBase64Image(`data:${contentType};base64,${bytes.toString('base64')}`)
-            : saveRawMedia(bytes, contentType).storedPath;
+            : (await saveRawMedia(bytes, contentType)).storedPath;
           if (storedPath) {
             const meta = { ...JSON.parse(m.metadata || '{}'), storedPath };
             await prisma.message.update({ where: { id: m.id }, data: { metadata: JSON.stringify(meta) } });

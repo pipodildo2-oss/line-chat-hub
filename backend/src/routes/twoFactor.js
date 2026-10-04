@@ -9,12 +9,11 @@
 //     up, to finish setup on the spot ('setup2fa') before landing in the app.
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
-const { PrismaClient } = require('@prisma/client');
 const { verifyAgentToken, verifyPendingTwoFactorToken } = require('../middleware/auth');
 const { issueSession } = require('./auth');
 const twoFactor = require('../lib/twoFactor');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // Same shape as auth.js's loginLimiter — these endpoints are exactly as
 // brute-forceable (a 6-digit code, or one of 10 backup codes) as the

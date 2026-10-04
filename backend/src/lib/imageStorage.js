@@ -142,7 +142,7 @@ const MEDIA_EXTENSIONS = {
 // traffic needs it.
 const MAX_MEDIA_BYTES = Number(process.env.MAX_MEDIA_MB || 60) * 1024 * 1024;
 
-function saveRawMedia(buffer, contentType) {
+async function saveRawMedia(buffer, contentType) {
   // LINE sends "video/mp4; charset=..." style values on some responses.
   const base = String(contentType || '').split(';')[0].trim().toLowerCase();
   const ext = MEDIA_EXTENSIONS[base];
@@ -151,7 +151,7 @@ function saveRawMedia(buffer, contentType) {
     return { storedPath: null, reason: `${(buffer.length / 1024 / 1024).toFixed(1)}MB exceeds the ${MAX_MEDIA_MB_LABEL} limit` };
   }
   const id = crypto.randomBytes(16).toString('hex');
-  fs.writeFileSync(path.join(UPLOAD_DIR, `${id}.${ext}`), buffer);
+  await fs.promises.writeFile(path.join(UPLOAD_DIR, `${id}.${ext}`), buffer);
   return { storedPath: `/uploads/${id}.${ext}`, reason: null };
 }
 const MAX_MEDIA_MB_LABEL = `${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB`;
@@ -160,11 +160,11 @@ const MAX_MEDIA_MB_LABEL = `${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB`;
 // path ("/uploads/<id>.jpg") or a legacy inline base64 data URL — the two
 // shapes imageAt()/Message.imageData can hold. Used by saveImageGrid below to
 // read a quick reply's own images back off disk before compositing them.
-function loadStoredImageBuffer(storedValueOrDataUrl) {
+async function loadStoredImageBuffer(storedValueOrDataUrl) {
   if (!storedValueOrDataUrl) return null;
   if (isStoredPath(storedValueOrDataUrl)) {
     const filePath = path.join(UPLOAD_DIR, storedValueOrDataUrl.replace('/uploads/', ''));
-    try { return fs.readFileSync(filePath); } catch { return null; }
+    try { return await fs.promises.readFile(filePath); } catch { return null; }
   }
   const match = SAFE_IMAGE_DATA_URL.exec(storedValueOrDataUrl);
   return match ? Buffer.from(match[2], 'base64') : null;

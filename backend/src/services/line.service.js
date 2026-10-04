@@ -1,11 +1,10 @@
 const crypto = require('crypto');
 const line = require('@line/bot-sdk');
-const { PrismaClient } = require('@prisma/client');
 const { emitToConversation, emitToAll } = require('./socket.service');
 const { linkifyBareDomains } = require('../lib/linkGuard');
 const { saveBase64Image, saveRawMedia } = require('../lib/imageStorage');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 function getClient(accessToken) {
   return new line.messagingApi.MessagingApiClient({ channelAccessToken: accessToken });
@@ -255,7 +254,7 @@ async function processLineEvent(channel, event) {
         const { stream, contentType } = await getMessageContent(channel, event.message.id);
         const chunks = [];
         for await (const chunk of stream) chunks.push(chunk);
-        const { storedPath, reason } = saveRawMedia(Buffer.concat(chunks), contentType);
+        const { storedPath, reason } = await saveRawMedia(Buffer.concat(chunks), contentType);
         if (storedPath) metadata.storedPath = storedPath;
         // Loud on purpose: an unstored clip is on a two-week fuse, and the
         // reason (an unexpected content type, or one over the size limit) is

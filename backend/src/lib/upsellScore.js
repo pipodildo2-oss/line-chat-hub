@@ -2,9 +2,8 @@
 // report (telegramReport.js) — both need the exact same "one row per agent,
 // with pending/approved/rejected counts + approved amount for a date range"
 // summary, so it lives here once instead of drifting apart in two places.
-const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 
 // Bangkok-local day boundaries — same pattern duplicated in
 // upsells.js/reports.js (see those files' own copies for why: a plain UTC

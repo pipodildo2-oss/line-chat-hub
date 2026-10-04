@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { emitToConversation, emitToAll } = require('../services/socket.service');
 const { sendMessage, sendImageMessage } = require('../services/line.service');
@@ -7,7 +6,7 @@ const { saveBase64Image, isStoredPath, thumbPathFor, deleteStoredImage: deleteSt
 const { canAccessChannel } = require('../lib/conversationQuery');
 const { clearMessageViewsAfterReply } = require('../lib/messageViewClear');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 const KINDS = ['reply', 'howto', 'promotion', 'account'];
 const KIND_ERROR = 'kind ต้องเป็น reply, howto, promotion หรือ account';
@@ -800,7 +799,7 @@ router.post('/:id/send', auth, async (req, res) => {
       // single LINE push ("รูปรวม") instead of imageCount separate image
       // bubbles spamming the customer — see saveImageGrid's own comment.
       const buffers = [];
-      for (let i = 0; i < imageCount; i++) buffers.push(loadStoredImageBuffer(imageAt(quickReply, i)));
+      for (let i = 0; i < imageCount; i++) buffers.push(await loadStoredImageBuffer(imageAt(quickReply, i)));
       const gridPath = await saveImageGrid(buffers);
       if (!gridPath) {
         sendErr = new Error('ไม่สามารถรวมรูปภาพได้');

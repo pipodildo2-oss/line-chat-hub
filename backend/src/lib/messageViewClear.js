@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
 const { emitToConversation } = require('../services/socket.service');
 const { getAgentConductGraceSeconds } = require('./systemSettings');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 
 // Called after ANY agent reply succeeds (a typed message in messages.js, or
 // a quick reply in quickReplies.js) to resolve "viewed but didn't reply"

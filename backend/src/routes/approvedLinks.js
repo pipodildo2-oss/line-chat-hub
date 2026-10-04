@@ -2,11 +2,10 @@
 // see schema.prisma's ApprovedLink and backend/src/lib/linkGuard.js, which
 // actually does the matching against messages.js's outgoing-message check.
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { reconcileFlaggedLinks } = require('../lib/linkGuard');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 function requireAdmin(req, res, next) {
   if (req.agent.role !== 'admin') return res.status(403).json({ error: 'Admin only' });

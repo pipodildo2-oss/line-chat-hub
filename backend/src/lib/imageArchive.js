@@ -23,12 +23,11 @@
 // anything becomes irreversible.
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, thumbPathFor, UPLOAD_DIR } = require('./imageStorage');
 const r2 = require('./r2');
 const { sendOpsAlert } = require('./opsAlert');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 // Uploading and deleting are two different jobs on two different clocks, and
 // conflating them was a real weakness in the original design: while the only
 // copy of an image lived on the volume until it turned 90 days old, that volume
@@ -79,8 +78,8 @@ function contentTypeFor(storedPath) {
   return CONTENT_TYPES[String(storedPath).split('.').pop().toLowerCase()] || 'application/octet-stream';
 }
 
-function readIfPresent(filePath) {
-  try { return fs.readFileSync(filePath); } catch { return null; }
+async function readIfPresent(filePath) {
+  try { return await fs.promises.readFile(filePath); } catch { return null; }
 }
 
 // Where this message's image bytes live. Customer images record it under
@@ -101,7 +100,7 @@ function locate(message) {
 async function freeLocalCopy(storedPath, r2Key) {
   const fullLocal = localPathFor(storedPath);
   const thumbStored = thumbPathFor(storedPath);
-  if (!fs.existsSync(fullLocal)) return 'already'; // nothing left to reclaim
+  if (!(await fs.promises.access(fullLocal).then(() => true, () => false))) return 'already'; // nothing left to reclaim
   // Re-checked against R2 rather than trusted from the database. The recorded
   // key is evidence that an upload once succeeded; this is the last moment
   // before the local file stops existing, and the whole reason ~47,000 images
@@ -112,8 +111,8 @@ async function freeLocalCopy(storedPath, r2Key) {
     console.error(`Refusing to free ${storedPath}: its archived copy ${r2Key} is not in R2.`);
     return 'failed';
   }
-  fs.rmSync(fullLocal, { force: true });
-  if (thumbStored !== storedPath) fs.rmSync(localPathFor(thumbStored), { force: true });
+  await fs.promises.rm(fullLocal, { force: true });
+  if (thumbStored !== storedPath) await fs.promises.rm(localPathFor(thumbStored), { force: true });
   return 'archivedAndFreed';
 }
 
@@ -126,7 +125,7 @@ async function archiveOne(message, deleteBefore) {
   }
 
   const fullLocal = localPathFor(storedPath);
-  const buffer = readIfPresent(fullLocal);
+  const buffer = await readIfPresent(fullLocal);
   // Nothing on disk to archive. Either it was archived by an earlier run whose
   // database write didn't land, or it went missing some other way — both are
   // for the storage audit to report, not for this to paper over.
@@ -142,7 +141,7 @@ async function archiveOne(message, deleteBefore) {
   // everything it had rather than a reduced version of it. Its absence is not
   // a failure — plenty of older rows never had one.
   const thumbStored = thumbPathFor(storedPath);
-  const thumbBuffer = thumbStored === storedPath ? null : readIfPresent(localPathFor(thumbStored));
+  const thumbBuffer = thumbStored === storedPath ? null : await readIfPresent(localPathFor(thumbStored));
   let thumbKey = null;
   if (thumbBuffer) {
     const candidate = keyFor(thumbStored, message.createdAt);
@@ -164,8 +163,8 @@ async function archiveOne(message, deleteBefore) {
   // insurance.
   const pastRetention = message.createdAt < deleteBefore;
   if (DELETE_LOCAL && pastRetention) {
-    fs.rmSync(fullLocal, { force: true });
-    if (thumbBuffer) fs.rmSync(localPathFor(thumbStored), { force: true });
+    await fs.promises.rm(fullLocal, { force: true });
+    if (thumbBuffer) await fs.promises.rm(localPathFor(thumbStored), { force: true });
     return 'archivedAndFreed';
   }
   return 'archived';

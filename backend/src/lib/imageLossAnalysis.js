@@ -16,28 +16,29 @@
 // shows directly.
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const { isStoredPath, UPLOAD_DIR } = require('./imageStorage');
 
-const prisma = new PrismaClient();
+const prisma = require('./prisma');
 const LOOKBACK_DAYS = 45;
 const PAGE_SIZE = 500;
 const TOP_CONVERSATIONS = 15;
 
-function fileIsThere(storedPath) {
+// Async so scanning every image in the window doesn't hold the event loop (see
+// storageAudit.js's inspectFile for why that matters).
+async function fileIsThere(storedPath) {
   if (!isStoredPath(storedPath)) return false;
-  try { return fs.statSync(path.join(UPLOAD_DIR, storedPath.replace('/uploads/', ''))).size > 0; } catch { return false; }
+  try { return (await fs.promises.stat(path.join(UPLOAD_DIR, storedPath.replace('/uploads/', '')))).size > 0; } catch { return false; }
 }
 
 // "Missing" means an agent opening this message would not see the picture —
 // deliberately judged the same way for a claimed and an unclaimed message, so
 // the comparison below is fair.
-function isMissing(m) {
+async function isMissing(m) {
   let meta = {};
   try { meta = JSON.parse(m.metadata || '{}'); } catch { /* treated as absent */ }
-  if (m.sender === 'agent') return !fileIsThere(m.imageData);
+  if (m.sender === 'agent') return !(await fileIsThere(m.imageData));
   if (meta.storageUnrecoverable) return true;
-  return !fileIsThere(meta.storedPath);
+  return !(await fileIsThere(meta.storedPath));
 }
 
 function rate(missing, total) {
@@ -73,7 +74,7 @@ async function analyseImageLoss() {
 
     for (const m of page) {
       const claimed = m.upsellItems.length > 0;
-      const missing = isMissing(m);
+      const missing = await isMissing(m);
       const bucket = m.sender === 'agent'
         ? (claimed ? 'agentClaimed' : 'agentUnclaimed')
         : (claimed ? 'claimed' : 'unclaimed');

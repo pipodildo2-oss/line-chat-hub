@@ -1,10 +1,9 @@
 const router = require('express').Router();
 const line = require('@line/bot-sdk');
 const rateLimit = require('express-rate-limit');
-const { PrismaClient } = require('@prisma/client');
 const { enqueueLineEvent } = require('../services/queue.service');
 
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 // This endpoint is unauthenticated by design (LINE calls it directly) and
 // does a DB lookup BEFORE verifying anything (the channelId in the URL isn't

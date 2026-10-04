@@ -4,7 +4,6 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
-const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
 const twoFactorRoutes = require('./routes/twoFactor');
@@ -60,7 +59,7 @@ const { startTelegramReportScheduler } = require('./lib/telegramScheduler');
 const { verifyAgentToken } = require('./middleware/auth');
 const { canAccessChannel } = require('./lib/conversationQuery');
 
-const prisma = new PrismaClient();
+const prisma = require('./lib/prisma');
 const app = express();
 
 // Railway sits in front of the app behind a proxy (Hikari). Trusting it means
@@ -330,8 +329,12 @@ io.on('connection', async (socket) => {
   // by the time this runs, fetchSockets() on the agent room already
   // reflects this socket's departure, and an empty result genuinely means
   // no tab/device for this agent is connected anywhere in the cluster.
-  socket.on('disconnect', async () => {
-    console.log('Client disconnected:', socket.id);
+  socket.on('disconnect', async (reason) => {
+    // The reason (transport close / ping timeout / client namespace disconnect
+    // ...) is what separates "the agent closed the tab" from "the connection
+    // was dropped under them" — the log used to record only that a socket left,
+    // which made the repeated connect/disconnect churn impossible to diagnose.
+    console.log('Client disconnected:', socket.id, reason);
     try {
       const remaining = await io.in(agentRoom(socket.agent.id)).fetchSockets();
       if (remaining.length === 0) {
@@ -344,6 +347,8 @@ io.on('connection', async (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
+const STARTUP_DIAGNOSTICS_DELAY_MS = Number(process.env.STARTUP_DIAGNOSTICS_DELAY_MS ?? 5 * 60 * 1000);
+
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   // Fire-and-forget, only AFTER the server is already listening — this used
@@ -372,22 +377,27 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   require('../src/lib/quickReplyImageOwnership').giveQuickReplyImagesToTheirMessages()
     .then(({ scanned, adopted, quickReplyGone, imageGone, fileMissing }) => {
       console.log(`Quick-reply image ownership: scanned ${scanned}, gave ${adopted} message(s) their own copy reference, ${quickReplyGone} whose quick reply is already deleted, ${imageGone} whose image slot is gone, ${fileMissing} whose file is already off disk.`);
-      // Read-only; see storageAudit.js for why this exists. Same fire-and-forget
-      // placement as the recovery sweep above, for the same reason — nothing
-      // that touches the filesystem or the database on a schedule belongs
-      // anywhere it could delay the server starting.
-      return require('../src/lib/storageAudit').auditImageStorage();
+      // Read-only diagnostics (see storageAudit.js, upsellImageReport.js,
+      // imageLossAnalysis.js): each walks every image message of the last 30-45
+      // days and checks its file on disk. Run straight after boot they overlapped
+      // the moment every agent reconnects after a deploy, so the first minutes of
+      // every release were slow for everyone — they now start a few minutes
+      // later, once the agents have settled. Nothing depends on their output.
+      setTimeout(() => {
+        require('../src/lib/storageAudit').auditImageStorage()
+          // Same picture as the ตรวจสอบ page, per submitting agent — which is what
+          // gets asked for when a broken thumbnail is reported, and answering it by
+          // opening each agent in the UI one at a time both misses submissions and
+          // can't tell the two causes apart. See upsellImageReport.js.
+          .then(() => require('../src/lib/upsellImageReport').reportUpsellImageHealth())
+          // Settles whether claiming a message for an upsell is what makes its image
+          // disappear — see imageLossAnalysis.js. Compares claimed against never-
+          // claimed images directly rather than reasoning from the claimed ones
+          // alone, which are the only ones anyone looks at twice.
+          .then(() => require('../src/lib/imageLossAnalysis').analyseImageLoss())
+          .catch(err => console.error('Startup storage diagnostics failed:', err.message));
+      }, STARTUP_DIAGNOSTICS_DELAY_MS).unref();
     })
-    // Same picture as the ตรวจสอบ page, per submitting agent — which is what
-    // gets asked for when a broken thumbnail is reported, and answering it by
-    // opening each agent in the UI one at a time both misses submissions and
-    // can't tell the two causes apart. See upsellImageReport.js.
-    .then(() => require('../src/lib/upsellImageReport').reportUpsellImageHealth())
-    // Settles whether claiming a message for an upsell is what makes its image
-    // disappear — see imageLossAnalysis.js. Compares claimed against never-
-    // claimed images directly rather than reasoning from the claimed ones
-    // alone, which are the only ones anyone looks at twice.
-    .then(() => require('../src/lib/imageLossAnalysis').analyseImageLoss())
     // Also on startup, not only on the six-hourly timer. Waiting a full cycle
     // to find out whether object storage is even reachable is no way to verify
     // a change — the first run should happen while someone is still watching
