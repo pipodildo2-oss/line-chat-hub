@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Ship WARN/ERROR logs to the Alpha818 AI Ops center (no-op unless ALPHA_OPS_* are set).
+require('./lib/alphaOps').installAlphaOps();
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
@@ -237,6 +239,21 @@ app.get('/health', async (req, res) => {
     // goes to the server log for whoever's actually debugging the outage.
     console.error('Health check failed:', err.message);
     res.status(503).json({ status: 'degraded', db: 'unreachable' });
+  }
+});
+
+// Same check under /api/health for the Alpha818 AI Ops monitor. Without this
+// the SPA catch-all below answered /api/health with index.html and HTTP 200,
+// which made a dead database look healthy.
+app.get('/api/health', async (req, res) => {
+  const dbCheck = prisma.$queryRaw`SELECT 1`;
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000));
+  try {
+    await Promise.race([dbCheck, timeout]);
+    res.set('cache-control', 'no-store').json({ status: 'ok', db: 'ok', uptimeSec: Math.round(process.uptime()) });
+  } catch (err) {
+    console.error('Health check failed:', err.message);
+    res.status(503).set('cache-control', 'no-store').json({ status: 'degraded', db: 'unreachable', uptimeSec: Math.round(process.uptime()) });
   }
 });
 
