@@ -122,6 +122,14 @@ async function processLineEvent(channel, event) {
     }
     if (event.type !== 'message') return;
 
+    // Group/room messages from someone who hasn't consented to share their
+    // userId arrive without one — there is no customer to open a chat for, and
+    // reading event.source.userId below would throw and burn 3 retries.
+    if (!event.source?.userId) {
+      console.warn(`LINE message skipped: no userId in event (channel "${channel.name}", source ${event.source?.type || 'unknown'})`);
+      return;
+    }
+
     // LINE's webhook delivery is "at least once" — it can redeliver the same event
     // (e.g. after a network blip). Skip if we've already recorded this exact message.
     const lineMessageId = event.message?.id || null;

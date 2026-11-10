@@ -28,10 +28,20 @@ router.post('/line/:channelId', webhookLimiter, async (req, res) => {
     const channel = await prisma.lineChannel.findUnique({
       where: { id: req.params.channelId },
     });
-    if (!channel) return;
+    // Every early return below used to be completely silent, so a customer's
+    // message could vanish (unknown/deleted channel, channel switched off in
+    // Settings) with nothing in the logs to say why. Log each one so a "LINE
+    // customers message but nothing shows up" report can be traced in minutes.
+    if (!channel) {
+      console.warn(`LINE webhook dropped: no channel with id ${req.params.channelId} (deleted, or wrong webhook URL in LINE console)`);
+      return;
+    }
     // Soft-disabled channel — don't ingest new messages while paused, even
     // though the LINE OA itself is still live and could deliver events.
-    if (!channel.active) return;
+    if (!channel.active) {
+      console.warn(`LINE webhook dropped: channel "${channel.name}" (${channel.id}) is switched off in Settings — its messages are being discarded`);
+      return;
+    }
 
     // Verify signature
     const signature = req.headers['x-line-signature'];
