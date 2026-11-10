@@ -1651,6 +1651,34 @@ export default function Inbox() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [loadConversations]);
 
+  // Auto-tick newly added LINE channels: if every other channel of a
+  // "หมวดหมู่ใหญ่" is already ticked in the filter, a channel that appeared
+  // since the last visit inside that same group is ticked too — otherwise
+  // staff had to go tick each new OA by hand. Compared against the list of
+  // channel ids seen last time (localStorage); the very first run only records
+  // the list, so nothing is changed for existing channels.
+  useEffect(() => {
+    if (channels.length === 0) return;
+    let known = null;
+    try { known = JSON.parse(localStorage.getItem('inbox_known_channel_ids')); } catch { /* ignore */ }
+    try { localStorage.setItem('inbox_known_channel_ids', JSON.stringify(channels.map(c => c.id))); } catch { /* ignore */ }
+    if (!Array.isArray(known)) return;
+    const knownSet = new Set(known);
+    const fresh = channels.filter(c => !knownSet.has(c.id));
+    if (fresh.length === 0) return;
+    setFilter(f => {
+      if (f.channelIds.length === 0) return f; // "all" already includes it
+      const add = [];
+      for (const c of fresh) {
+        const gid = c.category?.group?.id;
+        if (!gid) continue;
+        const others = channels.filter(o => o.id !== c.id && o.category?.group?.id === gid && knownSet.has(o.id));
+        if (others.length > 0 && others.every(o => f.channelIds.includes(o.id))) add.push(c.id);
+      }
+      return add.length ? { ...f, channelIds: [...new Set([...f.channelIds, ...add])] } : f;
+    });
+  }, [channels]);
+
   useEffect(() => {
     axios.get('/api/channels').then(r => setChannels(r.data));
     axios.get('/api/agents').then(r => setAgents(r.data));
